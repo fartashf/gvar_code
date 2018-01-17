@@ -168,19 +168,22 @@ class DMomSGD(optim.Optimizer):
     def step(self, idx, grads_group, **kwargs):
         # import numpy as np
         # print(np.histogram(self.data_momentum.cpu().numpy()))
-        # data_mom = self.data_momentum
+        data_mom = self.data_momentum
         for group, grads in zip(self.param_groups, grads_group):
-            # dmom = group['dmom']
+            dmom = group['dmom']
             grad_acc = [torch.zeros_like(g.data).cuda() for g in grads[0]]
             for i in range(len(idx)):
-                # gf = [g.data.view(-1) for g in grads[i]]
-                # gc = torch.cat(gf)
-                # normg = torch.pow(gc, 2).sum(dim=0, keepdim=True).sqrt()
-                # data_mom[idx[i]:idx[i]+1] = data_mom[idx[i]]*dmom + normg*(
-                #     1-dmom)
+                gf = [g.data.view(-1) for g in grads[i]]
+                gc = torch.cat(gf)
+                normg = torch.pow(gc, 2).sum(dim=0, keepdim=True).sqrt()
+                data_mom[idx[i]:idx[i]+1] = data_mom[idx[i]]*dmom + normg*(
+                    1-dmom)
+                if float(normg) < 1e-5:
+                    print('small norm')
+                    continue
                 for g, ga in zip(grads[i], grad_acc):
-                    # ga += g.data*float(data_mom[idx[i]:idx[i]+1]/normg)
-                    ga += g.data
+                    ga += g.data*float(data_mom[idx[i]:idx[i]+1]/normg)
+                    # ga += g.data
 
             momentum = group['momentum']
             for p, ga in zip(group['params'], grad_acc):
