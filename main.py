@@ -7,11 +7,13 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.autograd import Variable
 import logging
+from log_utils import AverageMeter, LogCollector
+import tensorboard_logger as tb_logger
+import numpy as np
+import time
 
 
 def main():
-    logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
-
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
     parser.add_argument('--batch-size', type=int, default=64, metavar='N',
@@ -35,8 +37,16 @@ def main():
     parser.add_argument('--optim', default='sgd', help='sgd|dmom')
     parser.add_argument('--dmom', type=float, default=0.5,
                         help='Data momentum')
+    parser.add_argument('--logger_name', default='runs/runX')
+    parser.add_argument('--low_theta', type=float, default=1e-5,
+                        help='Low threshold for discarding small norms.')
+    parser.add_argument('--high_theta', type=float, default=1e5,
+                        help='High threshold for discarding large norms.')
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
+
+    logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
+    tb_logger.configure(args.logger_name, flush_secs=5)
 
     torch.manual_seed(args.seed)
     if args.cuda:
@@ -75,7 +85,7 @@ def main():
         optimizer = optim.SGD(model.parameters(),
                               lr=args.lr, momentum=args.momentum)
 
-    for epoch in range(1, args.epochs + 1):
+    for epoch in range(args.epochs):
         train(epoch, train_loader, model, optimizer, args)
         test(model, test_loader, args)
 
@@ -88,6 +98,7 @@ class Net(nn.Module):
         self.conv2_drop = nn.Dropout2d()
         self.fc1 = nn.Linear(320, 50)
         self.fc2 = nn.Linear(50, 10)
+        self.iters = 0
 
     def forward(self, x):
         x = F.relu(F.max_pool2d(self.conv1(x), 2))
@@ -100,34 +111,52 @@ class Net(nn.Module):
 
 
 def train(epoch, train_loader, model, optimizer, args):
+    batch_time = AverageMeter()
+    optimizer.logger = LogCollector()
     model.train()
+    end = time.time()
     for batch_idx, (data, target, idx) in enumerate(train_loader):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-            data, target = Variable(data), Variable(target)
-            optimizer.zero_grad()
-            output = model(data)
-            if args.optim == 'dmom':
-                loss = F.nll_loss(output, target, reduce=False)
-                grads = nonacc_grad(model, loss)
-                optimizer.step(idx, grads)
-            elif args.optim == 'ssgd':
-                loss = F.nll_loss(output, target, reduce=False)
-                grads = nonacc_grad(model, loss)
-                # grads = nonacc_grad_backward(model, loss)
-                acc_grad(model, grads)
-                optimizer.step()
-            else:
-                loss = F.nll_loss(output, target)
-                loss.backward()
-                optimizer.step()
-            if batch_idx % args.log_interval == 0:
-                loss = loss.mean()
-                logging.info(
-                    'Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                        epoch,
-                        batch_idx * len(data), len(train_loader.dataset),
-                        100. * batch_idx / len(train_loader), loss.data[0]))
+        data, target = Variable(data), Variable(target)
+        optimizer.zero_grad()
+        output = model(data)
+        if args.optim == 'dmom':
+            optimizer.epoch = epoch
+            loss = F.nll_loss(output, target, reduce=False)
+            grads = nonacc_grad(model, loss)
+            optimizer.step(idx, grads)
+        elif args.optim == 'ssgd':
+            loss = F.nll_loss(output, target, reduce=False)
+            grads = nonacc_grad(model, loss)
+            # grads = nonacc_grad_backward(model, loss)
+            acc_grad(model, grads)
+            optimizer.step()
+        else:
+            loss = F.nll_loss(output, target)
+            loss.backward()
+            optimizer.step()
+        model.iters += 1
+
+        batch_time.update(time.time() - end)
+        end = time.time()
+        if batch_idx % args.log_interval == 0:
+            loss = loss.mean()
+            logging.info(
+                'Epoch: [{0}][{1}/{2}]\t'
+                'Loss: {loss:.6f}\t'
+                'Time: {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                '{opt_log}'.format(
+                    epoch, batch_idx, len(train_loader),
+                    loss=loss.data[0],
+                    batch_time=batch_time,
+                    opt_log=str(optimizer.logger)))
+            tb_logger.log_value('epoch', epoch, step=model.iters)
+            tb_logger.log_value('batch_idx', batch_idx, step=model.iters)
+            tb_logger.log_value('batch_time', batch_time.val,
+                                step=model.iters)
+            tb_logger.log_value('loss', loss, step=model.iters)
+            optimizer.logger.tb_log(tb_logger, step=model.iters)
 
 
 def test(model, test_loader, args):
@@ -137,19 +166,25 @@ def test(model, test_loader, args):
     for data, target, idx in test_loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-            data, target = Variable(data, volatile=True), Variable(target)
-            output = model(data)
-            # sum up batch loss
-            test_loss += F.nll_loss(output, target, size_average=False).data[0]
-            # get the index of the max log-probability
-            pred = output.data.max(1, keepdim=True)[1]
-            correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+        data, target = Variable(data, volatile=True), Variable(target)
+        output = model(data)
+        # sum up batch loss
+        test_loss += F.nll_loss(output, target, size_average=False).data[0]
+        # get the index of the max log-probability
+        pred = output.data.max(1, keepdim=True)[1]
+        correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
     test_loss /= len(test_loader.dataset)
     logging.info(
         '\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
             test_loss, correct, len(test_loader.dataset),
             100. * correct / len(test_loader.dataset)))
+    tb_logger.log_value('Vloss', test_loss, step=model.iters)
+    tb_logger.log_value('Vcorrect', correct, step=model.iters)
+    tb_logger.log_value('Vwrong', len(test_loader.dataset)-correct,
+                        step=model.iters)
+    tb_logger.log_value('Vacc', 100.*correct/len(test_loader.dataset),
+                        step=model.iters)
 
 
 class NewMNIST(datasets.MNIST):
@@ -160,27 +195,59 @@ class NewMNIST(datasets.MNIST):
 
 class DMomSGD(optim.Optimizer):
     # http://pytorch.org/docs/master/_modules/torch/optim/sgd.html
-    def __init__(self, params, train_size=0, lr=0, momentum=0, dmom=0):
+    def __init__(self, params, train_size=0, lr=0, momentum=0, dmom=0,
+                 low_theta=1e-5, high_theta=1e5):
         defaults = dict(lr=lr, momentum=momentum, dmom=dmom)
         super(DMomSGD, self).__init__(params, defaults)
         self.data_momentum = torch.zeros(train_size).cuda()
+        self.grad_norm = torch.zeros((train_size,)).cuda()
+        self.epoch = 0
+        self.low_theta = low_theta
+        self.high_theta = high_theta
 
     def step(self, idx, grads_group, **kwargs):
         # import numpy as np
         # print(np.histogram(self.data_momentum.cpu().numpy()))
         data_mom = self.data_momentum
+        numz = 0
+        bigg = 0
+        normg_ratio = np.zeros((len(idx),))
+        dmom_ratio = np.zeros((len(idx),))
+        newdmom_normg_ratio = np.zeros((len(idx),))
         for group, grads in zip(self.param_groups, grads_group):
             dmom = group['dmom']
             grad_acc = [torch.zeros_like(g.data).cuda() for g in grads[0]]
             for i in range(len(idx)):
                 gf = [g.data.view(-1) for g in grads[i]]
                 gc = torch.cat(gf)
+
+                # current normg, dmom
                 normg = torch.pow(gc, 2).sum(dim=0, keepdim=True).sqrt()
-                data_mom[idx[i]:idx[i]+1] = data_mom[idx[i]]*dmom + normg*(
-                    1-dmom)
-                if float(normg) < 1e-5:
-                    print('small norm')
+                new_dmom = data_mom[idx[i]]*dmom + normg*(1-dmom)
+
+                # last normg, dmom
+                last_dmom = data_mom[idx[i]:idx[i]+1]
+                last_normg = self.grad_norm[idx[i]:idx[i]+1]
+
+                # ratios
+                normg_ratio[i] = min(
+                    1e7, (normg/(last_normg+1e-7)).cpu().numpy().copy())
+                dmom_ratio[i] = min(
+                    1e7, (new_dmom/(last_dmom+1e-7)).cpu().numpy().copy())
+                newdmom_normg_ratio[i] = min(
+                    1e7, (new_dmom/(normg+1e-7)).cpu().numpy().copy())
+
+                # update normg, dmom
+                data_mom[idx[i]:idx[i]+1] = new_dmom
+                self.grad_norm[idx[i]:idx[i]+1] = normg
+
+                if float(normg) < self.low_theta:
+                    numz += 1
                     continue
+                if float(normg) > self.high_theta:
+                    bigg += 1
+                    continue
+                # accumulate current mini-batch weighted grad
                 for g, ga in zip(grads[i], grad_acc):
                     ga += g.data*float(data_mom[idx[i]:idx[i]+1]/normg)
                     # ga += g.data
@@ -197,6 +264,13 @@ class DMomSGD(optim.Optimizer):
                 buf.mul_(momentum).add_(d_p)
                 d_p = buf
                 p.data.add_(-group['lr'], d_p)
+
+        self.logger.update('normg_ratio', normg_ratio[:len(idx)], len(idx))
+        self.logger.update('dmom_ratio', dmom_ratio[:len(idx)], len(idx))
+        self.logger.update('newdmom_normg_ratio',
+                           newdmom_normg_ratio[:len(idx)], len(idx))
+        self.logger.update('numz', numz, len(idx))
+        self.logger.update('bigg', bigg, len(idx))
 
 
 class SimpleSGD(optim.Optimizer):
