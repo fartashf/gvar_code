@@ -30,17 +30,22 @@ def run_multi(args):
 
 
 if __name__ == '__main__':
-    args = [OrderedDict([('optim', ['sgd']),
+    # args = [OrderedDict([('optim', ['sgd']),
+    #                      ('lr', [0.1, 0.01, 0.001]),
+    #                      ('momentum', [0.1, 0.5, 0.9, 0.99]),
+    #                      ]),
+    #         OrderedDict([('optim', ['dmom']),
+    #                      ('lr', [0.1, 0.01, 0.001]),
+    #                      ('dmom', [0.1, 0.5, 0.9, 0.99]),
+    #                      ('momentum', [0.1, 0.5, 0.9, 0.99]),
+    #                      ])]
+    args = [OrderedDict([('optim', ['dmom']),
                          ('lr', [0.1, 0.01, 0.001]),
-                         ('momentum', [0.1, 0.5, 0.9, 0.99]),
-                         ]),
-            OrderedDict([('optim', ['dmom']),
-                         ('lr', [0.1, 0.01, 0.001]),
-                         ('dmom', [0.1, 0.5, 0.9, 0.99]),
+                         ('dmom', [0]),
                          ('momentum', [0.1, 0.5, 0.9, 0.99]),
                          ])]
 
-    jobs = ['bolt0_gpu1', 'bolt0_gpu2', 'bolt0_gpu3',
+    jobs = ['bolt0_gpu0', 'bolt0_gpu1', 'bolt0_gpu2', 'bolt0_gpu3',
             'bolt1_gpu0', 'bolt1_gpu1', 'bolt1_gpu2', 'bolt1_gpu3',
             'bolt2_gpu0', 'bolt2_gpu1', 'bolt2_gpu2', 'bolt2_gpu3']
 

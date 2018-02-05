@@ -43,6 +43,11 @@ class StatisticMeter(object):
         self.med = AverageMeter()
 
     def update(self, val, n=0):
+        val = np.ma.masked_invalid(val)
+        val = val.compressed()
+        n = min(n, len(val))
+        if n == 0:
+            return
         self.mu.update(np.mean(val), n=n)
         self.std.update(np.std(val), n=n)
         self.min.update(np.min(val), n=n)
