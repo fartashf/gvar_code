@@ -1,0 +1,25 @@
+\section{Method}
+
+SGD:
+
+\begin{align}
+    g_t = \gSG_t &= \left.\dth{}\E[L(\theta)]\right|_{\theta=\theta_t}
+\end{align}
+
+SGD with momentum:
+
+\begin{align}
+    \gMO_t
+    &= \beta \gMO_{t-1}+(1-\beta) g_t\\
+    &= \ST (1-\beta) \beta^{T-t} g_t\\
+    \left. \dth{\LMO} \right|_{\theta=\theta_t}&= \gMO_t\\
+    \LMO
+    &= \int \ST (1-\beta) \beta^{T-t} g_t d\theta\\
+    &= (1-\beta)\ST \beta^{T-t} \int g_t d\theta\\
+    &= (1-\beta)\ST \beta^{T-t} \E[L(\theta_t)]
+\end{align}
+
+SGD with momentum is minimizing an exponential average of the loss of the 
+model. So it is stabilizing learning.
+\subsection{Minimum viable project}
+\subsection{Nice to haves}
