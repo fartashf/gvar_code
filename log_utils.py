@@ -67,16 +67,53 @@ class StatisticMeter(object):
         self.max.tb_log(tb_logger, name+'_max', step=step)
 
 
+class PercentileMeter(object):
+    """Computes and stores the average and current value"""
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.nz = AverageMeter()
+        self.perc10 = AverageMeter()
+        self.perc50 = AverageMeter()
+        self.perc90 = AverageMeter()
+
+    def update(self, val, n=0):
+        if n == 0:
+            return
+        p = np.percentile(val, [10, 50, 90])
+        self.nz.update(np.isclose(val, 0).sum(), n=n)
+        self.perc10.update(float(p[0]), n=n)
+        self.perc50.update(float(p[1]), n=n)
+        self.perc90.update(float(p[2]), n=n)
+
+    def __str__(self):
+        # return 'mu:{}|med:{}|std:{}|min:{}|max:{}'.format(
+        #     self.mu, self.med, self.std, self.min, self.max)
+        return '0:{}|10:{}|50:{}|90:{}'.format(
+            self.nz, self.perc10, self.perc50, self.perc90)
+
+    def tb_log(self, tb_logger, name, step=None):
+        self.nz.tb_log(tb_logger, name+'_nz', step=step)
+        self.perc10.tb_log(tb_logger, name+'_perc10', step=step)
+        self.perc50.tb_log(tb_logger, name+'_perc50', step=step)
+        self.perc90.tb_log(tb_logger, name+'_perc90', step=step)
+
+
 class LogCollector(object):
     """A collection of logging objects that can change from train to val"""
 
     def __init__(self):
         self.meters = OrderedDict()
 
-    def update(self, k, v, n=0):
+    def update(self, k, v, n=0, perc=False):
         if k not in self.meters:
             if type(v).__module__ == np.__name__:
-                self.meters[k] = StatisticMeter()
+                if perc:
+                    self.meters[k] = PercentileMeter()
+                else:
+                    self.meters[k] = StatisticMeter()
             else:
                 self.meters[k] = AverageMeter()
         self.meters[k].update(v, n)

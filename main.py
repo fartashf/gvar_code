@@ -15,6 +15,7 @@ import os
 import models
 import models.mnist
 import models.cifar10
+# import nonacc_autograd
 
 
 def main():
@@ -69,6 +70,21 @@ def main():
     parser.add_argument('--weight_decay', '--wd', default=argparse.SUPPRESS,
                         type=float,
                         metavar='W', help='weight decay (default: 5e-4)')
+    parser.add_argument('--dmom_interval', default=argparse.SUPPRESS,
+                        type=int,
+                        metavar='W', help='Update dmom every X epochs.')
+    parser.add_argument('--dmom_temp', default=argparse.SUPPRESS,
+                        type=float,
+                        metavar='W', help='Temperature [0, +inf),'
+                        '0 is always dmom, +inf is never dmom')
+    parser.add_argument('--alpha', default=argparse.SUPPRESS,
+                        help='normg|jacobian')
+    parser.add_argument('--jacobian_lambda', default=.5,
+                        type=float)
+    parser.add_argument('--dmom_theta', type=float, default=0,
+                        help='max of dmom/normg')  # x/10, (x/10)^(2)
+    parser.add_argument('--sample', action='store_true',
+                        default=False)
     args = parser.parse_args()
 
     yaml_path = os.path.join('options/{}/{}'.format(args.dataset,
@@ -95,7 +111,7 @@ def main():
     if opt.dataset == 'mnist':
         model = models.mnist.MNISTNet()
     elif opt.dataset == 'cifar10':
-        model = model = torch.nn.DataParallel(
+        model = torch.nn.DataParallel(
             models.cifar10.__dict__[args.arch]())
         model.cuda()
 
@@ -104,9 +120,10 @@ def main():
 
     if opt.optim == 'dmom':
         optimizer = DMomSGD(model.parameters(),
+                            opt,
                             train_size=len(train_loader.dataset),
                             lr=opt.lr, momentum=opt.momentum,
-                            dmom=opt.dmom)
+                            dmom=opt.dmom, update_interval=opt.dmom_interval)
     elif opt.optim == 'ssgd':
         # optimizer = SimpleSGD(model.parameters(),
         #                       lr=opt.lr, momentum=opt.momentum)
@@ -128,6 +145,9 @@ def train(epoch, train_loader, model, optimizer, opt):
     optimizer.logger = LogCollector()
     model.train()
     end = time.time()
+    # update sampler weights
+    if opt.optim == 'dmom' and opt.sampler:
+        train_loader.sampler.weights[:] = optimizer.data_momentum + 1e-5
     for batch_idx, (data, target, idx) in enumerate(train_loader):
         if opt.cuda:
             data, target = data.cuda(), target.cuda()
@@ -147,6 +167,9 @@ def train(epoch, train_loader, model, optimizer, opt):
             optimizer.step()
         else:
             loss = F.nll_loss(output, target)
+            # grad = torch.ones_like(loss)
+            # nonacc_autograd.backward([loss], [grad])
+            # import ipdb; ipdb.set_trace()
             loss.backward()
             optimizer.step()
         optimizer.niters += 1
@@ -203,15 +226,17 @@ def test(model, test_loader, opt, niters):
 
 class DMomSGD(optim.Optimizer):
     # http://pytorch.org/docs/master/_modules/torch/optim/sgd.html
-    def __init__(self, params, train_size=0, lr=0, momentum=0, dmom=0,
-                 low_theta=1e-5, high_theta=1e5):
+    def __init__(self, params, opt, train_size=0, lr=0, momentum=0, dmom=0,
+                 low_theta=1e-5, high_theta=1e5, update_interval=1):
         defaults = dict(lr=lr, momentum=momentum, dmom=dmom)
         super(DMomSGD, self).__init__(params, defaults)
-        self.data_momentum = torch.ones(train_size).cuda()
-        self.grad_norm = torch.ones((train_size,)).cuda()
+        self.data_momentum = np.zeros(train_size)
+        self.grad_norm = np.ones((train_size,))
         self.epoch = 0
         self.low_theta = low_theta
         self.high_theta = high_theta
+        self.update_interval = update_interval
+        self.opt = opt
 
     def step(self, idx, grads_group, **kwargs):
         # import numpy as np
@@ -219,12 +244,20 @@ class DMomSGD(optim.Optimizer):
         data_mom = self.data_momentum
         numz = 0
         bigg = 0
+        numo = 0
+        temperature = (self.epoch/self.opt.epochs)**self.opt.dmom_temp
         normg_ratio = np.zeros((len(idx),))
         dmom_ratio = np.zeros((len(idx),))
         newdmom_normg_ratio = np.zeros((len(idx),))
         normg_val = np.zeros((len(idx),))
         dmom_val = np.zeros((len(idx),))
         for group, grads in zip(self.param_groups, grads_group):
+            param_state = [self.state[p] for p in group['params']]
+            if 'momentum_buffer' in param_state[0]:
+                buf = [p['momentum_buffer'].view(-1) for p in param_state]
+            else:
+                buf = [p.data.view(-1) for p in group['params']]
+            gg = torch.cat(buf)
             dmom = group['dmom']
             grad_acc = [torch.zeros_like(g.data).cuda() for g in grads[0]]
             for i in range(len(idx)):
@@ -232,23 +265,38 @@ class DMomSGD(optim.Optimizer):
                 gc = torch.cat(gf)
 
                 # current normg, dmom
-                normg = torch.pow(gc, 2).sum(dim=0, keepdim=True).sqrt()
+                if self.opt.alpha == 'normg':
+                    normg = torch.pow(gc, 2).sum(dim=0, keepdim=True).sqrt(
+                    ).cpu().numpy().copy()
+                else:
+                    normg = 1/(1+np.exp(abs(torch.dot(gc, gg))
+                                        - self.opt.jacobian_lambda))
                 new_dmom = data_mom[idx[i]]*dmom + normg*(1-dmom)
 
                 # last normg, dmom
-                last_dmom = data_mom[idx[i]:idx[i]+1]
-                last_normg = self.grad_norm[idx[i]:idx[i]+1]
-
-                # ratios
-                normg_ratio[i] = (normg-last_normg).cpu().numpy().copy()
-                dmom_ratio[i] = (new_dmom-last_dmom).cpu().numpy().copy()
-                newdmom_normg_ratio[i] = (new_dmom-normg).cpu().numpy().copy()
-                normg_val[i] = normg.cpu().numpy().copy()
-                dmom_val[i] = new_dmom.cpu().numpy().copy()
+                last_dmom = float(data_mom[idx[i]:idx[i]+1])
+                last_normg = float(self.grad_norm[idx[i]:idx[i]+1])
 
                 # update normg, dmom
-                data_mom[idx[i]:idx[i]+1] = new_dmom
-                self.grad_norm[idx[i]:idx[i]+1] = normg
+                if self.epoch % self.update_interval == 0:
+                    data_mom[idx[i]:idx[i]+1] = new_dmom
+                    self.grad_norm[idx[i]:idx[i]+1] = normg
+
+                # bias correction (after storing)
+                new_dmom = new_dmom/(1-dmom**(self.epoch+1))
+
+                dt = self.opt.dmom_theta
+                dr = new_dmom/(normg+self.low_theta)
+                if dt > 1 and dr > dt:
+                    numo += 1
+                    new_dmom = normg*dt
+
+                # ratios
+                normg_ratio[i] = (normg-last_normg)
+                dmom_ratio[i] = (new_dmom-last_dmom)
+                newdmom_normg_ratio[i] = (new_dmom/(normg+self.low_theta))
+                normg_val[i] = normg
+                dmom_val[i] = new_dmom
 
                 if float(normg) < self.low_theta:
                     numz += 1
@@ -257,8 +305,10 @@ class DMomSGD(optim.Optimizer):
                     continue
                 # accumulate current mini-batch weighted grad
                 for g, ga in zip(grads[i], grad_acc):
-                    ga += g.data*float(
-                        data_mom[idx[i]:idx[i]+1]/(normg+self.low_theta))
+                    # ga += g.data*float(
+                    #     data_mom[idx[i]:idx[i]+1]/(normg+self.low_theta))
+                    alpha = float(new_dmom/(normg+self.low_theta))
+                    ga += g.data*(alpha**temperature)
                     # ga += g.data
 
             momentum = group['momentum']
@@ -274,15 +324,18 @@ class DMomSGD(optim.Optimizer):
                 d_p = buf
                 p.data.add_(-group['lr'], d_p)
 
-        self.logger.update('normg_ratio', normg_ratio[:len(idx)], len(idx))
-        self.logger.update('dmom_ratio', dmom_ratio[:len(idx)], len(idx))
-        self.logger.update('newdmom_normg_ratio',
+        self.logger.update('normg_sub_normg', normg_ratio[:len(idx)], len(idx))
+        self.logger.update('dmom_sub_dmom', dmom_ratio[:len(idx)], len(idx))
+        self.logger.update('newdmom_div_normg',
                            newdmom_normg_ratio[:len(idx)], len(idx))
         self.logger.update('numz', numz, len(idx))
         self.logger.update('zpercent', numz*100./len(idx), len(idx))
         self.logger.update('bigg', bigg, len(idx))
         self.logger.update('normg', normg_val[:len(idx)], len(idx))
         self.logger.update('dmom', dmom_val[:len(idx)], len(idx))
+        self.logger.update('overflow', numo, len(idx))
+        self.logger.update('dmom_p', self.data_momentum, 1, perc=True)
+        self.logger.update('normg_p', self.grad_norm, 1, perc=True)
 
 
 class SimpleSGD(optim.Optimizer):
