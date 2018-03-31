@@ -4,10 +4,10 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.autograd import Variable
-import logging
-from log_utils import AverageMeter, LogCollector
-import tensorboard_logger as tb_logger
 import numpy as np
+import torchvision.utils as vutils
+import logging
+from log_utils import AverageMeter, LogCollector, Profiler
 import time
 from data import get_loaders
 import yaml
@@ -15,7 +15,11 @@ import os
 import models
 import models.mnist
 import models.cifar10
+import models.logreg
 # import nonacc_autograd
+from optim import DMomSGD, AddDMom
+from log_utils import TBXWrapper
+tb_logger = TBXWrapper()
 
 
 def main():
@@ -83,8 +87,24 @@ def main():
                         type=float)
     parser.add_argument('--dmom_theta', type=float, default=0,
                         help='max of dmom/normg')  # x/10, (x/10)^(2)
-    parser.add_argument('--sample', action='store_true',
-                        default=False)
+    parser.add_argument('--sampler', action='store_true',
+                        default=argparse.SUPPRESS)
+    parser.add_argument('--train_accuracy', action='store_true',
+                        default=argparse.SUPPRESS)
+    # parser.add_argument('--save_for_notebooks', action='store_true',
+    #                     default=False)
+    parser.add_argument('--alpha_norm', default=argparse.SUPPRESS,
+                        help='sum_norm|exp_norm|nonorm')
+    parser.add_argument('--sampler_weight', default=argparse.SUPPRESS,
+                        help='dmom|alpha|normg')
+    parser.add_argument('--wmomentum', action='store_true',
+                        default=argparse.SUPPRESS)
+    parser.add_argument('--log_profiler', action='store_true')
+    parser.add_argument('--log_image', action='store_true',
+                        default=argparse.SUPPRESS)
+    parser.add_argument('--lr_decay_epoch', type=int,
+                        default=argparse.SUPPRESS)
+    parser.add_argument('--norm_temp', default=argparse.SUPPRESS, type=float)
     args = parser.parse_args()
 
     yaml_path = os.path.join('options/{}/{}'.format(args.dataset,
@@ -109,11 +129,22 @@ def main():
     train_loader, test_loader = get_loaders(opt)
 
     if opt.dataset == 'mnist':
-        model = models.mnist.MNISTNet()
+        if opt.arch == 'convnet':
+            model = models.mnist.Convnet()
+        elif opt.arch == 'mlp':
+            model = models.mnist.MLP()
+        else:
+            model = models.mnist.MNISTNet()
     elif opt.dataset == 'cifar10':
         model = torch.nn.DataParallel(
-            models.cifar10.__dict__[args.arch]())
+            models.cifar10.__dict__[opt.arch]())
         model.cuda()
+    elif opt.dataset == 'logreg':
+        model = models.logreg.Linear(opt.dim, opt.num_class)
+    elif opt.dataset == '10class':
+        model = models.logreg.Linear(opt.dim, opt.num_class)
+    elif opt.dataset == '5class':
+        model = models.logreg.Linear(opt.dim, opt.num_class)
 
     if opt.cuda:
         model.cuda()
@@ -123,12 +154,19 @@ def main():
                             opt,
                             train_size=len(train_loader.dataset),
                             lr=opt.lr, momentum=opt.momentum,
-                            dmom=opt.dmom, update_interval=opt.dmom_interval)
+                            dmom=opt.dmom, update_interval=opt.dmom_interval,
+                            weight_decay=opt.weight_decay)
     elif opt.optim == 'ssgd':
         # optimizer = SimpleSGD(model.parameters(),
         #                       lr=opt.lr, momentum=opt.momentum)
         optimizer = optim.SGD(model.parameters(),
                               lr=opt.lr, momentum=opt.momentum)
+    elif opt.optim == 'adddmom':
+        optimizer = AddDMom(model.parameters(),
+                            opt,
+                            train_size=len(train_loader.dataset),
+                            lr=opt.lr, momentum=opt.momentum,
+                            dmom=opt.dmom)
     else:
         optimizer = optim.SGD(model.parameters(),
                               lr=opt.lr, momentum=opt.momentum,
@@ -136,19 +174,52 @@ def main():
     optimizer.niters = 0
 
     for epoch in range(opt.epochs):
+        adjust_learning_rate(optimizer, epoch, opt)
         train(epoch, train_loader, model, optimizer, opt)
+
+        if opt.train_accuracy:
+            test(model, train_loader, opt, optimizer.niters, 'Train', 'T')
         test(model, test_loader, opt, optimizer.niters)
+
+    if opt.optim == 'dmom':
+        if opt.log_image:
+            vis_samples(optimizer.alpha, train_loader, opt.epochs)
+
+        optimizer.logger = LogCollector()
+        optimizer.log_perc('last_')
+        logging.info(str(optimizer.logger))
+        optimizer.logger.tb_log(tb_logger, step=opt.epochs)
+
+        torch.save({
+            'opt': opt.d,
+            'model': model.state_dict(),
+            'fnorm': optimizer.fnorm,
+            'weights': optimizer.weights,
+            'alpha': optimizer.alpha,
+            'alpha_normed': optimizer.alpha_normed,
+            'normg': optimizer.grad_norm
+        }, opt.logger_name+'/model.pth.tar')
 
 
 def train(epoch, train_loader, model, optimizer, opt):
     batch_time = AverageMeter()
     optimizer.logger = LogCollector()
+    optimizer.profiler = Profiler()
     model.train()
     end = time.time()
     # update sampler weights
     if opt.optim == 'dmom' and opt.sampler:
-        train_loader.sampler.weights[:] = optimizer.data_momentum + 1e-5
+        if opt.sampler_weight == 'dmom':
+            optimizer.weights = optimizer.data_momentum
+        elif opt.sampler_weight == 'alpha':
+            optimizer.weights = optimizer.alpha
+        elif opt.sampler_weight == 'normg':
+            optimizer.weights = optimizer.grad_norm
+        optimizer.weights += 1e-5
+        optimizer.weights /= optimizer.weights.sum()
+        train_loader.sampler.weights[:] = torch.Tensor(optimizer.weights)
     for batch_idx, (data, target, idx) in enumerate(train_loader):
+        optimizer.profiler.start()
         if opt.cuda:
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data), Variable(target)
@@ -156,23 +227,34 @@ def train(epoch, train_loader, model, optimizer, opt):
         output = model(data)
         if opt.optim == 'dmom':
             optimizer.epoch = epoch
+            optimizer.profiler.tic()
             loss = F.nll_loss(output, target, reduce=False)
+            optimizer.profiler.toc('forward')
             grads = nonacc_grad(model, loss)
-            optimizer.step(idx, grads)
+            optimizer.profiler.toc('backward')
+            optimizer.step(idx, grads, loss)
         elif opt.optim == 'ssgd':
             loss = F.nll_loss(output, target, reduce=False)
             grads = nonacc_grad(model, loss)
             # grads = nonacc_grad_backward(model, loss)
             acc_grad(model, grads)
             optimizer.step()
+        elif opt.optim == 'adddmom':
+            loss_i = F.nll_loss(output, target, reduce=False)
+            loss = optimizer.step(idx, loss_i)
         else:
+            optimizer.profiler.tic()
             loss = F.nll_loss(output, target)
+            optimizer.profiler.toc('forward')
             # grad = torch.ones_like(loss)
             # nonacc_autograd.backward([loss], [grad])
             # import ipdb; ipdb.set_trace()
             loss.backward()
+            optimizer.profiler.toc('backward')
             optimizer.step()
+            optimizer.profiler.toc('step')
         optimizer.niters += 1
+        optimizer.profiler.end()
 
         batch_time.update(time.time() - end)
         end = time.time()
@@ -188,15 +270,28 @@ def train(epoch, train_loader, model, optimizer, opt):
                     loss=loss.data[0],
                     batch_time=batch_time,
                     opt_log=str(optimizer.logger)))
+            if opt.log_profiler:
+                logging.info(str(optimizer.profiler))
             tb_logger.log_value('epoch', epoch, step=niters)
+            lr = optimizer.param_groups[0]['lr']
+            tb_logger.log_value('lr', lr, step=niters)
+            tb_logger.log_value('niters', niters, step=niters)
             tb_logger.log_value('batch_idx', batch_idx, step=niters)
             tb_logger.log_value('batch_time', batch_time.val,
                                 step=niters)
             tb_logger.log_value('loss', loss, step=niters)
             optimizer.logger.tb_log(tb_logger, step=niters)
+            if np.isnan(float(loss)):
+                return
+
+    if opt.optim == 'dmom':  # and epoch > 9:
+        optimizer.logger = LogCollector()
+        optimizer.log_perc()
+        logging.info(str(optimizer.logger))
+        optimizer.logger.tb_log(tb_logger, step=epoch)
 
 
-def test(model, test_loader, opt, niters):
+def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
     model.eval()
     test_loss = 0
     correct = 0
@@ -211,152 +306,22 @@ def test(model, test_loader, opt, niters):
         pred = output.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
+    wrong = len(test_loader.dataset)-correct
     test_loss /= len(test_loader.dataset)
     logging.info(
-        '\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-            test_loss, correct, len(test_loader.dataset),
-            100. * correct / len(test_loader.dataset)))
-    tb_logger.log_value('Vloss', test_loss, step=niters)
-    tb_logger.log_value('Vcorrect', correct, step=niters)
-    tb_logger.log_value('Vwrong', len(test_loader.dataset)-correct,
-                        step=niters)
-    tb_logger.log_value('Vacc', 100.*correct/len(test_loader.dataset),
-                        step=niters)
-
-
-class DMomSGD(optim.Optimizer):
-    # http://pytorch.org/docs/master/_modules/torch/optim/sgd.html
-    def __init__(self, params, opt, train_size=0, lr=0, momentum=0, dmom=0,
-                 low_theta=1e-5, high_theta=1e5, update_interval=1):
-        defaults = dict(lr=lr, momentum=momentum, dmom=dmom)
-        super(DMomSGD, self).__init__(params, defaults)
-        self.data_momentum = np.zeros(train_size)
-        self.grad_norm = np.ones((train_size,))
-        self.epoch = 0
-        self.low_theta = low_theta
-        self.high_theta = high_theta
-        self.update_interval = update_interval
-        self.opt = opt
-
-    def step(self, idx, grads_group, **kwargs):
-        # import numpy as np
-        # print(np.histogram(self.data_momentum.cpu().numpy()))
-        data_mom = self.data_momentum
-        numz = 0
-        bigg = 0
-        numo = 0
-        temperature = (self.epoch/self.opt.epochs)**self.opt.dmom_temp
-        normg_ratio = np.zeros((len(idx),))
-        dmom_ratio = np.zeros((len(idx),))
-        newdmom_normg_ratio = np.zeros((len(idx),))
-        normg_val = np.zeros((len(idx),))
-        dmom_val = np.zeros((len(idx),))
-        for group, grads in zip(self.param_groups, grads_group):
-            param_state = [self.state[p] for p in group['params']]
-            if 'momentum_buffer' in param_state[0]:
-                buf = [p['momentum_buffer'].view(-1) for p in param_state]
-            else:
-                buf = [p.data.view(-1) for p in group['params']]
-            gg = torch.cat(buf)
-            dmom = group['dmom']
-            grad_acc = [torch.zeros_like(g.data).cuda() for g in grads[0]]
-            for i in range(len(idx)):
-                gf = [g.data.view(-1) for g in grads[i]]
-                gc = torch.cat(gf)
-
-                # current normg, dmom
-                if self.opt.alpha == 'normg':
-                    normg = torch.pow(gc, 2).sum(dim=0, keepdim=True).sqrt(
-                    ).cpu().numpy().copy()
-                else:
-                    normg = 1/(1+np.exp(abs(torch.dot(gc, gg))
-                                        - self.opt.jacobian_lambda))
-                new_dmom = data_mom[idx[i]]*dmom + normg*(1-dmom)
-
-                # last normg, dmom
-                last_dmom = float(data_mom[idx[i]:idx[i]+1])
-                last_normg = float(self.grad_norm[idx[i]:idx[i]+1])
-
-                # update normg, dmom
-                if self.epoch % self.update_interval == 0:
-                    data_mom[idx[i]:idx[i]+1] = new_dmom
-                    self.grad_norm[idx[i]:idx[i]+1] = normg
-
-                # bias correction (after storing)
-                new_dmom = new_dmom/(1-dmom**(self.epoch+1))
-
-                dt = self.opt.dmom_theta
-                dr = new_dmom/(normg+self.low_theta)
-                if dt > 1 and dr > dt:
-                    numo += 1
-                    new_dmom = normg*dt
-
-                # ratios
-                normg_ratio[i] = (normg-last_normg)
-                dmom_ratio[i] = (new_dmom-last_dmom)
-                newdmom_normg_ratio[i] = (new_dmom/(normg+self.low_theta))
-                normg_val[i] = normg
-                dmom_val[i] = new_dmom
-
-                if float(normg) < self.low_theta:
-                    numz += 1
-                if float(normg) > self.high_theta:
-                    bigg += 1
-                    continue
-                # accumulate current mini-batch weighted grad
-                for g, ga in zip(grads[i], grad_acc):
-                    # ga += g.data*float(
-                    #     data_mom[idx[i]:idx[i]+1]/(normg+self.low_theta))
-                    alpha = float(new_dmom/(normg+self.low_theta))
-                    ga += g.data*(alpha**temperature)
-                    # ga += g.data
-
-            momentum = group['momentum']
-            for p, ga in zip(group['params'], grad_acc):
-                param_state = self.state[p]
-                d_p = ga/len(idx)
-                if 'momentum_buffer' not in param_state:
-                    buf = param_state['momentum_buffer'] = torch.zeros_like(
-                        p.data)
-                else:
-                    buf = param_state['momentum_buffer']
-                buf.mul_(momentum).add_(d_p)
-                d_p = buf
-                p.data.add_(-group['lr'], d_p)
-
-        self.logger.update('normg_sub_normg', normg_ratio[:len(idx)], len(idx))
-        self.logger.update('dmom_sub_dmom', dmom_ratio[:len(idx)], len(idx))
-        self.logger.update('newdmom_div_normg',
-                           newdmom_normg_ratio[:len(idx)], len(idx))
-        self.logger.update('numz', numz, len(idx))
-        self.logger.update('zpercent', numz*100./len(idx), len(idx))
-        self.logger.update('bigg', bigg, len(idx))
-        self.logger.update('normg', normg_val[:len(idx)], len(idx))
-        self.logger.update('dmom', dmom_val[:len(idx)], len(idx))
-        self.logger.update('overflow', numo, len(idx))
-        self.logger.update('dmom_p', self.data_momentum, 1, perc=True)
-        self.logger.update('normg_p', self.grad_norm, 1, perc=True)
-
-
-class SimpleSGD(optim.Optimizer):
-    def __init__(self, params, lr=0, momentum=0, **kwargs):
-        defaults = dict(lr=lr, momentum=momentum)
-        super(SimpleSGD, self).__init__(params, defaults)
-
-    def step(self, **kwargs):
-        for group in self.param_groups:
-            momentum = group['momentum']
-            for p in group['params']:
-                param_state = self.state[p]
-                d_p = p.grad.data
-                if 'momentum_buffer' not in param_state:
-                    buf = param_state['momentum_buffer'] = torch.zeros_like(
-                        p.data)
-                else:
-                    buf = param_state['momentum_buffer']
-                buf.mul_(momentum).add_(d_p)
-                d_p = buf
-                p.data.add_(-group['lr'], d_p)
+        '\n{0} set: Average loss: {1:.4f}'
+        ', Accuracy: {2}/{3} ({4:.2f}%)'
+        ', Error: {5}/{3} ({6:.2f}%)\n'.format(
+            set_name, test_loss, correct, len(test_loader.dataset),
+            100. * correct / len(test_loader.dataset),
+            wrong, 100. * wrong / len(test_loader.dataset)))
+    tb_logger.log_value('%sloss' % prefix, test_loss, step=niters)
+    tb_logger.log_value('%scorrect' % prefix, correct, step=niters)
+    tb_logger.log_value('%swrong' % prefix, wrong, step=niters)
+    tb_logger.log_value('%sacc' % prefix,
+                        100.*correct/len(test_loader.dataset), step=niters)
+    tb_logger.log_value('%serror' % prefix,
+                        100.*wrong/len(test_loader.dataset), step=niters)
 
 
 def nonacc_grad(model, loss):
@@ -416,6 +381,25 @@ class DictWrapper(object):
 
     def __getattr__(self, key):
         return self.d[key]
+
+
+def vis_samples(alphas, train_loader, epoch):
+    big_alphas = np.argsort(alphas)[-9:][::-1]
+    small_alphas = np.argsort(alphas)[:9]
+
+    x = [train_loader.dataset[i][0] for i in big_alphas]
+    x = vutils.make_grid(x, nrow=3, normalize=True, scale_each=True)
+    tb_logger.log_img('big_alpha' % i, x, epoch)
+    x = [train_loader.dataset[i][0] for i in small_alphas]
+    x = vutils.make_grid(x, nrow=3, normalize=True, scale_each=True)
+    tb_logger.log_img('small_alpha' % i, x, epoch)
+
+
+def adjust_learning_rate(optimizer, epoch, opt):
+    """Sets the learning rate to the initial LR decayed by 10"""
+    lr = opt.lr * (0.1 ** (epoch // opt.lr_decay_epoch))
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
 
 
 if __name__ == '__main__':

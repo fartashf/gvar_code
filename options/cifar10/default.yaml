@@ -16,3 +16,5 @@ weight_decay: 1e-4
 dmom_interval: 1
 dmom_temp: 0
 alpha: normg
+sampler: False
+train_accuracy: False
