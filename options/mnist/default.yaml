@@ -24,3 +24,5 @@ wmomentum: False
 log_image: True
 lr_decay_epoch: 30
 norm_temp: 1
+sampler_alpha_th: 0
+sampler_alpha_perc: 0

@@ -33,6 +33,9 @@ class DMomSGD(optim.Optimizer):
         numz = 0
         bigg = 0
         numo = 0
+        nz_sample = 0
+        gvw_mean = 0
+        gw_g = 0
         temperature = (self.epoch/self.opt.epochs)**self.opt.dmom_temp
         normg_ratio = np.zeros((len(idx),))
         dmom_ratio = np.zeros((len(idx),))
@@ -52,6 +55,7 @@ class DMomSGD(optim.Optimizer):
             dmom = group['dmom']
             grad_acc = [torch.zeros_like(g.data).cuda() for g in grads[0]]
             grad_acc_w = [torch.zeros_like(g.data).cuda() for g in grads[0]]
+            grad_var_w = [torch.zeros_like(g.data).cuda() for g in grads[0]]
             for i in range(len(idx)):
                 gf = [g.data.view(-1) for g in grads[i]]
                 gc = torch.cat(gf)
@@ -147,7 +151,14 @@ class DMomSGD(optim.Optimizer):
             self.alpha_normed[idx] = alpha_val
 
             # accumulate current mini-batch weighted grad
+            sampler_alpha_th = self.opt.sampler_alpha_th
+            if self.opt.sampler_alpha_perc > 0:
+                sampler_alpha_th = float(
+                    np.percentile(alpha_val, self.opt.sampler_alpha_perc))
             for i in range(len(idx)):
+                if alpha_val[i] < sampler_alpha_th:
+                    nz_sample += 1
+                    continue
                 for g, ga, gaw in zip(grads[i], grad_acc, grad_acc_w):
                     # ga += g.data*float(
                     #     data_mom[idx[i]:idx[i]+1]/(normg+self.low_theta))
@@ -156,6 +167,20 @@ class DMomSGD(optim.Optimizer):
                     else:
                         gaw += g.data*alpha_val[i]
                     ga += g.data
+            # grad variance
+            for i in range(len(idx)):
+                if alpha_val[i] < sampler_alpha_th:
+                    continue
+                for g, ga, gaw, gvw in zip(grads[i], grad_acc, grad_acc_w,
+                                           grad_var_w):
+                    if not self.opt.sampler:
+                        gvw += (g.data*alpha_val[i]-gaw).pow(2)
+            gvw_sum = sum([gvw_.sum()/len(idx) for gvw_ in grad_var_w])
+            param_num = sum([gvw_.numel() for gvw_ in grad_var_w])
+            # from "Backpropagation through the Void":
+            # the sample log-variance is reported
+            # averaged over all policy parameters
+            gvw_mean = gvw_sum/param_num
             self.profiler.toc('accum')
 
             weight_decay = group['weight_decay']
@@ -164,6 +189,7 @@ class DMomSGD(optim.Optimizer):
                 param_state = self.state[p]
                 d_p = ga/len(idx)
                 d_p_w = gaw/len(idx)
+                gw_g += (d_p-d_p_w).pow(2).sum()
                 if weight_decay != 0:
                     d_p.add_(weight_decay, p.data)
                     d_p_w.add_(weight_decay, p.data)
@@ -200,6 +226,10 @@ class DMomSGD(optim.Optimizer):
         self.logger.update('alpha__normg_sq_sum',
                            float((alpha_val*normg_val*normg_val).sum()),
                            len(idx))
+        self.logger.update('zp_sample', nz_sample*100./len(idx), len(idx))
+        self.logger.update('sampler_alpha_th', sampler_alpha_th, len(idx))
+        self.logger.update('gw_variance_mean', gvw_mean, len(idx))
+        self.logger.update('gw_diff_g', float(np.sqrt(gw_g)), len(idx))
 
     def log_perc(self, prefix=''):
         self.logger.update(prefix+'dmom_h', self.data_momentum, 1, perc=True)

@@ -30,3 +30,5 @@ wmomentum: False
 log_image: False
 lr_decay_epoch: 100
 norm_temp: 1
+sampler_alpha_th: 0
+sampler_alpha_perc: 0

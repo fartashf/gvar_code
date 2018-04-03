@@ -105,6 +105,10 @@ def main():
     parser.add_argument('--lr_decay_epoch', type=int,
                         default=argparse.SUPPRESS)
     parser.add_argument('--norm_temp', default=argparse.SUPPRESS, type=float)
+    parser.add_argument('--sampler_alpha_th',
+                        default=argparse.SUPPRESS, type=float)
+    parser.add_argument('--sampler_alpha_perc',
+                        default=argparse.SUPPRESS, type=float)
     args = parser.parse_args()
 
     yaml_path = os.path.join('options/{}/{}'.format(args.dataset,

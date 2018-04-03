@@ -69,41 +69,90 @@ if __name__ == '__main__':
     #                       ('dmom', [0.]),
     #                       ('momentum', [0.9]),
     #                       ])]
+    # args += [OrderedDict([('dataset', ['mnist']),
+    #                       ('optim', ['dmom']),
+    #                       ('lr', [0.01]),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       ('alpha', ['ggbar_abs', 'ggbar_max0']),
+    #                       ('alpha_norm', ['exp']),
+    #                       ('norm_temp', [.01]),
+    #                       ('sampler_alpha_th', [.00000001, .000001, .00001]),
+    #                       ])]
+    # args += [OrderedDict([('dataset', ['mnist']),
+    #                       ('optim', ['dmom']),
+    #                       ('lr', [0.01]),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       ('alpha', ['normg']),
+    #                       ('alpha_norm', ['exp']),
+    #                       ('norm_temp', [1]),
+    #                       ('sampler_alpha_th', [.00000001, .000001, .00001]),
+    #                       ])]
+    # ##############
+    # args += [OrderedDict([('dataset', ['mnist']),
+    #                       ('optim', ['dmom']),
+    #                       ('lr', [0.01]),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       ('alpha', ['one']),
+    #                       ])]
+    # args += [OrderedDict([('dataset', ['mnist']),
+    #                       ('optim', ['dmom']),
+    #                       ('lr', [0.01]),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       # ('dmom_interval', [1, 3, 5]),
+    #                       # ('dmom_temp', [0, 1, 2]),
+    #                       ('alpha', ['normg',
+    #                                  'ggbar_abs', 'ggbar_max0', 'loss']),
+    #                       # ('jacobian_lambda', [
+    #                       # ('dmom_theta', [0, 10]),
+    #                       # ('low_theta', [1e-4, 1e-2]),
+    #                       ('alpha_norm', ['none', 'sum']),
+    #                       # 'sum_batch', 'exp_batch']),
+    #                       # ('weight_decay', [0, 5e-4]),
+    #                       # ('wmomentum', [False, True]),
+    #                       # ('arch', ['mlp', 'convnet']),
+    #                       # ('norm_temp', [1, 2, 10, 100]),
+    #                       ])]
+    # args += [OrderedDict([('dataset', ['mnist']),
+    #                       ('optim', ['dmom']),
+    #                       ('lr', [0.01]),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       ('alpha', ['normg', 'ggbar_abs', 'ggbar_max0',
+    #                                  'loss']),
+    #                       ('alpha_norm', ['exp']),
+    #                       ('norm_temp', [1, .01]),
+    #                       ])]
+    # args += [OrderedDict([('dataset', ['mnist']),
+    #                       ('optim', ['dmom']),
+    #                       ('lr', [0.01]),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       ('alpha', ['normg']),
+    #                       ('alpha_norm', ['exp']),
+    #                       ('norm_temp', [1]),
+    #                       ('sampler_alpha_perc', [30, 50, 70, 90]),
+    #                       ])]
+    # args += [OrderedDict([('dataset', ['mnist']),
+    #                       ('optim', ['dmom']),
+    #                       ('lr', [0.01]),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       ('alpha', ['ggbar_abs', 'ggbar_max0']),
+    #                       ('alpha_norm', ['exp']),
+    #                       ('norm_temp', [.01]),
+    #                       ('sampler_alpha_perc', [30, 50, 70, 90]),
+    #                       ])]
     args += [OrderedDict([('dataset', ['mnist']),
                           ('optim', ['dmom']),
                           ('lr', [0.01]),
                           ('dmom', [0.]),
                           ('momentum', [0.9]),
                           ('alpha', ['one']),
-                          ])]
-    args += [OrderedDict([('dataset', ['mnist']),
-                          ('optim', ['dmom']),
-                          ('lr', [0.01]),
-                          ('dmom', [0.]),
-                          ('momentum', [0.9]),
-                          # ('dmom_interval', [1, 3, 5]),
-                          # ('dmom_temp', [0, 1, 2]),
-                          ('alpha', ['normg',
-                                     'ggbar_abs', 'ggbar_max0', 'loss']),
-                          # ('jacobian_lambda', [
-                          # ('dmom_theta', [0, 10]),
-                          # ('low_theta', [1e-4, 1e-2]),
-                          ('alpha_norm', ['none', 'sum']),
-                          # 'sum_batch', 'exp_batch']),
-                          # ('weight_decay', [0, 5e-4]),
-                          # ('wmomentum', [False, True]),
-                          # ('arch', ['mlp', 'convnet']),
-                          # ('norm_temp', [1, 2, 10, 100]),
-                          ])]
-    args += [OrderedDict([('dataset', ['mnist']),
-                          ('optim', ['dmom']),
-                          ('lr', [0.01]),
-                          ('dmom', [0.]),
-                          ('momentum', [0.9]),
-                          ('alpha', ['normg', 'ggbar_abs', 'ggbar_max0',
-                                     'loss']),
-                          ('alpha_norm', ['exp']),
-                          ('norm_temp', [1, 2, 10, .01, .1, .2, .5]),
+                          ('batch_size', [12, 13]),
                           ])]
     log_dir = 'runs_mnist'
     njobs = 3
@@ -116,7 +165,7 @@ if __name__ == '__main__':
         jobs += ['%s_job%d' % (s, i) for s in jobs_0]
 
     run_single = RunSingle(log_dir)
-    # run_single.num = 30
+    run_single.num = 29
 
     cmds = run_multi(run_single, args)
     print(len(cmds))
