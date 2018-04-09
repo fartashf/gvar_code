@@ -18,13 +18,14 @@ class DMomSGD(optim.Optimizer):
         self.fnorm = np.ones((train_size,))
         self.alpha = np.ones((train_size,))
         self.alpha_normed = np.ones((train_size,))
+        self.alpha_normed_pre = None
         self.loss = np.ones((train_size,))
         self.epoch = 0
         self.low_theta = low_theta
         self.high_theta = high_theta
         self.update_interval = update_interval
         self.opt = opt
-        self.weights = None
+        self.weights = np.ones((train_size,))
 
     def step(self, idx, grads_group, loss, **kwargs):
         # import numpy as np
@@ -35,6 +36,7 @@ class DMomSGD(optim.Optimizer):
         numo = 0
         nz_sample = 0
         gvw_mean = 0
+        gv_mean = 0
         gw_g = 0
         temperature = (self.epoch/self.opt.epochs)**self.opt.dmom_temp
         normg_ratio = np.zeros((len(idx),))
@@ -56,6 +58,7 @@ class DMomSGD(optim.Optimizer):
             grad_acc = [torch.zeros_like(g.data).cuda() for g in grads[0]]
             grad_acc_w = [torch.zeros_like(g.data).cuda() for g in grads[0]]
             grad_var_w = [torch.zeros_like(g.data).cuda() for g in grads[0]]
+            grad_var = [torch.zeros_like(g.data).cuda() for g in grads[0]]
             for i in range(len(idx)):
                 gf = [g.data.view(-1) for g in grads[i]]
                 gc = torch.cat(gf)
@@ -155,6 +158,7 @@ class DMomSGD(optim.Optimizer):
             if self.opt.sampler_alpha_perc > 0:
                 sampler_alpha_th = float(
                     np.percentile(alpha_val, self.opt.sampler_alpha_perc))
+            ws = self.weights[idx].sum()
             for i in range(len(idx)):
                 if alpha_val[i] < sampler_alpha_th:
                     nz_sample += 1
@@ -163,32 +167,42 @@ class DMomSGD(optim.Optimizer):
                     # ga += g.data*float(
                     #     data_mom[idx[i]:idx[i]+1]/(normg+self.low_theta))
                     if self.opt.sampler:
-                        gaw += g.data/self.weights[idx[i]]
+                        gaw += g.data/len(idx)
+                        ga += g.data*self.weights[idx[i]]/ws  # no /len(idx)
                     else:
-                        gaw += g.data*alpha_val[i]
-                    ga += g.data
+                        gaw += g.data*alpha_val[i]/len(idx)  # TODO: no /len
+                        ga += g.data/len(idx)
             # grad variance
             for i in range(len(idx)):
                 if alpha_val[i] < sampler_alpha_th:
                     continue
-                for g, ga, gaw, gvw in zip(grads[i], grad_acc, grad_acc_w,
-                                           grad_var_w):
-                    if not self.opt.sampler:
+                for g, ga, gaw, gvw, gv in zip(grads[i], grad_acc, grad_acc_w,
+                                               grad_var_w, grad_var):
+                    if self.opt.sampler:
+                        gvw += (g.data-gaw).pow(2)
+                        gv += (g.data*self.weights[idx[i]]/ws-gaw).pow(2)
+                    else:
                         gvw += (g.data*alpha_val[i]-gaw).pow(2)
+                        gv += (g.data-gaw).pow(2)
             gvw_sum = sum([gvw_.sum()/len(idx) for gvw_ in grad_var_w])
+            gv_sum = sum([gv_.sum()/len(idx) for gv_ in grad_var])
             param_num = sum([gvw_.numel() for gvw_ in grad_var_w])
             # from "Backpropagation through the Void":
             # the sample log-variance is reported
             # averaged over all policy parameters
             gvw_mean = gvw_sum/param_num
+            gv_mean = gv_sum/param_num
             self.profiler.toc('accum')
 
             weight_decay = group['weight_decay']
             momentum = group['momentum']
             for p, ga, gaw in zip(group['params'], grad_acc, grad_acc_w):
                 param_state = self.state[p]
-                d_p = ga/len(idx)
-                d_p_w = gaw/len(idx)
+                # TODO: more numerical precision
+                # d_p = ga/len(idx)
+                # d_p_w = gaw/len(idx)
+                d_p = ga
+                d_p_w = gaw
                 gw_g += (d_p-d_p_w).pow(2).sum()
                 if weight_decay != 0:
                     d_p.add_(weight_decay, p.data)
@@ -201,7 +215,10 @@ class DMomSGD(optim.Optimizer):
                 d_p_w = d_p_w.mul_(momentum).add_(buf)
                 if self.opt.wmomentum:
                     d_p = d_p_w
-                buf.mul_(momentum).add_(d_p)
+                if (self.epoch < self.opt.g_update_start
+                        or self.epoch % self.opt.g_update_interval == 0):
+                    buf.mul_(momentum).add_(d_p)
+                # buf.mul_(momentum).add_(d_p)
                 # d_p = buf
                 p.data.add_(-group['lr'], d_p_w)
             self.profiler.toc('step')
@@ -229,6 +246,7 @@ class DMomSGD(optim.Optimizer):
         self.logger.update('zp_sample', nz_sample*100./len(idx), len(idx))
         self.logger.update('sampler_alpha_th', sampler_alpha_th, len(idx))
         self.logger.update('gw_variance_mean', gvw_mean, len(idx))
+        self.logger.update('g_variance_mean', gv_mean, len(idx))
         self.logger.update('gw_diff_g', float(np.sqrt(gw_g)), len(idx))
 
     def log_perc(self, prefix=''):
@@ -249,6 +267,19 @@ class DMomSGD(optim.Optimizer):
         self.logger.update(prefix+'alpha_normed_h',
                            self.alpha_normed, 1, perc=True)
         self.logger.update(prefix+'loss_h', self.loss, 1, perc=True)
+        if self.alpha_normed_pre is not None:
+            # iou = np.zeros(10);
+            # for i in range(1, 10):
+            #     sc = set(np.where(self.alpha_normed > np.exp(-10))[0])
+            #     sp = set(np.where(self.alpha_normed_pre > np.exp(-10))[0])
+            #     iou[i] = len(sc.intersection(sp))/len(sc+sp)
+            sc = len(self.alpha_normed)-1-np.argsort(self.alpha_normed)
+            sp = len(self.alpha_normed)-1-np.argsort(self.alpha_normed_pre)
+            sa = np.maximum(sc, sp)
+            saf = sa[np.where(sa < sa.size/10)[0]]
+            # TODO: non-log perc
+            self.logger.update(prefix+'big_alpha_vs_pre_h', saf, 1, perc=True)
+        self.alpha_normed_pre = self.alpha_normed
 
 
 class SimpleSGD(optim.Optimizer):

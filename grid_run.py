@@ -99,6 +99,14 @@ if __name__ == '__main__':
     #                       ])]
     # args += [OrderedDict([('dataset', ['mnist']),
     #                       ('optim', ['dmom']),
+    #                       ('lr', [0.001]),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       ('alpha', ['one']),
+    #                       ('batch_size', [12, 13]),
+    #                       ])]
+    # args += [OrderedDict([('dataset', ['mnist']),
+    #                       ('optim', ['dmom']),
     #                       ('lr', [0.01]),
     #                       ('dmom', [0.]),
     #                       ('momentum', [0.9]),
@@ -146,26 +154,75 @@ if __name__ == '__main__':
     #                       ('norm_temp', [.01]),
     #                       ('sampler_alpha_perc', [30, 50, 70, 90]),
     #                       ])]
+    # # sampler hyper param search
+    # args += [OrderedDict([('dataset', ['mnist']),
+    #                       ('optim', ['dmom']),
+    #                       ('lr', [0.01]),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       ('alpha', ['normg']),
+    #                       ('alpha_norm', ['exp']),
+    #                       ('norm_temp', [1]),
+    #                       ('sampler', ['']),
+    #                       ('sampler_weight_to_count', ['1_over', 'log']),
+    #                       ('sampler_max_count', [10, 20, 50]),
+    #                       ('sampler_start_epoch', [1, 3, 10]),
+    #                       ])]
+    # args += [OrderedDict([('dataset', ['mnist']),
+    #                       ('optim', ['dmom']),
+    #                       ('lr', [0.01]),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       ('alpha', ['ggbar_abs']),
+    #                       ('alpha_norm', ['exp']),
+    #                       ('norm_temp', [.01]),
+    #                       ('sampler', ['']),
+    #                       ('sampler_weight_to_count', ['1_over', 'log']),
+    #                       ('sampler_max_count', [10, 20, 50]),
+    #                       ('sampler_start_epoch', [1, 3, 10]),
+    #                       ])]
     args += [OrderedDict([('dataset', ['mnist']),
                           ('optim', ['dmom']),
                           ('lr', [0.01]),
                           ('dmom', [0.]),
                           ('momentum', [0.9]),
-                          ('alpha', ['one']),
-                          ('batch_size', [12, 13]),
+                          ('alpha', ['normg']),
+                          ('alpha_norm', ['exp']),
+                          ('norm_temp', [1]),
+                          ('sampler', ['']),
+                          ('sampler_weight_to_count', ['1_over']),
+                          ('sampler_max_count', [50]),
+                          ('sampler_start_epoch', [1]),
+                          ('sampler_lr_update', ['']),
+                          ('sampler_lr_window', [20, 40, 100]),
                           ])]
-    log_dir = 'runs_mnist'
+    args += [OrderedDict([('dataset', ['mnist']),
+                          ('optim', ['dmom']),
+                          ('lr', [0.01]),
+                          ('dmom', [0.]),
+                          ('momentum', [0.9]),
+                          ('alpha', ['ggbar_abs']),
+                          ('alpha_norm', ['exp']),
+                          ('norm_temp', [.01]),
+                          ('sampler', ['']),
+                          ('sampler_weight_to_count', ['1_over']),
+                          ('sampler_max_count', [50]),
+                          ('sampler_start_epoch', [1]),
+                          ('sampler_lr_update', ['']),
+                          ('sampler_lr_window', [20, 40, 100]),
+                          ])]
+    log_dir = 'runs_mnist_sampler'
     njobs = 3
 
-    jobs_0 = ['bolt1_gpu0', 'bolt1_gpu1', 'bolt1_gpu2', 'bolt1_gpu3',
-              'bolt2_gpu0', 'bolt2_gpu1', 'bolt2_gpu2', 'bolt2_gpu3',
+    jobs_0 = ['bolt2_gpu0', 'bolt2_gpu1', 'bolt2_gpu2', 'bolt2_gpu3',
+              'bolt1_gpu0', 'bolt1_gpu1', 'bolt1_gpu2', 'bolt1_gpu3',
               'bolt0_gpu0', 'bolt0_gpu1', 'bolt0_gpu2', 'bolt0_gpu3']
     jobs = []
     for i in range(njobs):
         jobs += ['%s_job%d' % (s, i) for s in jobs_0]
 
     run_single = RunSingle(log_dir)
-    run_single.num = 29
+    run_single.num = 28
 
     cmds = run_multi(run_single, args)
     print(len(cmds))

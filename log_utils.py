@@ -135,6 +135,9 @@ class PercentileMeter(object):
         self.perc90 = AverageMeter()
 
     def update(self, val, n=0):
+        val = np.ma.masked_invalid(val)
+        val = val.compressed()
+        n = min(n, len(val))
         if n == 0:
             return
         p = np.percentile(val, [10, 50, 90])
@@ -170,6 +173,9 @@ class HistogramMeter(object):
         self.val = 0
 
     def update(self, val, n=0):
+        val = np.ma.masked_invalid(val)
+        val = val.compressed()
+        n = min(n, len(val))
         if n == 0:
             return
         p = np.percentile(val, [10, 50, 90])
@@ -177,8 +183,6 @@ class HistogramMeter(object):
         self.perc10.update(float(p[0]), n=n)
         self.perc50.update(float(p[1]), n=n)
         self.perc90.update(float(p[2]), n=n)
-        val = np.ma.masked_invalid(val)
-        val = val.compressed()
         self.val = val
 
     def __str__(self):

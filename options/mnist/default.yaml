@@ -26,3 +26,9 @@ lr_decay_epoch: 30
 norm_temp: 1
 sampler_alpha_th: 0
 sampler_alpha_perc: 0
+sampler_weight_to_count: 1_over
+sampler_max_count: 20
+sampler_start_epoch: 5
+g_update_start: 0
+g_update_interval: 1
+sampler_lr_window: 40

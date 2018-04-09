@@ -109,6 +109,20 @@ def main():
                         default=argparse.SUPPRESS, type=float)
     parser.add_argument('--sampler_alpha_perc',
                         default=argparse.SUPPRESS, type=float)
+    parser.add_argument('--sampler_weight_to_count', default=argparse.SUPPRESS,
+                        help='1_over|log')
+    parser.add_argument('--sampler_max_count',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--sampler_start_epoch',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--g_update_interval',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--g_update_start',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--sampler_lr_update',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--sampler_lr_window',
+                        default=argparse.SUPPRESS, type=int)
     args = parser.parse_args()
 
     yaml_path = os.path.join('options/{}/{}'.format(args.dataset,
@@ -177,13 +191,32 @@ def main():
                               weight_decay=opt.weight_decay)
     optimizer.niters = 0
 
-    for epoch in range(opt.epochs):
-        adjust_learning_rate(optimizer, epoch, opt)
-        train(epoch, train_loader, model, optimizer, opt)
+    epoch_iters = len(train_loader.dataset)/opt.batch_size
+    count_nz = []
+    epoch = 0
+    count_lr_update = 0
+    # for epoch in range(opt.epochs):
+    while optimizer.niters < opt.epochs*epoch_iters:
+        if opt.sampler_lr_update:
+            count_nz += [int((train_loader.sampler.count == 0).sum())]
+            sw = opt.sampler_lr_window
+            cavg = sum(count_nz[-sw:])/sw
+            lavg = sum(count_nz[-sw/2:])/(sw/2)
+            if len(count_nz) > 10 and cavg == lavg:
+                if count_lr_update == 0:
+                    count_nz = []
+                    adjust_learning_rate_count(optimizer)
+                    count_lr_update += 1
+                else:
+                    break
+        else:
+            adjust_learning_rate(optimizer, optimizer.niters//epoch_iters, opt)
+        train(epoch, train_loader, model, optimizer, opt, test_loader)
+        epoch += 1
 
-        if opt.train_accuracy:
-            test(model, train_loader, opt, optimizer.niters, 'Train', 'T')
-        test(model, test_loader, opt, optimizer.niters)
+        # if opt.train_accuracy:
+        #     test(model, train_loader, opt, optimizer.niters, 'Train', 'T')
+        # test(model, test_loader, opt, optimizer.niters)
 
     if opt.optim == 'dmom':
         if opt.log_image:
@@ -205,23 +238,27 @@ def main():
         }, opt.logger_name+'/model.pth.tar')
 
 
-def train(epoch, train_loader, model, optimizer, opt):
+def train(epoch, train_loader, model, optimizer, opt, test_loader):
     batch_time = AverageMeter()
     optimizer.logger = LogCollector()
     optimizer.profiler = Profiler()
     model.train()
     end = time.time()
     # update sampler weights
-    if opt.optim == 'dmom' and opt.sampler:
+    if opt.sampler and epoch >= opt.sampler_start_epoch:
         if opt.sampler_weight == 'dmom':
             optimizer.weights = optimizer.data_momentum
         elif opt.sampler_weight == 'alpha':
             optimizer.weights = optimizer.alpha
         elif opt.sampler_weight == 'normg':
             optimizer.weights = optimizer.grad_norm
-        optimizer.weights += 1e-5
-        optimizer.weights /= optimizer.weights.sum()
-        train_loader.sampler.weights[:] = torch.Tensor(optimizer.weights)
+        # optimizer.weights += 1e-5
+        # optimizer.weights /= optimizer.weights.sum()
+        optimizer.weights = train_loader.sampler.update(optimizer.weights)
+        count = train_loader.sampler.count
+        count_nz = float((count == 0).sum())
+        optimizer.logger.update('touch_p', count_nz*100./len(count), 1)
+        optimizer.logger.update('touch', count_nz, 1)
     for batch_idx, (data, target, idx) in enumerate(train_loader):
         optimizer.profiler.start()
         if opt.cuda:
@@ -288,6 +325,12 @@ def train(epoch, train_loader, model, optimizer, opt):
             if np.isnan(float(loss)):
                 return
 
+        epoch_iters = len(train_loader.dataset)/opt.batch_size
+        if optimizer.niters % epoch_iters == 0:
+            if opt.train_accuracy:
+                test(model, train_loader, opt, optimizer.niters, 'Train', 'T')
+            test(model, test_loader, opt, optimizer.niters)
+
     if opt.optim == 'dmom':  # and epoch > 9:
         optimizer.logger = LogCollector()
         optimizer.log_perc()
@@ -299,6 +342,7 @@ def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
     model.eval()
     test_loss = 0
     correct = 0
+    test_loader.sampler.training = False
     for data, target, idx in test_loader:
         if opt.cuda:
             data, target = data.cuda(), target.cuda()
@@ -326,6 +370,7 @@ def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
                         100.*correct/len(test_loader.dataset), step=niters)
     tb_logger.log_value('%serror' % prefix,
                         100.*wrong/len(test_loader.dataset), step=niters)
+    test_loader.sampler.training = True
 
 
 def nonacc_grad(model, loss):
@@ -404,6 +449,19 @@ def adjust_learning_rate(optimizer, epoch, opt):
     lr = opt.lr * (0.1 ** (epoch // opt.lr_decay_epoch))
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
+
+
+def adjust_learning_rate_niters(optimizer, niters, opt, train_size):
+    """Sets the learning rate to the initial LR decayed by 10"""
+    lr = opt.lr * (0.1 ** (niters // (opt.lr_decay_epoch*train_size)))
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+
+
+def adjust_learning_rate_count(optimizer):
+    """Sets the learning rate to the initial LR decayed by 10"""
+    for param_group in optimizer.param_groups:
+        param_group['lr'] *= .1
 
 
 if __name__ == '__main__':

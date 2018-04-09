@@ -30,10 +30,11 @@ def get_mnist_loaders(opt, **kwargs):
                                 transforms.Normalize((0.1307,), (0.3081,))
                             ]))
     if opt.sampler:
-        weights = torch.ones(len(trainset)).double()
+        # weights = torch.ones(len(trainset)).double()
         train_loader = torch.utils.data.DataLoader(
             trainset, batch_size=opt.batch_size,
-            sampler=DmomWeightedRandomSampler(weights, len(trainset)),
+            # sampler=DmomWeightedRandomSampler(weights, len(trainset)),
+            sampler=DelayedSampler(len(trainset), opt),
             **kwargs)
     else:
         train_loader = torch.utils.data.DataLoader(
@@ -93,6 +94,44 @@ class DmomWeightedRandomSampler(Sampler):
         return self.num_samples
 
 
+class DelayedSampler(Sampler):
+    def __init__(self, num_samples, opt):
+        self.count = np.zeros(num_samples, dtype=np.int32)
+        self.indices = range(num_samples)
+        self.num_samples = num_samples
+        self.training = True
+        self.opt = opt
+
+    def __iter__(self):
+        if self.training:
+            self.indices = np.where(self.count == 0)[0]
+            return (self.indices[i] for i in torch.randperm(len(self.indices)))
+        return iter(torch.randperm(self.num_samples))
+
+    def update(self, weights):
+        if self.opt.sampler_weight_to_count == '1_over':
+            wmx = 1./self.opt.sampler_max_count
+            count = 1./np.maximum(wmx, weights)
+            count = count-np.min(count)  # min should be 0
+            # weights = 1./(count+1)
+            weights = count+1
+        elif self.opt.sampler_weight_to_count == 'log':
+            wmx = np.exp(-self.opt.sampler_max_count)
+            count = -np.log(np.maximum(wmx, weights))
+            count = count-np.min(count)  # min should be 0
+            # weights = np.exp(-count)
+            weights = count+1
+        self.count -= 1
+        self.count[self.indices] = count[self.indices]
+        self.count = np.maximum(0, self.count)
+        return weights
+
+    def __len__(self):
+        if self.training:
+            return len(self.indices)
+        return self.num_samples
+
+
 def random_orthogonal_matrix(gain, shape):
     if len(shape) < 2:
         raise RuntimeError("Only shapes of length 2 or more are "
@@ -144,10 +183,11 @@ def get_logreg_loaders(opt, **kwargs):
                 C), opt.logger_name+'/data.pth.tar')
 
     if opt.sampler:
-        weights = torch.ones(len(trainset)).double()
+        # weights = torch.ones(len(trainset)).double()
         train_loader = torch.utils.data.DataLoader(
             trainset, batch_size=opt.batch_size,
-            sampler=DmomWeightedRandomSampler(weights, len(trainset)),
+            # sampler=DmomWeightedRandomSampler(weights, len(trainset)),
+            sampler=DelayedSampler(len(trainset), opt),
             **kwargs)
     else:
         train_loader = torch.utils.data.DataLoader(
