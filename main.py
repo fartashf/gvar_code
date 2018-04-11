@@ -273,7 +273,7 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader):
             optimizer.profiler.toc('forward')
             grads = nonacc_grad(model, loss)
             optimizer.profiler.toc('backward')
-            optimizer.step(idx, grads, loss)
+            optimizer.step(idx, grads, loss, target)
         elif opt.optim == 'ssgd':
             loss = F.nll_loss(output, target, reduce=False)
             grads = nonacc_grad(model, loss)

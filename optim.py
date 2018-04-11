@@ -27,9 +27,10 @@ class DMomSGD(optim.Optimizer):
         self.opt = opt
         self.weights = np.ones((train_size,))
 
-    def step(self, idx, grads_group, loss, **kwargs):
+    def step(self, idx, grads_group, loss, target, **kwargs):
         # import numpy as np
         # print(np.histogram(self.data_momentum.cpu().numpy()))
+        target = target.data.cpu().numpy().copy()
         data_mom = self.data_momentum
         numz = 0
         bigg = 0
@@ -148,6 +149,17 @@ class DMomSGD(optim.Optimizer):
                 alpha_val = np.exp(alpha_val/self.opt.norm_temp)
                 salpha = np.exp(salpha)
                 alpha_val /= salpha.sum()
+            if self.opt.alpha_norm == 'sum_class':
+                for i in range(target.max()+1):
+                    cl_idx = np.where(target == i)[0]
+                    alpha_val[cl_idx] /= alpha_val[cl_idx].sum()
+            elif self.opt.alpha_norm == 'exp_class':
+                for i in range(target.max()+1):
+                    cl_idx = np.where(target == i)[0]
+                    alpha_val[cl_idx] -= alpha_val[cl_idx].max()
+                    alpha_val[cl_idx] = np.exp(
+                        alpha_val[cl_idx]/self.opt.norm_temp)
+                    alpha_val[cl_idx] /= alpha_val[cl_idx].sum()
             elif self.opt.alpha_norm == 'none':
                 pass
             self.profiler.toc('norm')
@@ -160,7 +172,10 @@ class DMomSGD(optim.Optimizer):
                     np.percentile(alpha_val, self.opt.sampler_alpha_perc))
             ws = self.weights[idx].sum()
             for i in range(len(idx)):
-                if alpha_val[i] < sampler_alpha_th:
+                sa_perc = self.opt.sampler_alpha_perc
+                if (alpha_val[i] < sampler_alpha_th
+                        or (sa_perc > 0 and
+                            i-nz_sample >= (100.-sa_perc)*len(idx)/100.)):
                     nz_sample += 1
                     continue
                 for g, ga, gaw in zip(grads[i], grad_acc, grad_acc_w):
@@ -174,7 +189,10 @@ class DMomSGD(optim.Optimizer):
                         ga += g.data/len(idx)
             # grad variance
             for i in range(len(idx)):
-                if alpha_val[i] < sampler_alpha_th:
+                sa_perc = self.opt.sampler_alpha_perc
+                if (alpha_val[i] < sampler_alpha_th
+                        or (sa_perc > 0 and
+                            i-nz_sample >= (100.-sa_perc)*len(idx)/100.)):
                     continue
                 for g, ga, gaw, gvw, gv in zip(grads[i], grad_acc, grad_acc_w,
                                                grad_var_w, grad_var):
@@ -184,8 +202,14 @@ class DMomSGD(optim.Optimizer):
                     else:
                         gvw += (g.data*alpha_val[i]-gaw).pow(2)
                         gv += (g.data-gaw).pow(2)
-            gvw_sum = sum([gvw_.sum()/len(idx) for gvw_ in grad_var_w])
-            gv_sum = sum([gv_.sum()/len(idx) for gv_ in grad_var])
+            gvw_sum = sum([gvw_.sum() for gvw_ in grad_var_w])
+            gv_sum = sum([gv_.sum() for gv_ in grad_var])
+            if self.opt.sampler:
+                gvw_sum /= len(idx)
+                gv_sum /= len(idx)-nz_sample
+            else:
+                gv_sum /= len(idx)
+                gvw_sum /= len(idx)-nz_sample
             param_num = sum([gvw_.numel() for gvw_ in grad_var_w])
             # from "Backpropagation through the Void":
             # the sample log-variance is reported

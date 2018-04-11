@@ -168,7 +168,8 @@ class IndexdLinearData(data.Dataset):
 
 
 def get_logreg_loaders(opt, **kwargs):
-    np.random.seed(1234)
+    # np.random.seed(1234)
+    np.random.seed(2222)
     # print("Create W")
     C = opt.c_const*random_orthogonal_matrix(1.0, (opt.dim, opt.num_class))
     D = opt.d_const*random_orthogonal_matrix(1.0,

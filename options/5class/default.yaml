@@ -37,4 +37,5 @@ sampler_max_count: 20
 sampler_start_epoch: 5
 g_update_start: 0
 g_update_interval: 1
+sampler_lr_update: False
 sampler_lr_window: 40

@@ -20,7 +20,7 @@ num_train_data: 640
 num_test_data: 10000
 dim: 2
 num_class: 2
-c_const: 10
+c_const: 6
 d_const: 1
 sampler: False
 train_accuracy: True
@@ -37,4 +37,5 @@ sampler_max_count: 20
 sampler_start_epoch: 5
 g_update_start: 0
 g_update_interval: 1
+sampler_lr_update: False
 sampler_lr_window: 40
