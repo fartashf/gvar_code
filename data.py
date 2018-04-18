@@ -96,11 +96,13 @@ class DmomWeightedRandomSampler(Sampler):
 
 class DelayedSampler(Sampler):
     def __init__(self, num_samples, opt):
-        self.count = np.zeros(num_samples, dtype=np.int32)
+        self.count = np.zeros(num_samples)
         self.indices = range(num_samples)
         self.num_samples = num_samples
         self.training = True
         self.opt = opt
+        self.weights = np.zeros(num_samples)
+        self.visits = np.zeros(num_samples)
 
     def __iter__(self):
         if self.training:
@@ -108,23 +110,45 @@ class DelayedSampler(Sampler):
             return (self.indices[i] for i in torch.randperm(len(self.indices)))
         return iter(torch.randperm(self.num_samples))
 
-    def update(self, weights):
+    def update(self, alpha, niters):
         if self.opt.sampler_weight_to_count == '1_over':
-            wmx = 1./self.opt.sampler_max_count
-            count = 1./np.maximum(wmx, weights)
-            count = count-np.min(count)  # min should be 0
+            amx = 1./self.opt.sampler_max_count
+            count = 1./np.maximum(amx, alpha)
+            # count = count-np.min(count)  # min should be 0
             # weights = 1./(count+1)
-            weights = count+1
+            # weights = count+1
         elif self.opt.sampler_weight_to_count == 'log':
-            wmx = np.exp(-self.opt.sampler_max_count)
-            count = -np.log(np.maximum(wmx, weights))
-            count = count-np.min(count)  # min should be 0
+            amx = np.exp(-self.opt.sampler_max_count)
+            count = -np.log(np.maximum(amx, alpha))
+            # count = count-np.min(count)  # min should be 0
             # weights = np.exp(-count)
-            weights = count+1
-        self.count -= 1
-        self.count[self.indices] = count[self.indices]
-        self.count = np.maximum(0, self.count)
-        return weights
+            # weights = count+1
+        elif self.opt.sampler_weight_to_count == 'c_times':
+            amx = self.opt.sampler_max_count
+            alpha = np.minimum(1, np.maximum(0, alpha))  # ensuring in [0,1]
+            count = amx*(1-alpha)
+        elif self.opt.sampler_weight_to_count == 'linear':
+            params = map(int, self.opt.sampler_linear_params.split(','))
+            perc_a, perc_b, delay_a, delay_b = params
+            epoch_iters = self.opt.epochs*self.num_samples/self.opt.batch_size
+            perc = (1.*niters/epoch_iters)*(perc_b-perc_a)+perc_a
+            delay = (1.*niters/epoch_iters)*(delay_b-delay_a)+delay_a
+            ids = np.argsort(alpha)[:int(self.num_samples*perc/100)]
+            count = np.zeros(self.num_samples)
+            count[ids] = int(delay)
+            print('Delay perc: %d delay: %d' % (perc, delay))
+        self.weights[self.indices] = 0
+        self.weights += 1
+        # self.count -= 1
+        # self.count[self.indices] = count[self.indices]
+        # self.count = np.maximum(0, self.count)
+        # count = count-np.min(count)  # min should be 0
+        # self.count = np.maximum(0, count)
+        self.count = np.around(count-np.min(count))  # min should be 0
+        while (self.count == 0).sum() < self.opt.batch_size:
+            self.count = np.maximum(0, self.count-1)
+        self.visits[np.where(self.count == 0)[0]] += 1
+        return self.weights
 
     def __len__(self):
         if self.training:

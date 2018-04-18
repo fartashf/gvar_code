@@ -11,7 +11,7 @@ class DMomSGD(optim.Optimizer):
                  low_theta=1e-5, high_theta=1e5, update_interval=1,
                  weight_decay=0):
         defaults = dict(lr=lr, momentum=momentum, dmom=dmom,
-                        weight_decay=weight_decay)
+                        weight_decay=weight_decay, wmomentum=opt.wmomentum)
         super(DMomSGD, self).__init__(params, defaults)
         self.data_momentum = np.zeros(train_size)
         self.grad_norm = np.ones((train_size,))
@@ -47,6 +47,7 @@ class DMomSGD(optim.Optimizer):
         dmom_val = np.zeros((len(idx),))
         fnorm_val = np.zeros((len(idx),))
         alpha_val = np.zeros((len(idx),))
+        gc_norm = np.zeros((len(idx),))
         for group, grads in zip(self.param_groups, grads_group):
             self.profiler.tic()
             param_state = [self.state[p] for p in group['params']]
@@ -55,6 +56,7 @@ class DMomSGD(optim.Optimizer):
             else:
                 buf = [p.data.view(-1) for p in group['params']]
             gg = torch.cat(buf)
+            # gg_norm = np.sqrt(gg.pow(2).sum())
             dmom = group['dmom']
             grad_acc = [torch.zeros_like(g.data).cuda() for g in grads[0]]
             grad_acc_w = [torch.zeros_like(g.data).cuda() for g in grads[0]]
@@ -63,6 +65,7 @@ class DMomSGD(optim.Optimizer):
             for i in range(len(idx)):
                 gf = [g.data.view(-1) for g in grads[i]]
                 gc = torch.cat(gf)
+                gc_norm[i] = np.sqrt(gc.pow(2).sum())
 
                 # current normg, dmom
                 normg = torch.pow(gc, 2).sum(dim=0, keepdim=True).sqrt(
@@ -161,7 +164,8 @@ class DMomSGD(optim.Optimizer):
                         alpha_val[cl_idx]/self.opt.norm_temp)
                     alpha_val[cl_idx] /= alpha_val[cl_idx].sum()
             elif self.opt.alpha_norm == 'none':
-                pass
+                # TODO: sum to one
+                alpha_val /= len(idx)
             self.profiler.toc('norm')
             self.alpha_normed[idx] = alpha_val
 
@@ -170,7 +174,9 @@ class DMomSGD(optim.Optimizer):
             if self.opt.sampler_alpha_perc > 0:
                 sampler_alpha_th = float(
                     np.percentile(alpha_val, self.opt.sampler_alpha_perc))
-            ws = self.weights[idx].sum()
+            # TODO: divsum
+            # ws = self.weights[idx].sum()
+            ws = len(idx)
             for i in range(len(idx)):
                 sa_perc = self.opt.sampler_alpha_perc
                 if (alpha_val[i] < sampler_alpha_th
@@ -185,7 +191,11 @@ class DMomSGD(optim.Optimizer):
                         gaw += g.data/len(idx)
                         ga += g.data*self.weights[idx[i]]/ws  # no /len(idx)
                     else:
-                        gaw += g.data*alpha_val[i]/len(idx)  # TODO: no /len
+                        # AAA = g.data*alpha_val[i]
+                        # if self.opt.divlen != 0:
+                        #     AAA /= len(idx)
+                        # gaw += AAA  # TODO: no /len
+                        gaw += g.data*alpha_val[i]
                         ga += g.data/len(idx)
             # grad variance
             for i in range(len(idx)):
@@ -198,10 +208,10 @@ class DMomSGD(optim.Optimizer):
                                                grad_var_w, grad_var):
                     if self.opt.sampler:
                         gvw += (g.data-gaw).pow(2)
-                        gv += (g.data*self.weights[idx[i]]/ws-gaw).pow(2)
+                        gv += (g.data*self.weights[idx[i]]/ws-ga).pow(2)
                     else:
                         gvw += (g.data*alpha_val[i]-gaw).pow(2)
-                        gv += (g.data-gaw).pow(2)
+                        gv += (g.data-ga).pow(2)
             gvw_sum = sum([gvw_.sum() for gvw_ in grad_var_w])
             gv_sum = sum([gv_.sum() for gv_ in grad_var])
             if self.opt.sampler:
@@ -216,10 +226,14 @@ class DMomSGD(optim.Optimizer):
             # averaged over all policy parameters
             gvw_mean = gvw_sum/param_num
             gv_mean = gv_sum/param_num
+            # import ipdb; ipdb.set_trace()
             self.profiler.toc('accum')
 
             weight_decay = group['weight_decay']
             momentum = group['momentum']
+            wmomentum = group['wmomentum']
+            gw_norm = 0
+            g_norm = 0
             for p, ga, gaw in zip(group['params'], grad_acc, grad_acc_w):
                 param_state = self.state[p]
                 # TODO: more numerical precision
@@ -228,23 +242,35 @@ class DMomSGD(optim.Optimizer):
                 d_p = ga
                 d_p_w = gaw
                 gw_g += (d_p-d_p_w).pow(2).sum()
+                gw_norm += d_p_w.pow(2).sum()
+                g_norm += d_p.pow(2).sum()
                 if weight_decay != 0:
                     d_p.add_(weight_decay, p.data)
                     d_p_w.add_(weight_decay, p.data)
                 if 'momentum_buffer' not in param_state:
                     buf = param_state['momentum_buffer'] = torch.zeros_like(
                         p.data)
+                    buf_w = param_state['wmomentum_buffer'] = torch.zeros_like(
+                        p.data)
                 else:
                     buf = param_state['momentum_buffer']
-                d_p_w = d_p_w.mul_(momentum).add_(buf)
-                if self.opt.wmomentum:
-                    d_p = d_p_w
+                    buf_w = param_state['wmomentum_buffer']
+                # d_p_w = d_p_w.mul_(momentum).add_(buf)  # TODO: why had this?
+                # if self.opt.wmomentum:
+                #     d_p = d_p_w
                 if (self.epoch < self.opt.g_update_start
                         or self.epoch % self.opt.g_update_interval == 0):
                     buf.mul_(momentum).add_(d_p)
+                buf_w.mul_(wmomentum).add_(d_p_w)
+                d_p_w = buf_w
+                d_p = buf
+                # d_p_w = d_p_w.add(momentum, buf_w)
                 # buf.mul_(momentum).add_(d_p)
                 # d_p = buf
-                p.data.add_(-group['lr'], d_p_w)
+                if self.opt.sampler:
+                    p.data.add_(-group['lr'], d_p)
+                else:
+                    p.data.add_(-group['lr'], d_p_w)
             self.profiler.toc('step')
 
         self.logger.update('normg_sub_normg', normg_ratio[:len(idx)], len(idx))
@@ -272,25 +298,36 @@ class DMomSGD(optim.Optimizer):
         self.logger.update('gw_variance_mean', gvw_mean, len(idx))
         self.logger.update('g_variance_mean', gv_mean, len(idx))
         self.logger.update('gw_diff_g', float(np.sqrt(gw_g)), len(idx))
+        self.logger.update('gw_norm', gw_norm, len(idx))
+        self.logger.update('g_norm', g_norm, len(idx))
 
     def log_perc(self, prefix=''):
-        self.logger.update(prefix+'dmom_h', self.data_momentum, 1, perc=True)
-        self.logger.update(prefix+'normg_h', self.grad_norm, 1, perc=True)
+        self.logger.update(prefix+'dmom_h', self.data_momentum, 1, hist=True,
+                           log_scale=True)
+        self.logger.update(prefix+'normg_h', self.grad_norm, 1, hist=True,
+                           log_scale=True)
         with np.errstate(divide='ignore', invalid='ignore'):
             dmvn = np.divide(self.data_momentum, self.grad_norm)
-        self.logger.update(prefix+'dmom_div_normg_h', dmvn, 1, perc=True)
+        self.logger.update(prefix+'dmom_div_normg_h', dmvn, 1, hist=True,
+                           log_scale=True)
         with np.errstate(divide='ignore', invalid='ignore'):
             avn = np.divide(self.alpha, self.grad_norm)
-        self.logger.update(prefix+'alpha_div_normg_h', avn, 1, perc=True)
+        self.logger.update(prefix+'alpha_div_normg_h', avn, 1, hist=True,
+                           log_scale=True)
         with np.errstate(divide='ignore', invalid='ignore'):
             nva = np.divide(self.grad_norm, self.alpha)
-        self.logger.update(prefix+'normg_div_alpha_h', avn, 1, perc=True)
-        self.logger.update(prefix+'avn_p_nva_h', avn+nva, 1, perc=True)
-        self.logger.update(prefix+'fnorm_h', self.fnorm, 1, perc=True)
-        self.logger.update(prefix+'alpha_h', self.alpha, 1, perc=True)
+        self.logger.update(prefix+'normg_div_alpha_h', avn, 1, hist=True,
+                           log_scale=True)
+        self.logger.update(prefix+'avn_p_nva_h', avn+nva, 1, hist=True,
+                           log_scale=True)
+        self.logger.update(prefix+'fnorm_h', self.fnorm, 1, hist=True,
+                           log_scale=True)
+        self.logger.update(prefix+'alpha_h', self.alpha, 1, hist=True,
+                           log_scale=True)
         self.logger.update(prefix+'alpha_normed_h',
-                           self.alpha_normed, 1, perc=True)
-        self.logger.update(prefix+'loss_h', self.loss, 1, perc=True)
+                           self.alpha_normed, 1, hist=True, log_scale=True)
+        self.logger.update(prefix+'loss_h', self.loss, 1, hist=True,
+                           log_scale=True)
         if self.alpha_normed_pre is not None:
             # iou = np.zeros(10);
             # for i in range(1, 10):
@@ -302,7 +339,7 @@ class DMomSGD(optim.Optimizer):
             sa = np.maximum(sc, sp)
             saf = sa[np.where(sa < sa.size/10)[0]]
             # TODO: non-log perc
-            self.logger.update(prefix+'big_alpha_vs_pre_h', saf, 1, perc=True)
+            self.logger.update(prefix+'big_alpha_vs_pre_h', saf, 1, hist=True)
         self.alpha_normed_pre = self.alpha_normed
 
 
@@ -359,8 +396,8 @@ class AddDMom(optim.SGD):
         self.alpha.data = self.alpha.data.clamp(min=0)
 
         self.logger.update('alpha', self.alpha.data.cpu().numpy(),
-                           1, perc=True)
-        self.logger.update('ploss', self.ploss, 1, perc=True)
+                           1, hist=True)
+        self.logger.update('ploss', self.ploss, 1, hist=True)
         self.logger.update('numz', numz, len(idx))
-        self.logger.update('ga', ga, 1, perc=True)
+        self.logger.update('ga', ga, 1, hist=True)
         return loss

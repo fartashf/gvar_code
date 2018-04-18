@@ -47,10 +47,12 @@ class TBXWrapper(object):
     def log_value(self, name, val, step):
         self.writer.add_scalar(name, val, step)
 
-    def log_hist(self, name, val, step):
+    def log_hist(self, name, val, step, log_scale=False):
         # https://github.com/lanpa/tensorboard-pytorch/issues/42
         # bins = hist_bins(val)
-        val = np.log(np.maximum(np.exp(-20), val))
+        if log_scale:
+            val = np.log(np.maximum(np.exp(-20), val))
+            name += '_log'
         self.writer.add_histogram(name, val, step, bins='doane')
 
     def log_img(self, name, val, step):
@@ -78,7 +80,7 @@ class AverageMeter(object):
     def __str__(self):
         if self.count == 0:
             return '%d' % self.val
-        return '%.4f (%.4f)' % (self.val, self.avg)
+        return '%.2E (%.2E)' % (self.val, self.avg)
 
     def tb_log(self, tb_logger, name, step=None):
         tb_logger.log_value(name, self.val, step=step)
@@ -162,8 +164,9 @@ class PercentileMeter(object):
 class HistogramMeter(object):
     """Computes and stores the average and current value"""
 
-    def __init__(self):
+    def __init__(self, log_scale=False):
         self.reset()
+        self.log_scale = log_scale
 
     def reset(self):
         self.nz = AverageMeter()
@@ -193,21 +196,22 @@ class HistogramMeter(object):
 
     def tb_log(self, tb_logger, name, step=None):
         self.nz.tb_log(tb_logger, name+'_nz', step=step)
-        tb_logger.log_hist(name, self.val, step=step)
+        tb_logger.log_hist(name, self.val, step=step, log_scale=self.log_scale)
 
 
 class LogCollector(object):
     """A collection of logging objects that can change from train to val"""
 
-    def __init__(self):
+    def __init__(self, opt):
         self.meters = OrderedDict()
+        self.log_keys = opt.log_keys.split(',')
 
-    def update(self, k, v, n=0, perc=False):
+    def update(self, k, v, n=0, hist=False, log_scale=False):
         if k not in self.meters:
             if type(v).__module__ == np.__name__:
-                if perc:
+                if hist:
                     # self.meters[k] = PercentileMeter()
-                    self.meters[k] = HistogramMeter()
+                    self.meters[k] = HistogramMeter(log_scale)
                 else:
                     self.meters[k] = StatisticMeter()
             else:
@@ -217,9 +221,10 @@ class LogCollector(object):
     def __str__(self):
         s = ''
         for i, (k, v) in enumerate(self.meters.iteritems()):
-            if i > 0:
-                s += '  '
-            s += k+': '+str(v)
+            if k in self.log_keys or 'all' in self.log_keys:
+                if i > 0:
+                    s += '  '
+                s += k+': '+str(v)
         return s
 
     def tb_log(self, tb_logger, prefix='', step=None):

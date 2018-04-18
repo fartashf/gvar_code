@@ -97,8 +97,8 @@ def main():
                         help='sum_norm|exp_norm|nonorm')
     parser.add_argument('--sampler_weight', default=argparse.SUPPRESS,
                         help='dmom|alpha|normg')
-    parser.add_argument('--wmomentum', action='store_true',
-                        default=argparse.SUPPRESS)
+    # parser.add_argument('--wmomentum', action='store_true',
+    #                     default=argparse.SUPPRESS)
     parser.add_argument('--log_profiler', action='store_true')
     parser.add_argument('--log_image', action='store_true',
                         default=argparse.SUPPRESS)
@@ -123,6 +123,12 @@ def main():
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--sampler_lr_window',
                         default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--divlen',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--wmomentum', type=float, default=argparse.SUPPRESS)
+    parser.add_argument('--log_keys',
+                        default='touch,touch_p,alpha_normed_h,count_h')
+    parser.add_argument('--sampler_linear_params', default='10,90,5,100')
     args = parser.parse_args()
 
     yaml_path = os.path.join('options/{}/{}'.format(args.dataset,
@@ -222,7 +228,7 @@ def main():
         if opt.log_image:
             vis_samples(optimizer.alpha, train_loader, opt.epochs)
 
-        optimizer.logger = LogCollector()
+        optimizer.logger = LogCollector(opt)
         optimizer.log_perc('last_')
         logging.info(str(optimizer.logger))
         optimizer.logger.tb_log(tb_logger, step=opt.epochs)
@@ -240,25 +246,40 @@ def main():
 
 def train(epoch, train_loader, model, optimizer, opt, test_loader):
     batch_time = AverageMeter()
-    optimizer.logger = LogCollector()
+    optimizer.logger = LogCollector(opt)
     optimizer.profiler = Profiler()
     model.train()
     end = time.time()
     # update sampler weights
     if opt.sampler and epoch >= opt.sampler_start_epoch:
         if opt.sampler_weight == 'dmom':
-            optimizer.weights = optimizer.data_momentum
+            alpha_val = optimizer.data_momentum
         elif opt.sampler_weight == 'alpha':
-            optimizer.weights = optimizer.alpha
+            alpha_val = optimizer.alpha
         elif opt.sampler_weight == 'normg':
-            optimizer.weights = optimizer.grad_norm
+            alpha_val = optimizer.grad_norm
+        elif opt.sampler_weight == 'alpha_normed':
+            alpha_val = optimizer.alpha_normed
+        elif opt.sampler_weight == 'alpha_batch_exp':
+            alpha_val = optimizer.alpha
+            alpha_val -= alpha_val.max()
+            alpha_val = np.exp(alpha_val/opt.norm_temp)
+            alpha_val /= alpha_val.sum()
+        elif opt.sampler_weight == 'alpha_batch_sum':
+            alpha_val = optimizer.alpha
+            alpha_val /= alpha_val.sum()
         # optimizer.weights += 1e-5
         # optimizer.weights /= optimizer.weights.sum()
-        optimizer.weights = train_loader.sampler.update(optimizer.weights)
+        optimizer.weights = train_loader.sampler.update(alpha_val,
+                                                        optimizer.niters)
         count = train_loader.sampler.count
         count_nz = float((count == 0).sum())
         optimizer.logger.update('touch_p', count_nz*100./len(count), 1)
         optimizer.logger.update('touch', count_nz, 1)
+        optimizer.logger.update('count_h', count, 1, hist=True)
+        optimizer.logger.update('weights_h', optimizer.weights, 1, hist=True)
+        optimizer.logger.update('visits_h',
+                                train_loader.sampler.visits, 1, hist=True)
     for batch_idx, (data, target, idx) in enumerate(train_loader):
         optimizer.profiler.start()
         if opt.cuda:
@@ -332,7 +353,7 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader):
             test(model, test_loader, opt, optimizer.niters)
 
     if opt.optim == 'dmom':  # and epoch > 9:
-        optimizer.logger = LogCollector()
+        optimizer.logger = LogCollector(opt)
         optimizer.log_perc()
         logging.info(str(optimizer.logger))
         optimizer.logger.tb_log(tb_logger, step=epoch)
