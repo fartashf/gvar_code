@@ -1,3 +1,4 @@
+# https://github.com/akamaster/pytorch_resnet_cifar10
 '''
 Properly implemented ResNet-s for CIFAR10 as described in paper [1].
 
@@ -57,7 +58,8 @@ class BasicBlock(nn.Module):
     def __init__(self, in_planes, planes, stride=1, option='A'):
         super(BasicBlock, self).__init__()
         self.conv1 = nn.Conv2d(
-            in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
+            in_planes, planes, kernel_size=3, stride=stride, padding=1,
+            bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3,
                                stride=1, padding=1, bias=False)
@@ -69,8 +71,10 @@ class BasicBlock(nn.Module):
                 """
                 For CIFAR10 ResNet paper uses option A.
                 """
-                self.shortcut = LambdaLayer(lambda x:
-                                            F.pad(x[:, :, ::2, ::2], (0, 0, 0, 0, planes // 4, planes // 4), "constant", 0))
+                self.shortcut = LambdaLayer(
+                    lambda x: F.pad(x[:, :, ::2, ::2],
+                                    (0, 0, 0, 0, planes // 4, planes // 4),
+                                    "constant", 0))
             elif option == 'B':
                 self.shortcut = nn.Sequential(
                     nn.Conv2d(in_planes, self.expansion * planes,
@@ -154,7 +158,41 @@ def test(net):
         total_params += np.prod(x.data.numpy().shape)
     print("Total number of params", total_params)
     print("Total layers", len(list(filter(
-        lambda p: p.requires_grad and len(p.data.size()) > 1, net.parameters()))))
+        lambda p: p.requires_grad and len(p.data.size()) > 1,
+        net.parameters()))))
+
+
+class Convnet(nn.Module):
+    def __init__(self, dropout=True):
+        """
+        2conv + 2fc + dropout, from adam's paper
+        similar to mnist's convnet
+        100 epochs lr update at 50
+        """
+        super(Convnet, self).__init__()
+        self.dropout = dropout
+        # self.input_drop = nn.Dropout2d(p=0.2)
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=5)
+        self.conv2 = nn.Conv2d(64, 128, kernel_size=5)
+        # self.conv2 = nn.Conv2d(64, 64, kernel_size=5)
+        # self.conv3 = nn.Conv2d(64, 128, kernel_size=5)
+        self.fc1 = nn.Linear(128*5*5, 1000)
+        self.fc2 = nn.Linear(1000, 10)
+
+    def forward(self, x):
+        if self.dropout:
+            x = F.dropout2d(x, training=self.training, p=0.2)
+        x = F.relu(F.max_pool2d(self.conv1(x), 2))
+        x = F.relu(F.max_pool2d(self.conv2(x), 2))
+        # x = F.relu(F.max_pool2d(self.conv3(x), 3))
+        x = x.view(-1, 128*5*5)
+        if self.dropout:
+            x = F.dropout(x, training=self.training)
+        x = F.relu(self.fc1(x))
+        if self.dropout:
+            x = F.dropout(x, training=self.training)
+        x = self.fc2(x)
+        return F.log_softmax(x, dim=-1)
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+data: none
 batch_size: 64
 test_batch_size: 1000
 epochs: 50
@@ -41,3 +42,4 @@ sampler_lr_update: False
 sampler_lr_window: 40
 divlen: 0
 wmomentum: 0.5
+sampler_repetition: False

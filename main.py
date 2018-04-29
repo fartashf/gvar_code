@@ -1,6 +1,7 @@
 from __future__ import print_function
 import argparse
 import torch
+import torch.nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.autograd import Variable
@@ -9,6 +10,7 @@ import torchvision.utils as vutils
 import logging
 from log_utils import AverageMeter, LogCollector, Profiler
 import time
+import shutil
 from data import get_loaders
 import yaml
 import os
@@ -16,8 +18,11 @@ import models
 import models.mnist
 import models.cifar10
 import models.logreg
+import models.imagenet
 # import nonacc_autograd
-from optim import DMomSGD, AddDMom
+from optim.dmom import DMomSGD
+from optim.add_dmom import AddDMom
+from optim.jvp import DMomSGDJVP
 from log_utils import TBXWrapper
 tb_logger = TBXWrapper()
 
@@ -29,6 +34,8 @@ def main():
     # options overwritting yaml options
     parser.add_argument('--path_opt', default='default.yaml',
                         type=str, help='path to a yaml options file')
+    parser.add_argument('--data', default=argparse.SUPPRESS,
+                        type=str, help='path to data')
     parser.add_argument('--logger_name', default='runs/runX')
     parser.add_argument('--dataset', default='mnist', help='mnist|cifar10')
 
@@ -102,7 +109,7 @@ def main():
     parser.add_argument('--log_profiler', action='store_true')
     parser.add_argument('--log_image', action='store_true',
                         default=argparse.SUPPRESS)
-    parser.add_argument('--lr_decay_epoch', type=int,
+    parser.add_argument('--lr_decay_epoch',
                         default=argparse.SUPPRESS)
     parser.add_argument('--norm_temp', default=argparse.SUPPRESS, type=float)
     parser.add_argument('--sampler_alpha_th',
@@ -129,6 +136,8 @@ def main():
     parser.add_argument('--log_keys',
                         default='touch,touch_p,alpha_normed_h,count_h')
     parser.add_argument('--sampler_linear_params', default='10,90,5,100')
+    parser.add_argument('--sampler_repetition',
+                        default=argparse.SUPPRESS, action='store_true')
     args = parser.parse_args()
 
     yaml_path = os.path.join('options/{}/{}'.format(args.dataset,
@@ -146,6 +155,8 @@ def main():
     logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
     tb_logger.configure(opt.logger_name, flush_secs=5)
 
+    logging.info(str(opt.d))
+
     torch.manual_seed(opt.seed)
     if opt.cuda:
         torch.cuda.manual_seed(opt.seed)
@@ -153,16 +164,22 @@ def main():
     train_loader, test_loader = get_loaders(opt)
 
     if opt.dataset == 'mnist':
-        if opt.arch == 'convnet':
+        if opt.arch == 'cnn':
             model = models.mnist.Convnet()
         elif opt.arch == 'mlp':
             model = models.mnist.MLP()
-        else:
-            model = models.mnist.MNISTNet()
+        # else:
+        #     model = models.mnist.MNISTNet()
     elif opt.dataset == 'cifar10':
-        model = torch.nn.DataParallel(
-            models.cifar10.__dict__[opt.arch]())
-        model.cuda()
+        # model = torch.nn.DataParallel(
+        #     models.cifar10.__dict__[opt.arch]())
+        # model.cuda()
+        if opt.arch == 'cnn':
+            model = models.cifar10.Convnet()
+        else:
+            model = models.cifar10.__dict__[opt.arch]()
+    elif opt.dataset == 'imagenet':
+        model = models.imagenet.Model(opt.arch)
     elif opt.dataset == 'logreg':
         model = models.logreg.Linear(opt.dim, opt.num_class)
     elif opt.dataset == '10class':
@@ -178,8 +195,14 @@ def main():
                             opt,
                             train_size=len(train_loader.dataset),
                             lr=opt.lr, momentum=opt.momentum,
-                            dmom=opt.dmom, update_interval=opt.dmom_interval,
+                            dmom=opt.dmom,
                             weight_decay=opt.weight_decay)
+    elif opt.optim == 'dmom_jvp':
+        optimizer = DMomSGDJVP(model.parameters(),
+                               opt,
+                               train_size=len(train_loader.dataset),
+                               lr=opt.lr, momentum=opt.momentum,
+                               weight_decay=opt.weight_decay)
     elif opt.optim == 'ssgd':
         # optimizer = SimpleSGD(model.parameters(),
         #                       lr=opt.lr, momentum=opt.momentum)
@@ -197,12 +220,14 @@ def main():
                               weight_decay=opt.weight_decay)
     optimizer.niters = 0
 
-    epoch_iters = len(train_loader.dataset)/opt.batch_size
+    epoch_iters = int(np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
     count_nz = []
     epoch = 0
     count_lr_update = 0
+    save_checkpoint = SaveCheckpoint()
     # for epoch in range(opt.epochs):
     while optimizer.niters < opt.epochs*epoch_iters:
+        optimizer.epoch = epoch
         if opt.sampler_lr_update:
             count_nz += [int((train_loader.sampler.count == 0).sum())]
             sw = opt.sampler_lr_window
@@ -215,16 +240,20 @@ def main():
                     count_lr_update += 1
                 else:
                     break
+        elif isinstance(opt.lr_decay_epoch, str):
+            adjust_learning_rate_multi(optimizer,
+                                       optimizer.niters//epoch_iters, opt)
         else:
             adjust_learning_rate(optimizer, optimizer.niters//epoch_iters, opt)
-        train(epoch, train_loader, model, optimizer, opt, test_loader)
+        train(epoch, train_loader, model, optimizer, opt, test_loader,
+              save_checkpoint)
         epoch += 1
 
         # if opt.train_accuracy:
         #     test(model, train_loader, opt, optimizer.niters, 'Train', 'T')
         # test(model, test_loader, opt, optimizer.niters)
 
-    if opt.optim == 'dmom':
+    if opt.optim == 'dmom' or opt.optim == 'dmom_jvp':
         if opt.log_image:
             vis_samples(optimizer.alpha, train_loader, opt.epochs)
 
@@ -233,18 +262,14 @@ def main():
         logging.info(str(optimizer.logger))
         optimizer.logger.tb_log(tb_logger, step=opt.epochs)
 
-        torch.save({
-            'opt': opt.d,
-            'model': model.state_dict(),
-            'fnorm': optimizer.fnorm,
-            'weights': optimizer.weights,
-            'alpha': optimizer.alpha,
-            'alpha_normed': optimizer.alpha_normed,
-            'normg': optimizer.grad_norm
-        }, opt.logger_name+'/model.pth.tar')
+
+def fix_bn(m):
+    if type(m) == torch.nn.BatchNorm2d or type(m) == torch.nn.BatchNorm1d:
+        m.eval()
 
 
-def train(epoch, train_loader, model, optimizer, opt, test_loader):
+def train(epoch, train_loader, model, optimizer, opt, test_loader,
+          save_checkpoint):
     batch_time = AverageMeter()
     optimizer.logger = LogCollector(opt)
     optimizer.profiler = Profiler()
@@ -252,35 +277,25 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader):
     end = time.time()
     # update sampler weights
     if opt.sampler and epoch >= opt.sampler_start_epoch:
-        if opt.sampler_weight == 'dmom':
-            alpha_val = optimizer.data_momentum
-        elif opt.sampler_weight == 'alpha':
-            alpha_val = optimizer.alpha
-        elif opt.sampler_weight == 'normg':
-            alpha_val = optimizer.grad_norm
-        elif opt.sampler_weight == 'alpha_normed':
-            alpha_val = optimizer.alpha_normed
-        elif opt.sampler_weight == 'alpha_batch_exp':
-            alpha_val = optimizer.alpha
-            alpha_val -= alpha_val.max()
-            alpha_val = np.exp(alpha_val/opt.norm_temp)
-            alpha_val /= alpha_val.sum()
-        elif opt.sampler_weight == 'alpha_batch_sum':
-            alpha_val = optimizer.alpha
-            alpha_val /= alpha_val.sum()
         # optimizer.weights += 1e-5
         # optimizer.weights /= optimizer.weights.sum()
-        optimizer.weights = train_loader.sampler.update(alpha_val,
-                                                        optimizer.niters)
+        optimizer.weights = train_loader.sampler.update(optimizer)
         count = train_loader.sampler.count
         count_nz = float((count == 0).sum())
-        optimizer.logger.update('touch_p', count_nz*100./len(count), 1)
-        optimizer.logger.update('touch', count_nz, 1)
-        optimizer.logger.update('count_h', count, 1, hist=True)
-        optimizer.logger.update('weights_h', optimizer.weights, 1, hist=True)
-        optimizer.logger.update('visits_h',
-                                train_loader.sampler.visits, 1, hist=True)
+        logger = LogCollector(opt)
+        logger.tb_log(tb_logger, step=epoch)
+        logger.update('touch_p', count_nz*100./len(count), 1)
+        logger.update('touch', count_nz, 1)
+        logger.update('count_h', count, 1, hist=True)
+        logger.update('weights_h', optimizer.weights, 1, hist=True)
+        logger.update('visits_h', train_loader.sampler.visits, 1, hist=True)
+        logging.info(str(logger))
+        logger.tb_log(tb_logger, step=epoch)
+    epoch_iters = int(np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
     for batch_idx, (data, target, idx) in enumerate(train_loader):
+        if optimizer.niters == opt.epochs*epoch_iters:
+            break
+        model.train()  # SERIOUSLY ??? AGAIN ???!!!!
         optimizer.profiler.start()
         if opt.cuda:
             data, target = data.cuda(), target.cuda()
@@ -288,13 +303,18 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader):
         optimizer.zero_grad()
         output = model(data)
         if opt.optim == 'dmom':
-            optimizer.epoch = epoch
             optimizer.profiler.tic()
             loss = F.nll_loss(output, target, reduce=False)
             optimizer.profiler.toc('forward')
             grads = nonacc_grad(model, loss)
             optimizer.profiler.toc('backward')
             optimizer.step(idx, grads, loss, target)
+        elif opt.optim == 'dmom_jvp':
+            optimizer.profiler.tic()
+            loss = F.nll_loss(output, target, reduce=False)
+            # TODO: /batch_size
+            optimizer.profiler.toc('forward')
+            optimizer.step(idx, loss, target)
         elif opt.optim == 'ssgd':
             loss = F.nll_loss(output, target, reduce=False)
             grads = nonacc_grad(model, loss)
@@ -346,13 +366,13 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader):
             if np.isnan(float(loss)):
                 return
 
-        epoch_iters = len(train_loader.dataset)/opt.batch_size
         if optimizer.niters % epoch_iters == 0:
             if opt.train_accuracy:
                 test(model, train_loader, opt, optimizer.niters, 'Train', 'T')
-            test(model, test_loader, opt, optimizer.niters)
+            prec1 = test(model, test_loader, opt, optimizer.niters)
+            save_checkpoint(model, float(prec1), opt, optimizer)
 
-    if opt.optim == 'dmom':  # and epoch > 9:
+    if opt.optim == 'dmom' or opt.optim == 'dmom_jvp':  # and epoch > 9:
         optimizer.logger = LogCollector(opt)
         optimizer.log_perc()
         logging.info(str(optimizer.logger))
@@ -373,17 +393,22 @@ def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
         test_loss += F.nll_loss(output, target, size_average=False).data[0]
         # get the index of the max log-probability
         pred = output.data.max(1, keepdim=True)[1]
+        # measure accuracy and record loss
+        # prec1, prec5 = accuracy(output, target, topk=(1, 5))
+        # tb_logger.log_value('%stop1' % prefix, float(prec1), data.size(0))
+        # tb_logger.log_value('%stop5' % prefix, float(prec5), data.size(0))
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
     wrong = len(test_loader.dataset)-correct
     test_loss /= len(test_loader.dataset)
+    accuracy = 100. * correct / len(test_loader.dataset)
+    error = 100. * wrong / len(test_loader.dataset)
     logging.info(
         '\n{0} set: Average loss: {1:.4f}'
         ', Accuracy: {2}/{3} ({4:.2f}%)'
         ', Error: {5}/{3} ({6:.2f}%)\n'.format(
             set_name, test_loss, correct, len(test_loader.dataset),
-            100. * correct / len(test_loader.dataset),
-            wrong, 100. * wrong / len(test_loader.dataset)))
+            accuracy, wrong, error))
     tb_logger.log_value('%sloss' % prefix, test_loss, step=niters)
     tb_logger.log_value('%scorrect' % prefix, correct, step=niters)
     tb_logger.log_value('%swrong' % prefix, wrong, step=niters)
@@ -392,6 +417,7 @@ def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
     tb_logger.log_value('%serror' % prefix,
                         100.*wrong/len(test_loader.dataset), step=niters)
     test_loader.sampler.training = True
+    return accuracy
 
 
 def nonacc_grad(model, loss):
@@ -472,6 +498,19 @@ def adjust_learning_rate(optimizer, epoch, opt):
         param_group['lr'] = lr
 
 
+def adjust_learning_rate_multi(optimizer, epoch, opt):
+    """Sets the learning rate to the initial LR decayed by 10"""
+    lr_decay_epoch = np.array(map(int, opt.lr_decay_epoch.split(',')))
+    el = (epoch // lr_decay_epoch)
+    ei = np.where(el > 0)[0]
+    if len(ei) == 0:
+        ei = [0]
+    lr = opt.lr * (0.1 ** el[ei[-1]])
+    print(lr)
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+
+
 def adjust_learning_rate_niters(optimizer, niters, opt, train_size):
     """Sets the learning rate to the initial LR decayed by 10"""
     lr = opt.lr * (0.1 ** (niters // (opt.lr_decay_epoch*train_size)))
@@ -483,6 +522,55 @@ def adjust_learning_rate_count(optimizer):
     """Sets the learning rate to the initial LR decayed by 10"""
     for param_group in optimizer.param_groups:
         param_group['lr'] *= .1
+
+
+class SaveCheckpoint(object):
+    def __init__(self):
+        # remember best prec@1 and save checkpoint
+        self.best_prec1 = 0
+
+    def __call__(self, model, prec1, opt, optimizer,
+                 filename='checkpoint.pth.tar'):
+        is_best = prec1 > self.best_prec1
+        self.best_prec1 = max(prec1, self.best_prec1)
+        state = {
+            'epoch': optimizer.epoch + 1,
+            'niters': optimizer.niters,
+            'opt': opt.d,
+            'model': model.state_dict(),
+            'best_prec1': self.best_prec1,
+        }
+        if opt.optim == 'dmom' or opt.optim == 'dmom_jvp':
+            state.update({
+                'weights': optimizer.weights,
+                'alpha': optimizer.alpha,
+                'alpha_normed': optimizer.alpha_normed,
+            })
+            if opt.optim == 'dmom':
+                state.update({
+                    'fnorm': optimizer.fnorm,
+                    'normg': optimizer.grad_norm
+                })
+
+        torch.save(state, filename)
+        if is_best:
+            shutil.copyfile(filename, 'model_best.pth.tar')
+
+
+def accuracy(output, target, topk=(1,)):
+    """Computes the precision@k for the specified values of k"""
+    maxk = max(topk)
+    batch_size = target.size(0)
+
+    _, pred = output.topk(maxk, 1, True, True)
+    pred = pred.t()
+    correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+    res = []
+    for k in topk:
+        correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
+        res.append(correct_k.mul_(100.0 / batch_size))
+    return res
 
 
 if __name__ == '__main__':

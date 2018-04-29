@@ -1,9 +1,9 @@
-data: ./data/mnist
+data: ./data/imagenet
 batch_size: 128
-test_batch_size: 1000
-epochs: 50
-lr: 0.01
-momentum: 0.5
+test_batch_size: 128
+epochs: 90
+lr: 0.1
+momentum: 0.9
 no_cuda: False
 seed: 1
 log_interval: 10
@@ -11,9 +11,9 @@ optim: sgd
 dmom: 0.5
 low_theta: 1.e-5
 high_theta: 1.e5
-arch: mlp
-workers: 2
-weight_decay: 5.e-4
+arch: resnet18
+workers: 4
+weight_decay: 1.e-4
 dmom_interval: 1
 dmom_temp: 0
 alpha: normg

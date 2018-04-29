@@ -2,14 +2,12 @@ from __future__ import print_function
 import torch
 import torch.optim as optim
 import numpy as np
-from torch.autograd import Variable
 
 
 class DMomSGD(optim.Optimizer):
     # http://pytorch.org/docs/master/_modules/torch/optim/sgd.html
     def __init__(self, params, opt, train_size=0, lr=0, momentum=0, dmom=0,
-                 low_theta=1e-5, high_theta=1e5, update_interval=1,
-                 weight_decay=0):
+                 weight_decay=0, update_interval=1):
         defaults = dict(lr=lr, momentum=momentum, dmom=dmom,
                         weight_decay=weight_decay, wmomentum=opt.wmomentum)
         super(DMomSGD, self).__init__(params, defaults)
@@ -21,11 +19,12 @@ class DMomSGD(optim.Optimizer):
         self.alpha_normed_pre = None
         self.loss = np.ones((train_size,))
         self.epoch = 0
-        self.low_theta = low_theta
-        self.high_theta = high_theta
+        self.low_theta = opt.low_theta
+        self.high_theta = opt.high_theta
         self.update_interval = update_interval
         self.opt = opt
         self.weights = np.ones((train_size,))
+        self.alpha_mom_bc = np.ones((train_size,))
 
     def step(self, idx, grads_group, loss, target, **kwargs):
         # import numpy as np
@@ -91,6 +90,8 @@ class DMomSGD(optim.Optimizer):
                     # alpha += torch.dot(gc, theta)
                     alpha = abs(alpha)
 
+                alpha0 = alpha
+
                 # alpha_mom
                 new_dmom = data_mom[idx[i]]*dmom + alpha*(1-dmom)
 
@@ -110,7 +111,8 @@ class DMomSGD(optim.Optimizer):
                     data_mom[idx[i]:idx[i]+1] = new_dmom
                     self.grad_norm[idx[i]:idx[i]+1] = normg
                     self.fnorm[idx[i]:idx[i]+1] = fnorm
-                    self.alpha[idx[i]:idx[i]+1] = alpha
+                    self.alpha[idx[i]:idx[i]+1] = alpha0
+                    self.alpha_mom_bc[idx[i]:idx[i]+1] = alpha
                     self.loss[idx[i]:idx[i]+1] = float(loss[i])
 
                 # dt = self.opt.dmom_theta
@@ -152,7 +154,7 @@ class DMomSGD(optim.Optimizer):
                 alpha_val = np.exp(alpha_val/self.opt.norm_temp)
                 salpha = np.exp(salpha)
                 alpha_val /= salpha.sum()
-            if self.opt.alpha_norm == 'sum_class':
+            elif self.opt.alpha_norm == 'sum_class':
                 for i in range(target.max()+1):
                     cl_idx = np.where(target == i)[0]
                     alpha_val[cl_idx] /= alpha_val[cl_idx].sum()
@@ -341,63 +343,3 @@ class DMomSGD(optim.Optimizer):
             # TODO: non-log perc
             self.logger.update(prefix+'big_alpha_vs_pre_h', saf, 1, hist=True)
         self.alpha_normed_pre = self.alpha_normed
-
-
-class SimpleSGD(optim.Optimizer):
-    def __init__(self, params, lr=0, momentum=0, **kwargs):
-        defaults = dict(lr=lr, momentum=momentum)
-        super(SimpleSGD, self).__init__(params, defaults)
-
-    def step(self, **kwargs):
-        for group in self.param_groups:
-            momentum = group['momentum']
-            for p in group['params']:
-                param_state = self.state[p]
-                d_p = p.grad.data
-                if 'momentum_buffer' not in param_state:
-                    buf = param_state['momentum_buffer'] = torch.zeros_like(
-                        p.data)
-                else:
-                    buf = param_state['momentum_buffer']
-                buf.mul_(momentum).add_(d_p)
-                d_p = buf
-                p.data.add_(-group['lr'], d_p)
-
-
-class AddDMom(optim.SGD):
-    def __init__(self, params, opt, train_size=0, dmom=0, *args, **kwargs):
-        self.alpha = Variable(torch.zeros(train_size).cuda(),
-                              requires_grad=True)
-        self.alpha.grad = Variable(torch.zeros(train_size).cuda())
-        # self.alpha = np.zeros(train_size)
-        self.ploss = np.zeros(train_size)
-        params = list(params)+[self.alpha]
-        super(AddDMom, self).__init__(params, *args, **kwargs)
-        self.dmom = dmom
-        self.epoch = 0
-        self.opt = opt
-
-    def step(self, idx, loss_i):
-        idx = idx.cuda()
-        # alpha_i = Variable(torch.Tensor(self.alpha[idx]).cuda(),
-        #                    requires_grad=True)
-        alpha_i = Variable(self.alpha[idx].data, requires_grad=True)
-        loss = (loss_i - self.dmom*alpha_i + 1).clamp(min=0)
-        numz = (loss_i+1 == alpha_i).data.cpu().numpy().sum()
-        loss += alpha_i
-        self.ploss[idx] = loss.data.cpu().numpy()
-        loss = loss.sum()/len(idx)
-
-        loss.backward()
-        ga = alpha_i.grad.data.cpu().numpy()
-        self.alpha.grad[idx] = alpha_i.grad
-        super(AddDMom, self).step()
-        # self.alpha[idx] = alpha_i.clamp(min=0).data.cpu().numpy()
-        self.alpha.data = self.alpha.data.clamp(min=0)
-
-        self.logger.update('alpha', self.alpha.data.cpu().numpy(),
-                           1, hist=True)
-        self.logger.update('ploss', self.ploss, 1, hist=True)
-        self.logger.update('numz', numz, len(idx))
-        self.logger.update('ga', ga, 1, hist=True)
-        return loss

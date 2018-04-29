@@ -9,13 +9,16 @@ class RunSingle(object):
         self.num = 0
 
     def __call__(self, args):
-        cmd = ['python main.py']
         logger_name = '%s/%d_' % (self.log_dir, self.num)
+        cmd = ['python main.py']
         self.num += 1
         for k, v in args:
             cmd += ['--{} {}'.format(k, v)]
             logger_name += '{}_{},'.format(k, v)
-        cmd += ['--logger_name '+logger_name.strip(',')]
+        dir_name = logger_name.strip(',')
+        cmd += ['--logger_name "$dir_name"']
+        cmd += ['> "$dir_name/log" 2>&1']
+        cmd = ['dir_name="%s"; mkdir -p "$dir_name" && ' % dir_name] + cmd
         return ' '.join(cmd)
 
 
@@ -293,60 +296,204 @@ if __name__ == '__main__':
     #                       ('alpha_norm', ['exp', 'sum', 'none']),
     #                       ])]
     # sampler
-    dataset = 'mnist'
+    # dataset = 'mnist'
+    # args += [OrderedDict([('dataset', [dataset]),
+    #                       ('optim', ['sgd']),
+    #                       ('lr', [0.01]),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       ])]
+    # args += [OrderedDict([('dataset', [dataset]),
+    #                       ('optim', ['dmom']),
+    #                       ('lr', [0.01]),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       ('wmomentum', [0.9]),
+    #                       ('alpha', ['one']),
+    #                       ('alpha_norm', ['none']),
+    #                       ])]
+    # args += [OrderedDict([('dataset', [dataset]),
+    #                       ('optim', ['dmom']),
+    #                       ('lr', [0.01]),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       ('alpha', ['one']),
+    #                       ('alpha_norm', ['none']),
+    #                       ('sampler', [''])
+    #                       ])]
+    # args += [OrderedDict([('dataset', [dataset]),
+    #                       ('optim', ['dmom']),
+    #                       ('lr', [0.01]),
+    #                       ('momentum', [0.9]),
+    #                       ('alpha_norm', ['sum']),
+    #                       # ('alpha_norm', ['none']),
+    #                       ('sampler', ['']),
+    #                       ('alpha', ['ggbar_abs', 'normg', 'loss']),  #
+    #                       ('dmom', [0., 0.5, 0.9]),
+    #                       # ('wmomentum', [0., 0.5, 0.9]),
+    #                       # ('norm_temp', [10, 1., .1]),
+    #                       ('sampler_weight_to_count', ['linear']),
+    #                       # ('sampler_max_count', [20, 50]),
+    #                       # ('sampler_start_epoch', [1, 2]),
+    #                       ('sampler_linear_params',
+    #                        ['50,90,20,100', '50,99,20,100', '50,90,40,100']),
+    #                       ])]
+    # dataset = 'cifar10'
+    # log_dir = 'runs_%s_sampler' % dataset
+    # args += [OrderedDict([('dataset', [dataset]),
+    #                       ('optim', ['sgd']),
+    #                       ('lr', [0.01]),
+    #                       ('momentum', [0.9]),
+    #                       ])]
+    # args += [OrderedDict([('dataset', [dataset]),
+    #                       ('optim', ['dmom']),
+    #                       ('lr', [0.01]),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       ('wmomentum', [0.9]),
+    #                       ('alpha', ['one']),
+    #                       ('alpha_norm', ['none']),
+    #                       ])]
+    # args += [OrderedDict([('dataset', [dataset]),
+    #                       ('optim', ['dmom']),
+    #                       ('lr', [0.01]),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       ('alpha', ['one']),
+    #                       ('alpha_norm', ['none']),
+    #                       ('sampler', [''])
+    #                       ])]
+    # args += [OrderedDict([('dataset', [dataset]),
+    #                       ('optim', ['dmom']),
+    #                       ('lr', [0.01]),
+    #                       ('momentum', [0.9]),
+    #                       ('alpha_norm', ['sum']),
+    #                       # ('alpha_norm', ['none']),
+    #                       ('sampler', ['']),
+    #                       ('sampler_linear_params',
+    #                        ['20,70,20,100', '20,70,40,100']),
+    #                       ('alpha', ['ggbar_abs', 'normg', 'loss']),  #
+    #                       ('dmom', [0., 0.5, 0.9]),
+    #                       # ('wmomentum', [0., 0.5, 0.9]),
+    #                       # ('norm_temp', [10, 1., .1]),
+    #                       ('sampler_weight_to_count', ['linear']),
+    #                       # ('sampler_max_count', [20, 50]),
+    #                       # ('sampler_start_epoch', [1, 2]),
+    #                       ])]
+    # dataset = 'cifar10'
+    # log_dir = 'runs_%s_jvp' % dataset
+    # args += [OrderedDict([('dataset', [dataset]),
+    #                       ('optim', ['sgd']),
+    #                       ('lr', [0.01]),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       ])]
+    # args += [OrderedDict([('dataset', [dataset]),
+    #                       ('optim', ['dmom_jvp']),
+    #                       ('lr', [0.01]),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       ('wmomentum', [0.9]),
+    #                       ('alpha', ['one']),
+    #                       ('alpha_norm', ['none']),
+    #                       ])]
+    # args += [OrderedDict([('dataset', [dataset]),
+    #                       ('optim', ['dmom_jvp']),
+    #                       ('lr', [0.01]),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       ('alpha', ['one']),
+    #                       ('alpha_norm', ['none']),
+    #                       ('sampler', [''])
+    #                       ])]
+    # args += [OrderedDict([('dataset', [dataset]),
+    #                       ('optim', ['dmom_jvp']),
+    #                       ('seed', [1, 2]),
+    #                       ('lr', [0.01]),
+    #                       ('momentum', [0.9]),
+    #                       ('alpha_norm', ['sum']),
+    #                       ('sampler', ['']),
+    #                       ('alpha', ['one']),
+    #                       ('sampler_weight_to_count', ['linear']),
+    #                       ('sampler_linear_params', ['20,70,20,100']),
+    #                       ])]
+    # args += [OrderedDict([('dataset', [dataset]),
+    #                       ('optim', ['dmom_jvp']),
+    #                       ('seed', [1, 2]),
+    #                       ('lr', [0.01]),
+    #                       ('momentum', [0.9]),
+    #                       ('alpha_norm', ['sum']),
+    #                       ('sampler', ['']),
+    #                       ('alpha', [  # 'loss',
+    #                                  'ggbar_abs', 'loss', 'gFigbar_abs',
+    #                                  'lgg', 'gtheta_abs',
+    #                                  ]),
+    #                       # ('alpha', ['gFgbar_abs', 'gFigbar_abs']),
+    #                       ('dmom', [0., 0.5, 0.9]),
+    #                       ('sampler_weight_to_count', ['linear']),
+    #                       ('sampler_linear_params',
+    #                        ['20,70,20,100']),
+    #                       ])]
+    # njobs = [3] * 8
+    dataset = 'cifar10'
+    log_dir = 'runs_%s_resnet' % dataset
+    # args += [OrderedDict([('dataset', [dataset]),
+    #                       ('arch', ['resnet32']),
+    #                       ('optim', ['sgd']),
+    #                       ('epochs', [200]),
+    #                       ('lr', [0.1]),
+    #                       ('weight_decay', [1e-4]),
+    #                       ('lr_decay_epoch', ['100,150']),
+    #                       ('dmom', [0.]),
+    #                       ('momentum', [0.9]),
+    #                       ])]
     args += [OrderedDict([('dataset', [dataset]),
-                          ('optim', ['sgd']),
-                          ('lr', [0.01]),
-                          ('dmom', [0.]),
-                          ('momentum', [0.9]),
-                          ])]
-    args += [OrderedDict([('dataset', [dataset]),
-                          ('optim', ['dmom']),
-                          ('lr', [0.01]),
-                          ('dmom', [0.]),
-                          ('momentum', [0.9]),
-                          ('wmomentum', [0.9]),
-                          ('alpha', ['one']),
-                          ('alpha_norm', ['none']),
-                          ])]
-    args += [OrderedDict([('dataset', [dataset]),
-                          ('optim', ['dmom']),
-                          ('lr', [0.01]),
-                          ('dmom', [0.]),
-                          ('momentum', [0.9]),
-                          ('alpha', ['one']),
-                          ('alpha_norm', ['none']),
-                          ('sampler', [''])
-                          ])]
-    args += [OrderedDict([('dataset', [dataset]),
-                          ('optim', ['dmom']),
-                          ('lr', [0.01]),
+                          ('arch', ['resnet32']),
+                          ('optim', ['dmom_jvp']),
+                          ('seed', [1, 2]),
+                          ('epochs', [200]),
+                          ('lr', [0.1]),
+                          ('weight_decay', [1e-4]),
+                          ('lr_decay_epoch', ['100,150']),
                           ('momentum', [0.9]),
                           ('alpha_norm', ['sum']),
-                          # ('alpha_norm', ['none']),
                           ('sampler', ['']),
-                          ('alpha', ['ggbar_abs', 'normg', 'loss']),  #
-                          ('dmom', [0., 0.5, 0.9]),
-                          # ('wmomentum', [0., 0.5, 0.9]),
-                          # ('norm_temp', [10, 1., .1]),
+                          ('alpha', ['one']),
                           ('sampler_weight_to_count', ['linear']),
-                          # ('sampler_max_count', [20, 50]),
-                          # ('sampler_start_epoch', [1, 2]),
-                          ('sampler_linear_params',
-                           ['50,90,20,100', '50,99,20,100', '50,90,40,100']),
+                          ('sampler_linear_params', ['20,70,50,200']),
+                          ('sampler_repetition', ['']),
                           ])]
-    log_dir = 'runs_%s_sampler' % dataset
-    njobs = 3
+    args += [OrderedDict([('dataset', [dataset]),
+                          ('arch', ['resnet32']),
+                          ('optim', ['dmom_jvp']),
+                          ('seed', [1, 2]),
+                          ('epochs', [200]),
+                          ('lr', [0.1]),
+                          ('weight_decay', [1e-4]),
+                          ('lr_decay_epoch', ['100,150']),
+                          ('momentum', [0.9]),
+                          ('alpha_norm', ['sum']),
+                          ('sampler', ['']),
+                          ('alpha', ['loss']),
+                          ('dmom', [0., 0.5, 0.9]),
+                          ('sampler_weight_to_count', ['linear']),
+                          ('sampler_linear_params', ['20,70,50,200']),
+                          ('sampler_repetition', ['']),
+                          ])]
+    njobs = [1] * 8
 
     jobs_0 = ['bolt2_gpu0', 'bolt2_gpu1', 'bolt2_gpu2', 'bolt2_gpu3',
               'bolt1_gpu0', 'bolt1_gpu1', 'bolt1_gpu2', 'bolt1_gpu3',
               ]  # 'bolt0_gpu0', 'bolt0_gpu1', 'bolt0_gpu2']  # , 'bolt0_gpu3']
+    # njobs = [2, 2, 2, 2,
+    #          1, 1, 1, 1]
     jobs = []
-    for i in range(njobs):
-        jobs += ['%s_job%d' % (s, i) for s in jobs_0]
+    for s, n in zip(jobs_0, njobs):
+        jobs += ['%s_job%d' % (s, i) for i in range(n)]
+        # jobs += ['%s_job%d' % (s, i) for s in jobs_0]
 
     run_single = RunSingle(log_dir)
-    # run_single.num = 58
+    run_single.num = 9
 
     cmds = run_multi(run_single, args)
     print(len(cmds))
