@@ -116,7 +116,7 @@ def main():
                         default=argparse.SUPPRESS, type=float)
     parser.add_argument('--sampler_alpha_perc',
                         default=argparse.SUPPRESS, type=float)
-    parser.add_argument('--sampler_weight_to_count', default=argparse.SUPPRESS,
+    parser.add_argument('--sampler_w2c', default=argparse.SUPPRESS,
                         help='1_over|log')
     parser.add_argument('--sampler_max_count',
                         default=argparse.SUPPRESS, type=int)
@@ -135,9 +135,19 @@ def main():
     parser.add_argument('--wmomentum', type=float, default=argparse.SUPPRESS)
     parser.add_argument('--log_keys',
                         default='touch,touch_p,alpha_normed_h,count_h')
-    parser.add_argument('--sampler_linear_params', default='10,90,5,100')
+    parser.add_argument('--sampler_params', default='10,90,5,100')
     parser.add_argument('--sampler_repetition',
                         default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--exp_lr',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--corrupt_perc',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--log_nex',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--lr_scale',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--sampler_maxw',
+                        default=argparse.SUPPRESS, type=int)
     args = parser.parse_args()
 
     yaml_path = os.path.join('options/{}/{}'.format(args.dataset,
@@ -150,10 +160,13 @@ def main():
         opt[k] = v
     opt = DictWrapper(opt)
 
+    if opt.lr_scale:
+        opt.lr = opt.lr * opt.batch_size/128.
+
     opt.cuda = not opt.no_cuda and torch.cuda.is_available()
 
     logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
-    tb_logger.configure(opt.logger_name, flush_secs=5)
+    tb_logger.configure(opt.logger_name, flush_secs=5, opt=opt)
 
     logging.info(str(opt.d))
 
@@ -170,7 +183,7 @@ def main():
             model = models.mnist.MLP()
         # else:
         #     model = models.mnist.MNISTNet()
-    elif opt.dataset == 'cifar10':
+    elif opt.dataset == 'cifar10' or opt.dataset == 'svhn':
         # model = torch.nn.DataParallel(
         #     models.cifar10.__dict__[opt.arch]())
         # model.cuda()
@@ -178,6 +191,7 @@ def main():
             model = models.cifar10.Convnet()
         else:
             model = models.cifar10.__dict__[opt.arch]()
+        model = torch.nn.DataParallel(model)
     elif opt.dataset == 'imagenet':
         model = models.imagenet.Model(opt.arch)
     elif opt.dataset == 'logreg':
@@ -245,8 +259,10 @@ def main():
                                        optimizer.niters//epoch_iters, opt)
         else:
             adjust_learning_rate(optimizer, optimizer.niters//epoch_iters, opt)
-        train(epoch, train_loader, model, optimizer, opt, test_loader,
-              save_checkpoint)
+        ecode = train(epoch, train_loader, model, optimizer, opt, test_loader,
+                      save_checkpoint)
+        if ecode == -1:
+            break
         epoch += 1
 
         # if opt.train_accuracy:
@@ -260,7 +276,7 @@ def main():
         optimizer.logger = LogCollector(opt)
         optimizer.log_perc('last_')
         logging.info(str(optimizer.logger))
-        optimizer.logger.tb_log(tb_logger, step=opt.epochs)
+        optimizer.logger.tb_log(tb_logger, step=optimizer.niters)
 
 
 def fix_bn(m):
@@ -283,14 +299,15 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
         count = train_loader.sampler.count
         count_nz = float((count == 0).sum())
         logger = LogCollector(opt)
-        logger.tb_log(tb_logger, step=epoch)
+        niters = optimizer.niters
+        logger.tb_log(tb_logger, step=niters)
         logger.update('touch_p', count_nz*100./len(count), 1)
         logger.update('touch', count_nz, 1)
         logger.update('count_h', count, 1, hist=True)
-        logger.update('weights_h', optimizer.weights, 1, hist=True)
+        logger.update('weights_h', train_loader.sampler.weights, 1, hist=True)
         logger.update('visits_h', train_loader.sampler.visits, 1, hist=True)
         logging.info(str(logger))
-        logger.tb_log(tb_logger, step=epoch)
+        logger.tb_log(tb_logger, step=niters)
     epoch_iters = int(np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
     for batch_idx, (data, target, idx) in enumerate(train_loader):
         if optimizer.niters == opt.epochs*epoch_iters:
@@ -340,6 +357,7 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
 
         batch_time.update(time.time() - end)
         end = time.time()
+        # optimizer.logger.update('bs', len(idx), 1)
         if batch_idx % opt.log_interval == 0:
             niters = optimizer.niters
             loss = loss.mean()
@@ -349,7 +367,7 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
                 'Time: {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                 '{opt_log}'.format(
                     epoch, batch_idx, len(train_loader),
-                    loss=loss.data[0],
+                    loss=loss.item(),
                     batch_time=batch_time,
                     opt_log=str(optimizer.logger)))
             if opt.log_profiler:
@@ -364,7 +382,7 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
             tb_logger.log_value('loss', loss, step=niters)
             optimizer.logger.tb_log(tb_logger, step=niters)
             if np.isnan(float(loss)):
-                return
+                return -1
 
         if optimizer.niters % epoch_iters == 0:
             if opt.train_accuracy:
@@ -376,7 +394,7 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
         optimizer.logger = LogCollector(opt)
         optimizer.log_perc()
         logging.info(str(optimizer.logger))
-        optimizer.logger.tb_log(tb_logger, step=epoch)
+        optimizer.logger.tb_log(tb_logger, step=niters)
 
 
 def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
@@ -384,39 +402,41 @@ def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
     test_loss = 0
     correct = 0
     test_loader.sampler.training = False
-    for data, target, idx in test_loader:
-        if opt.cuda:
-            data, target = data.cuda(), target.cuda()
-        data, target = Variable(data, volatile=True), Variable(target)
-        output = model(data)
-        # sum up batch loss
-        test_loss += F.nll_loss(output, target, size_average=False).data[0]
-        # get the index of the max log-probability
-        pred = output.data.max(1, keepdim=True)[1]
-        # measure accuracy and record loss
-        # prec1, prec5 = accuracy(output, target, topk=(1, 5))
-        # tb_logger.log_value('%stop1' % prefix, float(prec1), data.size(0))
-        # tb_logger.log_value('%stop5' % prefix, float(prec5), data.size(0))
-        correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+    with torch.no_grad():
+        for data, target, idx in test_loader:
+            if opt.cuda:
+                data, target = data.cuda(), target.cuda()
+            # data, target = Variable(data, volatile=True), Variable(target)
+            data, target = Variable(data), Variable(target)
+            output = model(data)
+            # sum up batch loss
+            test_loss += F.nll_loss(output, target, size_average=False).item()
+            # get the index of the max log-probability
+            pred = output.data.max(1, keepdim=True)[1]
+            # measure accuracy and record loss
+            # prec1, prec5 = accuracy(output, target, topk=(1, 5))
+            # tb_logger.log_value('%stop1' % prefix,
+            #                     float(prec1), data.size(0))
+            # tb_logger.log_value('%stop5' % prefix,
+            #                     float(prec5), data.size(0))
+            correct += pred.eq(target.data.view_as(pred)).cpu().sum().item()
 
-    wrong = len(test_loader.dataset)-correct
-    test_loss /= len(test_loader.dataset)
-    accuracy = 100. * correct / len(test_loader.dataset)
-    error = 100. * wrong / len(test_loader.dataset)
-    logging.info(
-        '\n{0} set: Average loss: {1:.4f}'
-        ', Accuracy: {2}/{3} ({4:.2f}%)'
-        ', Error: {5}/{3} ({6:.2f}%)\n'.format(
-            set_name, test_loss, correct, len(test_loader.dataset),
-            accuracy, wrong, error))
-    tb_logger.log_value('%sloss' % prefix, test_loss, step=niters)
-    tb_logger.log_value('%scorrect' % prefix, correct, step=niters)
-    tb_logger.log_value('%swrong' % prefix, wrong, step=niters)
-    tb_logger.log_value('%sacc' % prefix,
-                        100.*correct/len(test_loader.dataset), step=niters)
-    tb_logger.log_value('%serror' % prefix,
-                        100.*wrong/len(test_loader.dataset), step=niters)
-    test_loader.sampler.training = True
+        wrong = len(test_loader.dataset)-correct
+        test_loss /= len(test_loader.dataset)
+        accuracy = 100. * correct / len(test_loader.dataset)
+        error = 100. * wrong / len(test_loader.dataset)
+        logging.info(
+            '\n{0} set: Average loss: {1:.4f}'
+            ', Accuracy: {2}/{3} ({4:.2f}%)'
+            ', Error: {5}/{3} ({6:.2f}%)\n'.format(
+                set_name, test_loss, correct, len(test_loader.dataset),
+                accuracy, wrong, error))
+        tb_logger.log_value('%sloss' % prefix, test_loss, step=niters)
+        tb_logger.log_value('%scorrect' % prefix, correct, step=niters)
+        tb_logger.log_value('%swrong' % prefix, wrong, step=niters)
+        tb_logger.log_value('%sacc' % prefix, accuracy, step=niters)
+        tb_logger.log_value('%serror' % prefix, error, step=niters)
+        test_loader.sampler.training = True
     return accuracy
 
 
@@ -493,7 +513,12 @@ def vis_samples(alphas, train_loader, epoch):
 
 def adjust_learning_rate(optimizer, epoch, opt):
     """Sets the learning rate to the initial LR decayed by 10"""
-    lr = opt.lr * (0.1 ** (epoch // opt.lr_decay_epoch))
+    if opt.exp_lr:
+        last_epoch = float(epoch) / int(opt.lr_decay_epoch)
+    else:
+        last_epoch = epoch // int(opt.lr_decay_epoch)
+    lr = opt.lr * (0.1 ** last_epoch)
+    print(lr)
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
@@ -501,6 +526,8 @@ def adjust_learning_rate(optimizer, epoch, opt):
 def adjust_learning_rate_multi(optimizer, epoch, opt):
     """Sets the learning rate to the initial LR decayed by 10"""
     lr_decay_epoch = np.array(map(int, opt.lr_decay_epoch.split(',')))
+    if len(lr_decay_epoch) == 1:
+        return adjust_learning_rate(optimizer, epoch, opt)
     el = (epoch // lr_decay_epoch)
     ei = np.where(el > 0)[0]
     if len(ei) == 0:

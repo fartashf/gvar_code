@@ -33,7 +33,7 @@ lr_decay_epoch: 100
 norm_temp: 1
 sampler_alpha_th: 0
 sampler_alpha_perc: 0
-sampler_weight_to_count: 1_over
+sampler_w2c: linear
 sampler_max_count: 20
 sampler_start_epoch: 1
 g_update_start: 0
@@ -43,3 +43,8 @@ sampler_lr_window: 40
 divlen: 0
 wmomentum: 0.5
 sampler_repetition: False
+exp_lr: False
+corrupt_perc: 0
+log_nex: False
+lr_scale: False
+sampler_maxw: 10

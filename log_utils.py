@@ -26,7 +26,7 @@ def hist_bins(val):
 
 
 class TBWrapper(object):
-    def configure(self, logger_name, flush_secs=5):
+    def configure(self, logger_name, flush_secs=5, opt=None):
         tb_logger.configure(logger_name, flush_secs=flush_secs)
 
     def log_value(self, name, val, step):
@@ -40,12 +40,15 @@ class TBWrapper(object):
 
 
 class TBXWrapper(object):
-    def configure(self, logger_name, flush_secs=5):
+    def configure(self, logger_name, flush_secs=5, opt=None):
         self.writer = SummaryWriter(logger_name, flush_secs=flush_secs)
         self.logger_name = logger_name
+        self.opt = opt
 
     def log_value(self, name, val, step):
         self.writer.add_scalar(name, val, step)
+        if self.opt.log_nex:
+            self.writer.add_scalar(name+'_Nex', val, step*self.opt.batch_size)
 
     def log_hist(self, name, val, step, log_scale=False):
         # https://github.com/lanpa/tensorboard-pytorch/issues/42

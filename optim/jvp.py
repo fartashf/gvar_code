@@ -10,10 +10,11 @@ def loss_jvp(W, loss_ex, m):
     # for example i (d/dW loss_ex)^T m
     # W = model.parameters()
     v = Variable(torch.ones_like(loss_ex.data), requires_grad=True).cuda()
-    grad_params = torch.autograd.grad(loss_ex, W, v, retain_graph=True)
+    # create_graph=True vs retain_graph=True the difference fixed in v0.4.0
+    grad_params = torch.autograd.grad(loss_ex, W, v, create_graph=True)
     # toc = time.time()
     # m = [torch.ones_like(g) for g in grad_params]
-    jvp = torch.autograd.grad(grad_params, v, m, retain_graph=True)[0]
+    jvp = torch.autograd.grad(grad_params, v, m)[0]
     # print('%.2f' % (time.time()-toc))
     return jvp
 
@@ -80,12 +81,17 @@ class DMomSGDJVP(optim.Optimizer):
         loss.backward(weights)
         self.profiler.toc('backward')
 
-        self.step_sgd()
+        gv, gvn = self.step_sgd()
+        self.logger.update('grad_var', gv, len(idx))
+        self.logger.update('grad_var_n', gvn, len(idx))
         if 'F' in self.opt.alpha:
             self.compute_moments()
         self.profiler.toc('update')
 
     def step_sgd(self):
+        gv = 0
+        gn = 0
+        pn = 0
         for group in self.param_groups:
             weight_decay = group['weight_decay']
             momentum = group['momentum']
@@ -106,6 +112,9 @@ class DMomSGDJVP(optim.Optimizer):
                         buf.mul_(momentum).add_(d_p)
                     else:
                         buf = param_state['momentum_buffer']
+                        gv += (buf-d_p).pow(2).sum()
+                        gn += buf.pow(2).sum()
+                        pn += torch.numel(buf)
                         buf.mul_(momentum).add_(1 - dampening, d_p)
                     if nesterov:
                         d_p = d_p.add(momentum, buf)
@@ -113,6 +122,7 @@ class DMomSGDJVP(optim.Optimizer):
                         d_p = buf
 
                 p.data.add_(-group['lr'], d_p)
+        return gv/(pn + 1e-7), gv/(gn + 1e-7)
 
     def compute_alpha(self, loss):
         g_bar = self.get_gbar()

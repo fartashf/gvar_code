@@ -39,7 +39,10 @@ __all__ = ['ResNet', 'resnet20', 'resnet32',
 
 def _weights_init(m):
     if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
-        init.kaiming_normal(m.weight)
+        if hasattr(init, 'kaiming_normal_'):
+            init.kaiming_normal_(m.weight)
+        else:
+            init.kaiming_normal(m.weight)
 
 
 class LambdaLayer(nn.Module):
