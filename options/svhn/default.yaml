@@ -12,7 +12,7 @@ dmom: 0.5
 low_theta: 1.e-5
 high_theta: 1.e5
 arch: cnn
-workers: 4
+workers: 12
 weight_decay: 5.e-4
 dmom_interval: 1
 dmom_temp: 0
@@ -27,7 +27,7 @@ lr_decay_epoch: 80,120
 norm_temp: 1
 sampler_alpha_th: 0
 sampler_alpha_perc: 0
-sampler_w2c: linear
+sampler_w2c: linear2
 sampler_max_count: 20
 sampler_start_epoch: 1
 g_update_start: 0
@@ -42,4 +42,5 @@ num_class: 10
 corrupt_perc: 0
 log_nex: False
 lr_scale: False
-sampler_maxw: 10
+sampler_maxw: 1
+tblog_interval: 100

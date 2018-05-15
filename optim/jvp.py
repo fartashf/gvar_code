@@ -49,10 +49,12 @@ class DMomSGDJVP(optim.Optimizer):
         self.epoch = 0
         self.alpha_normed_pre = None
         self.g_bar = None
+        self.visits = np.zeros((train_size,))
 
     def step(self, idx, loss, target, **kwargs):
         self.loss[idx] = loss.data.cpu().numpy()
         target = target.data.cpu().numpy().copy()
+        self.visits[idx] += 1
 
         self.profiler.tic()
         alpha = self.compute_alpha(loss)
@@ -181,7 +183,7 @@ class DMomSGDJVP(optim.Optimizer):
         alpha_mom = self.alpha_mom[idx]*dmom + alpha*(1-dmom)
 
         # bias correction (after storing)
-        alpha_bc = alpha_mom/(1-dmom**(self.epoch+1))
+        alpha_bc = alpha_mom/(1-dmom**self.visits[idx])  # self.epochs+1
 
         return alpha_mom, alpha_bc
 

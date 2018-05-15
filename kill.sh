@@ -1,7 +1,8 @@
 #!/bin/bash
 machine=$1
+pattern=$2
 
 ssh bolt$machine \
     ps -ef \| grep \"jobs.*.sh\"  \| awk \'{print '$2'}\' \| xargs kill -9
 ssh bolt$machine \
-    ps -ef \| grep \"python main.py\"  \| awk \'{print '$2'}\' \| xargs kill -9
+    ps -ef \| grep \"python main.py\"  \| grep \"$pattern\" \| awk \'{print '$2'}\' \| xargs kill -9

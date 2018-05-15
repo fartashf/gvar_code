@@ -1,6 +1,6 @@
 from __future__ import print_function
 from collections import OrderedDict
-from itertools import product
+# from itertools import product
 
 
 class RunSingle(object):
@@ -9,7 +9,7 @@ class RunSingle(object):
         self.num = 0
 
     def __call__(self, args):
-        logger_name = '%s/%d_' % (self.log_dir, self.num)
+        logger_name = '%s/%02d_' % (self.log_dir, self.num)
         cmd = ['python main.py']
         self.num += 1
         for k, v in args:
@@ -22,19 +22,37 @@ class RunSingle(object):
         return ' '.join(cmd)
 
 
-def run_multi(run_single, args):
-    cmds = []
-    if isinstance(args, list):
+def deep_product(args, index=0, cur_args=[]):
+    if index >= len(args):
+        yield cur_args
+    elif isinstance(args, list):
         for a in args:
-            cmds += run_multi(run_single, a)
+            for a in deep_product(a):
+                yield a
     elif isinstance(args, dict):
+        # keys = args.keys()
+        # values = args.values()
+        # for v in product(*values):
         keys = args.keys()
         values = args.values()
-        for v in product(*values):
-            p = zip(keys, v)
-            cmds += [run_single(p)]
-    else:
-        cmds = run_single(args)
+        if isinstance(values[index], list):
+            for v in values[index]:
+                if not isinstance(v, tuple):
+                    next_args = cur_args + [(keys[index], v)]
+                    for a in deep_product(args, index+1, next_args):
+                        yield a
+                else:
+                    for dv in deep_product(v[1]):
+                        next_args = cur_args + [(keys[index], v[0])]
+                        next_args += dv
+                        for a in deep_product(args, index+1, next_args):
+                            yield a
+
+
+def run_multi(run_single, args):
+    cmds = []
+    for arg in deep_product(args):
+        cmds += [run_single(arg)]
     return cmds
 
 
@@ -778,8 +796,9 @@ def imagenet(args):
 
 
 def mnist_linear2(args):
+    # the drop in the old results at the beginning was due to maxw=10
     dataset = 'mnist'
-    log_dir = 'runs_%s_linear2' % dataset
+    log_dir = 'runs_%s_linear2_droplast' % dataset
     shared_args = [('dataset', [dataset]),
                    ('lr', [0.01]),
                    ('lr_decay_epoch', [50]),
@@ -787,29 +806,24 @@ def mnist_linear2(args):
                    ('exp_lr', ['']),
                    ]
     args += [OrderedDict([('optim', ['sgd'])] + shared_args)]
-    args += [OrderedDict([('optim', ['dmom_jvp']),
-                          ('seed', [1, 2]),
-                          ('alpha', ['one']),
-                          ('alpha_norm', ['sum']),
-                          ('sampler', ['']),
-                          ('sampler_params', ['50,90,2,200']),
-                          ('sampler_w2c', ['linear2']),
+    shared_args += [('optim', ['dmom_jvp']),
+                    ('seed', [1, 2]),
+                    ('alpha_norm', ['sum']),
+                    ('sampler', ['']),
+                    ('sampler_params', ['50,90,2,200']),
+                    ('sampler_w2c', ['linear2']),
+                    ]
+    args += [OrderedDict([('alpha', ['one']),
                           ]+shared_args)]
-    args += [OrderedDict([('optim', ['dmom_jvp']),
-                          ('seed', [1, 2]),
-                          ('alpha_norm', ['sum']),
-                          ('sampler', ['']),
-                          ('alpha', ['ggbar_abs', 'loss']),
+    args += [OrderedDict([('alpha', ['ggbar_abs', 'loss']),
                           ('dmom', [0., 0.5, 0.9]),
-                          ('sampler_params', ['50,90,2,200']),
-                          ('sampler_w1c', ['linear2']),
                           ]+shared_args)]
     return args, log_dir
 
 
 def cifar10_linear2(args):
     dataset = 'cifar10'
-    log_dir = 'runs_%s_linear2' % dataset
+    log_dir = 'runs_%s_linear2_droplast' % dataset
     shared_args = [('dataset', [dataset]),
                    ('arch', ['resnet32']),
                    ('momentum', [0.9]),
@@ -821,23 +835,18 @@ def cifar10_linear2(args):
                    ]
     args += [OrderedDict([('optim', ['sgd']),
                           ]+shared_args)]
-    args += [OrderedDict([('optim', ['dmom_jvp']),
-                          ('seed', [1, 2]),
-                          ('alpha_norm', ['sum']),
-                          ('sampler', ['']),
-                          ('alpha', ['one']),
-                          ('sampler_w2c', ['linear2']),
-                          ('sampler_params', ['20,90,2,200']),
+    shared_args += [('optim', ['dmom_jvp']),
+                    ('seed', [1, 2]),
+                    ('alpha_norm', ['sum']),
+                    ('sampler', ['']),
+                    ('sampler_w2c', ['linear2']),
+                    ('sampler_params', ['20,90,2,200']),
+                    ]
+    args += [OrderedDict([('alpha', ['one']),
                           ]+shared_args)]
-    args += [OrderedDict([('optim', ['dmom_jvp']),
-                          ('seed', [1, 2]),
-                          ('alpha_norm', ['sum']),
-                          ('sampler', ['']),
-                          ('alpha', ['loss']),
+    args += [OrderedDict([('alpha', ['loss']),
                           # ('dmom', [0., 0.5, 0.9]),
                           ('dmom', [0.9]),
-                          ('sampler_w2c', ['linear2']),
-                          ('sampler_params', ['20,90,2,200']),
                           ]+shared_args)]
     return args, log_dir
 
@@ -845,7 +854,7 @@ def cifar10_linear2(args):
 def svhn_linear2(args):
     # from wide-resnet https://arxiv.org/pdf/1605.07146.pdf
     dataset = 'svhn'
-    log_dir = 'runs_%s_linear2' % dataset
+    log_dir = 'runs_%s_linear2_droplast' % dataset
     shared_args = [('dataset', [dataset]),
                    ('arch', ['resnet32']),
                    ('epochs', [160]),
@@ -856,24 +865,18 @@ def svhn_linear2(args):
                    ('exp_lr', ['']),
                    ]
     args += [OrderedDict([('optim', ['sgd'])]+shared_args)]
-    args += [OrderedDict([('optim', ['dmom_jvp']),
-                          ('seed', [1, 2]),
-                          ('alpha_norm', ['sum']),
-                          ('sampler', ['']),
-                          ('alpha', ['one']),
-                          ('sampler_w2c', ['linear2']),
-                          ('sampler_params', ['50,99,2,200']),
+    shared_args += [('optim', ['dmom_jvp']),
+                    ('seed', [1, 2]),
+                    ('alpha_norm', ['sum']),
+                    ('sampler', ['']),
+                    ('sampler_w2c', ['linear2']),
+                    ('sampler_params', ['50,90,2,200']),
+                    ]
+    args += [OrderedDict([('alpha', ['one']),
                           ]+shared_args)]
-    args += [OrderedDict([('optim', ['dmom_jvp']),
-                          ('seed', [1, 2]),
-                          ('momentum', [0.9]),
-                          ('alpha_norm', ['sum']),
-                          ('sampler', ['']),
-                          ('alpha', ['loss']),
+    args += [OrderedDict([('alpha', ['loss']),
                           # ('dmom', [0., 0.5, 0.9]),
                           ('dmom', [0.9]),
-                          ('sampler_w2c', ['linear2']),
-                          ('sampler_params', ['50,99,50,200']),
                           ]+shared_args)]
     return args, log_dir
 
@@ -882,12 +885,9 @@ def mnist_bs(args):
     dataset = 'mnist'
     log_dir = 'runs_%s_bs_steplr_maxw' % dataset
     shared_args = [('dataset', [dataset]),
-                   # ('batch_size', [32, 128, 1024]),
-                   # ('batch_size', [1024]),
-                   ('batch_size', [1000, 2000]),
-                   # ('lr', [.01, .001, .005, .05, .1]),  # 0.01,
-                   # ('lr', [.1, .2, .5]),  # 0.01,
-                   ('lr', [.2]),  # 0.01,
+                   ('batch_size', [32, 128, 1024]),
+                   # ('lr', [0.01]),
+                   ('lr', [.001, .005, .01, .05, .1, .2, .5]),
                    # ('lr_decay_epoch', [50]),
                    ('lr_decay_epoch', [30]),
                    ('momentum', [0.9]),
@@ -895,26 +895,140 @@ def mnist_bs(args):
                    ('log_nex', ['']),
                    # ('lr_scale', ['']),
                    ]
-    args += [OrderedDict([('optim', ['sgd'])] + shared_args)]
-    # args += [OrderedDict([('optim', ['dmom_jvp']),
-    #                       ('alpha', ['one']),
+    # args += [OrderedDict([('optim', ['sgd'])] + shared_args)]
+    args += [OrderedDict([('optim', ['dmom_jvp']),
+                          ('alpha', ['one']),
+                          ]+shared_args)]
+    shared_args += [('optim', ['dmom_jvp']),
+                    ('alpha_norm', ['sum']),
+                    ('sampler', ['']),
+                    ('sampler_params', ['50,90,2,200']),
+                    ('sampler_w2c', ['linear2']),
+                    ('sampler_maxw', [1]),
+                    ]
+    # args += [OrderedDict([('alpha', ['one']),
     #                       ]+shared_args)]
-    # shared_args += [('alpha_norm', ['sum']),
-    #                 ('sampler', ['']),
-    #                 ('sampler_params', ['50,90,2,200']),
-    #                 ('sampler_w2c', ['linear2']),
-    #                 ('sampler_maxw', [1]),
-    #                 ('sampler_start_epoch', [1, 20]),
-    #                 ]
-    # args += [OrderedDict([('optim', ['dmom_jvp']),
-    #                       ('seed', [1, 2]),
-    #                       ('alpha', ['one']),
+    args += [OrderedDict([('alpha', ['loss']),
+                          ('dmom', [0.9]),
+                          ]+shared_args)]
+    return args, log_dir
+
+
+def cifar10_bs(args):
+    dataset = 'cifar10'
+    log_dir = 'runs_%s_bs_steplr_maxw' % dataset
+    shared_args = [('dataset', [dataset]),
+                   ('arch', ['resnet32']),
+                   ('momentum', [0.9]),
+                   ('epochs', [200]),
+                   ('batch_size', [
+                       # (32, OrderedDict([('lr', [.01, .05, .1])])),
+                       # (512, OrderedDict([('lr', [.1, .2, .5])])),
+                       (1024, OrderedDict([('lr', [.5])])),
+                   ]),
+                   # ('lr', [0.1]),
+                   ('weight_decay', [1e-4]),
+                   # ('lr_decay_epoch', [100]),
+                   ('lr_decay_epoch', ['100,150']),
+                   # ('exp_lr', ['']),
+                   ('log_nex', ['']),
+                   # ('lr_scale', ['']),
+                   ]
+    # args += [OrderedDict([('optim', ['sgd']),
     #                       ]+shared_args)]
-    # args += [OrderedDict([('optim', ['dmom_jvp']),
-    #                       ('seed', [1, 2]),
-    #                       ('alpha', ['loss']),
-    #                       ('dmom', [0.9]),
+    args += [OrderedDict([('optim', ['dmom_jvp']),
+                          ('alpha', ['one']),
+                          ]+shared_args)]
+    shared_args += [('optim', ['dmom_jvp']),
+                    ('alpha_norm', ['sum']),
+                    ('sampler', ['']),
+                    ('sampler_w2c', ['linear2']),
+                    ('sampler_params', ['20,90,2,200']),
+                    ('sampler_maxw', [1]),
+                    # ('seed', [1, 2]),
+                    ]
+    # args += [OrderedDict([('alpha', ['one']),
     #                       ]+shared_args)]
+    args += [OrderedDict([('alpha', ['loss']),
+                          # ('dmom', [0., 0.5, 0.9]),
+                          ('dmom', [0.9]),
+                          ]+shared_args)]
+    return args, log_dir
+
+
+def imagenet_linear2_bs(args):
+    # from resnet https://arxiv.org/pdf/1512.03385.pdf
+    dataset = 'imagenet'
+    log_dir = 'runs_%s_droplast_bs' % dataset
+    shared_args = [('dataset', [dataset]),
+                   ('arch', ['resnet18']),
+                   ('epochs', [60]),
+                   # ('lr', [0.1]),
+                   ('batch_size', [
+                       (256, OrderedDict([('lr', [.1]),
+                                          ('workers', [12])])),
+                       (1024, OrderedDict([('lr', [.5]),
+                                           ('workers', [12])])),
+                   ]),
+                   # ('weight_decay', [1e-4]),  # default
+                   ('lr_decay_epoch', [30]),
+                   # ('momentum', [0.9]),  # default
+                   ('exp_lr', ['']),
+                   ('log_nex', ['']),
+                   ]
+    args += [OrderedDict([('optim', ['sgd']),
+                          ] + shared_args)]
+    shared_args += [('optim', ['dmom_jvp']),
+                    # ('seed', [1, 2]),
+                    ('alpha_norm', ['sum']),
+                    ('sampler', ['']),
+                    # ('sampler_w2c', ['linear2']),  # now default
+                    ('sampler_params', ['20,90,2,50']),
+                    # ('sampler_maxw', [1]),  # now default
+                    ]
+    # args += [OrderedDict([('alpha', ['one']),
+    #                       ] + shared_args)]
+    args += [OrderedDict([('alpha', ['loss']),
+                          # ('dmom', [0., 0.5, 0.9]),
+                          ('dmom', [0.9]),
+                          ] + shared_args)]
+    return args, log_dir
+
+
+def svhn_bs(args):
+    # from wide-resnet https://arxiv.org/pdf/1605.07146.pdf
+    dataset = 'svhn'
+    log_dir = 'runs_%s_bs' % dataset
+    shared_args = [('dataset', [dataset]),
+                   ('arch', ['resnet32']),
+                   ('epochs', [160]),
+                   # ('lr', [0.01]),
+                   ('batch_size', [
+                       (128, OrderedDict([('lr', [.01]),
+                                          ('workers', [12])])),
+                       (1024, OrderedDict([('lr', [.1]),
+                                           ('workers', [12])])),
+                   ]),
+                   # ('weight_decay', [5e-4]),  # default
+                   ('lr_decay_epoch', [80]),
+                   # ('momentum', [0.9]),  # default
+                   ('exp_lr', ['']),
+                   ('log_nex', ['']),
+                   ]
+    args += [OrderedDict([('optim', ['sgd'])]+shared_args)]
+    shared_args += [('optim', ['dmom_jvp']),
+                    # ('seed', [1, 2]),
+                    ('alpha_norm', ['sum']),
+                    ('sampler', ['']),
+                    # ('sampler_w2c', ['linear2']),  # default
+                    ('sampler_params', ['50,90,2,200']),
+                    ]
+    # args += [OrderedDict([('alpha', ['one']),
+    #                       ]+shared_args)]
+    args += [OrderedDict([('alpha', ['loss']),
+                          # ('dmom', [0., 0.5, 0.9]),
+                          ('dmom', [0.9]),
+                          ]+shared_args)]
     return args, log_dir
 
 
@@ -977,6 +1091,123 @@ def cifar10_autoexp(args):
     return args, log_dir
 
 
+def mnist_linrank(args):
+    dataset = 'mnist'
+    log_dir = 'runs_%s_linrank' % dataset
+    shared_args = [('dataset', [dataset]),
+                   ('lr', [0.01]),
+                   ('epochs', [
+                       # (100, OrderedDict([('lr_decay_epoch', [50])])),
+                       # (40, OrderedDict([('lr_decay_epoch', [20])])),
+                       (100, OrderedDict([('lr_decay_epoch', [100])])),
+                   ]),
+                   # ('lr_decay_epoch', [30]),
+                   ('momentum', [0.9]),
+                   # ('exp_lr', ['']),
+                   ]
+    args += [OrderedDict([('optim', ['sgd'])] + shared_args)]
+    shared_args += [('optim', ['dmom_jvp']),
+                    # ('seed', [1, 2]),
+                    ('alpha_norm', ['sum']),
+                    ('sampler', ['']),
+                    ('sampler_params', ['50,90,2,200']),
+                    ('sampler_w2c', ['linrank']),
+                    ]
+    args += [OrderedDict([('alpha', ['one']),
+                          ]+shared_args)]
+    args += [OrderedDict([('alpha', ['loss']),
+                          ('dmom', [0.9]),
+                          ]+shared_args)]
+    return args, log_dir
+
+
+def cifar10_linrank(args):
+    dataset = 'cifar10'
+    log_dir = 'runs_%s_linrank_explr' % dataset
+    shared_args = [('dataset', [dataset]),
+                   ('arch', ['resnet32']),
+                   ('epochs', [
+                       # (200, OrderedDict([('lr_decay_epoch', ['100,150'])])),
+                       # (100, OrderedDict([('lr_decay_epoch', ['50,75'])])),
+                       (200, OrderedDict([('exp_lr', ['']),
+                                          ('lr_decay_epoch', [100])])),
+                       (100, OrderedDict([('exp_lr', ['']),
+                                          ('lr_decay_epoch', [50])])),
+                   ]),
+                   ('batch_size', [
+                       (32, OrderedDict([('lr', [.1])])),
+                       (1024, OrderedDict([('lr', [.5])])),
+                   ]),
+                   # ('lr', [0.1]),
+                   ('weight_decay', [1e-4]),
+                   # ('lr_decay_epoch', [100]),
+                   # ('lr_decay_epoch', ['100,150']),
+                   ('log_nex', ['']),
+                   ]
+    args += [OrderedDict([('optim', ['sgd']),
+                          ]+shared_args)]
+    # args += [OrderedDict([('optim', ['dmom_jvp']),
+    #                       ('alpha', ['one']),
+    #                       ]+shared_args)]
+    shared_args += [('optim', ['dmom_jvp']),
+                    ('alpha_norm', ['sum']),
+                    ('sampler', ['']),
+                    ('sampler_w2c', ['linrank']),
+                    ('sampler_params', ['50,90,2,200']),
+                    # ('seed', [1, 2]),
+                    # ('sampler_maxw', [2, 5]),
+                    ]
+    # args += [OrderedDict([('alpha', ['one']),
+    #                       ]+shared_args)]
+    args += [OrderedDict([('alpha', ['loss']),
+                          # ('dmom', [0., 0.5, 0.9]),
+                          ('dmom', [0.9]),
+                          ]+shared_args)]
+    return args, log_dir
+
+
+def svhn_linrank(args):
+    # Same as cifar10 resnet32
+    dataset = 'svhn'
+    log_dir = 'runs_%s_linrank_explr' % dataset
+    shared_args = [('dataset', [dataset]),
+                   ('arch', ['resnet32']),
+                   ('epochs', [
+                       # (160, OrderedDict([('lr_decay_epoch', ['80,120'])])),
+                       # (120, OrderedDict([('lr_decay_epoch', ['60,90'])])),
+                       (160, OrderedDict([('exp_lr', ['']),
+                                          ('lr_decay_epoch', [80])])),
+                   ]),
+                   ('batch_size', [
+                       (128, OrderedDict([('lr', [.1])])),
+                       (1024, OrderedDict([('lr', [.5])])),
+                   ]),
+                   ('weight_decay', [1e-4]),
+                   # ('lr', [0.1]),
+                   ('log_nex', ['']),
+                   ]
+    args += [OrderedDict([('optim', ['sgd']),
+                          ]+shared_args)]
+    # args += [OrderedDict([('optim', ['dmom_jvp']),
+    #                       ('alpha', ['one']),
+    #                       ]+shared_args)]
+    shared_args += [('optim', ['dmom_jvp']),
+                    ('alpha_norm', ['sum']),
+                    ('sampler', ['']),
+                    ('sampler_w2c', ['linrank']),
+                    ('sampler_params', ['50,90,2,200']),
+                    # ('seed', [1, 2]),
+                    ('sampler_maxw', [1, 5]),
+                    ]
+    # args += [OrderedDict([('alpha', ['one']),
+    #                       ]+shared_args)]
+    args += [OrderedDict([('alpha', ['loss']),
+                          # ('dmom', [0., 0.5, 0.9]),
+                          ('dmom', [0.9]),
+                          ]+shared_args)]
+    return args, log_dir
+
+
 if __name__ == '__main__':
     args = []
     # args, log_dir = cifar10_resnet_explr(args)
@@ -986,10 +1217,16 @@ if __name__ == '__main__':
     # args, log_dir = mnist_linear2(args)
     # args, log_dir = cifar10_linear2(args)
     # args, log_dir = svhn_linear2(args)
-    args, log_dir = mnist_bs(args)
+    # args, log_dir = imagenet_linear2_bs(args)
+    # args, log_dir = mnist_bs(args)
+    # args, log_dir = cifar10_bs(args)
+    # args, log_dir = svhn_bs(args)
     # args, log_dir = mnist_autoexp(args)
     # args, log_dir = cifar10_autoexp(args)
-    # jobs_0 = ['bolt1_gpu0,1,2,3', 'bolt2_gpu0,1,2,3']
+    # args, log_dir = mnist_linrank(args)
+    # args, log_dir = cifar10_linrank(args)
+    args, log_dir = svhn_linrank(args)
+    # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2', 'bolt1_gpu0,1,2,3']
     # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2',
     #           'bolt1_gpu0,1', 'bolt1_gpu2,3',
     #           ]
@@ -997,16 +1234,32 @@ if __name__ == '__main__':
               'bolt1_gpu0', 'bolt1_gpu1', 'bolt1_gpu2', 'bolt1_gpu3',
               # 'bolt0_gpu0', 'bolt0_gpu1', 'bolt0_gpu2']  # , 'bolt0_gpu3']
               ]
+    # jobs_0 = ['bolt2_gpu0', 'bolt1_gpu0', 'bolt2_gpu1', 'bolt1_gpu1',
+    #           'bolt2_gpu2', 'bolt1_gpu2', 'bolt2_gpu3', 'bolt1_gpu3',
+    #           ]
+    # jobs_0 = ['bolt0_gpu1', 'bolt0_gpu2', 'bolt0_gpu3']
+    # jobs_0 = ['bolt2_gpu0', 'bolt2_gpu3']
     # njobs = [2, 2, 2, 2,
     #          1, 1, 1, 1]
-    njobs = [3] * 8
+    # njobs = [1, 2, 1]
+    njobs = [2, 2, 1, 1]
+    # njobs = [2] * 8
+    # njobs = [2, 1, 2, 1,
+    #          2, 1, 2, 1]
     jobs = []
     for s, n in zip(jobs_0, njobs):
         jobs += ['%s_job%d' % (s, i) for i in range(n)]
         # jobs += ['%s_job%d' % (s, i) for s in jobs_0]
 
     run_single = RunSingle(log_dir)
-    run_single.num = 48
+    # run_single.num = 18
+
+    # args = OrderedDict([('lr', [1, 2]), ('batch_size', [10, 20])])
+    # args = OrderedDict([('lr', [(1, OrderedDict([('batch_size', [10])])),
+    #                             (2, OrderedDict([('batch_size', [20])]))])])
+    # args = args[0]
+    # for cmd in deep_product(args):
+    #     print(cmd)
 
     cmds = run_multi(run_single, args)
     print(len(cmds))

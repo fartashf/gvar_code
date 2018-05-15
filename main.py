@@ -65,6 +65,8 @@ def main():
                         metavar='N',
                         help='how many batches to wait before logging training'
                         ' status')
+    parser.add_argument('--tblog_interval',
+                        type=int, default=argparse.SUPPRESS)
     parser.add_argument('--optim', default=argparse.SUPPRESS, help='sgd|dmom')
     parser.add_argument('--dmom', type=float, default=argparse.SUPPRESS,
                         help='Data momentum')
@@ -174,7 +176,7 @@ def main():
     if opt.cuda:
         torch.cuda.manual_seed(opt.seed)
 
-    train_loader, test_loader = get_loaders(opt)
+    train_loader, test_loader, train_test_loader = get_loaders(opt)
 
     if opt.dataset == 'mnist':
         if opt.arch == 'cnn':
@@ -260,7 +262,7 @@ def main():
         else:
             adjust_learning_rate(optimizer, optimizer.niters//epoch_iters, opt)
         ecode = train(epoch, train_loader, model, optimizer, opt, test_loader,
-                      save_checkpoint)
+                      save_checkpoint, train_test_loader)
         if ecode == -1:
             break
         epoch += 1
@@ -271,7 +273,7 @@ def main():
 
     if opt.optim == 'dmom' or opt.optim == 'dmom_jvp':
         if opt.log_image:
-            vis_samples(optimizer.alpha, train_loader, opt.epochs)
+            vis_samples(optimizer.alpha, train_loader.dataset, opt.epochs)
 
         optimizer.logger = LogCollector(opt)
         optimizer.log_perc('last_')
@@ -285,7 +287,7 @@ def fix_bn(m):
 
 
 def train(epoch, train_loader, model, optimizer, opt, test_loader,
-          save_checkpoint):
+          save_checkpoint, train_test_loader):
     batch_time = AverageMeter()
     optimizer.logger = LogCollector(opt)
     optimizer.profiler = Profiler()
@@ -358,9 +360,9 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
         batch_time.update(time.time() - end)
         end = time.time()
         # optimizer.logger.update('bs', len(idx), 1)
+        niters = optimizer.niters
+        loss = loss.mean()
         if batch_idx % opt.log_interval == 0:
-            niters = optimizer.niters
-            loss = loss.mean()
             logging.info(
                 'Epoch: [{0}][{1}/{2}]\t'
                 'Loss: {loss:.6f}\t'
@@ -372,6 +374,9 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
                     opt_log=str(optimizer.logger)))
             if opt.log_profiler:
                 logging.info(str(optimizer.profiler))
+        if np.isnan(float(loss)):
+            return -1
+        if batch_idx % opt.tblog_interval == 0:
             tb_logger.log_value('epoch', epoch, step=niters)
             lr = optimizer.param_groups[0]['lr']
             tb_logger.log_value('lr', lr, step=niters)
@@ -381,14 +386,14 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
                                 step=niters)
             tb_logger.log_value('loss', loss, step=niters)
             optimizer.logger.tb_log(tb_logger, step=niters)
-            if np.isnan(float(loss)):
-                return -1
 
         if optimizer.niters % epoch_iters == 0:
             if opt.train_accuracy:
-                test(model, train_loader, opt, optimizer.niters, 'Train', 'T')
+                test(model, train_test_loader, opt, optimizer.niters,
+                     'Train', 'T')
             prec1 = test(model, test_loader, opt, optimizer.niters)
             save_checkpoint(model, float(prec1), opt, optimizer)
+            tb_logger.save_log()
 
     if opt.optim == 'dmom' or opt.optim == 'dmom_jvp':  # and epoch > 9:
         optimizer.logger = LogCollector(opt)
@@ -499,14 +504,14 @@ class DictWrapper(object):
         return self.d[key]
 
 
-def vis_samples(alphas, train_loader, epoch):
+def vis_samples(alphas, train_dataset, epoch):
     big_alphas = np.argsort(alphas)[-9:][::-1]
     small_alphas = np.argsort(alphas)[:9]
 
-    x = [train_loader.dataset[i][0] for i in big_alphas]
+    x = [train_dataset[i][0] for i in big_alphas]
     x = vutils.make_grid(x, nrow=3, normalize=True, scale_each=True)
     tb_logger.log_img('big_alpha' % i, x, epoch)
-    x = [train_loader.dataset[i][0] for i in small_alphas]
+    x = [train_dataset[i][0] for i in small_alphas]
     x = vutils.make_grid(x, nrow=3, normalize=True, scale_each=True)
     tb_logger.log_img('small_alpha' % i, x, epoch)
 
@@ -514,7 +519,11 @@ def vis_samples(alphas, train_loader, epoch):
 def adjust_learning_rate(optimizer, epoch, opt):
     """Sets the learning rate to the initial LR decayed by 10"""
     if opt.exp_lr:
-        last_epoch = float(epoch) / int(opt.lr_decay_epoch)
+        """
+        A=np.arange(200);
+        np.round(np.power(.1, np.power(2., A/80.)-1), 6)[[0,80,120,160]]
+        """
+        last_epoch = 2. ** (float(epoch) / int(opt.lr_decay_epoch)) - 1
     else:
         last_epoch = epoch // int(opt.lr_decay_epoch)
     lr = opt.lr * (0.1 ** last_epoch)
@@ -579,9 +588,10 @@ class SaveCheckpoint(object):
                     'normg': optimizer.grad_norm
                 })
 
-        torch.save(state, filename)
+        torch.save(state, opt.logger_name+'/'+filename)
         if is_best:
-            shutil.copyfile(filename, 'model_best.pth.tar')
+            shutil.copyfile(opt.logger_name+'/'+filename,
+                            opt.logger_name+'/model_best.pth.tar')
 
 
 def accuracy(output, target, topk=(1,)):

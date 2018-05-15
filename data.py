@@ -21,11 +21,29 @@ def get_loaders(opt):
         return get_logreg_loaders(opt)
 
 
-class IndexedMNIST(datasets.MNIST):
+def dataset_to_loaders(train_dataset, test_dataset, opt):
+    kwargs = {'num_workers': opt.workers,
+              'pin_memory': True} if opt.cuda else {}
+    if opt.sampler:
+        train_sampler = DelayedSampler(len(train_dataset), opt)
+    else:
+        train_sampler = None
+    train_loader = torch.utils.data.DataLoader(
+        IndexedDataset(train_dataset, opt), batch_size=opt.batch_size,
+        sampler=train_sampler,
+        shuffle=(train_sampler is None),
+        drop_last=True, **kwargs)
 
-    def __getitem__(self, index):
-        img, target = super(IndexedMNIST, self).__getitem__(index)
-        return img, target, index
+    test_loader = torch.utils.data.DataLoader(
+        IndexedDataset(test_dataset, opt),
+        batch_size=opt.test_batch_size, shuffle=False,
+        **kwargs)
+
+    train_test_loader = torch.utils.data.DataLoader(
+        IndexedDataset(train_dataset, opt),
+        batch_size=opt.test_batch_size, shuffle=False,
+        **kwargs)
+    return train_loader, test_loader, train_test_loader
 
 
 class IndexedDataset(data.Dataset):
@@ -48,39 +66,19 @@ class IndexedDataset(data.Dataset):
 
 
 def get_mnist_loaders(opt, **kwargs):
-    kwargs = {'num_workers': 1, 'pin_memory': True} if opt.cuda else {}
-    trainset = IndexedDataset(datasets.MNIST(
+    train_dataset = datasets.MNIST(
         opt.data, train=True, download=True,
         transform=transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize((0.1307,), (0.3081,))
-        ])), opt)
-    if opt.sampler:
-        # weights = torch.ones(len(trainset)).double()
-        train_loader = torch.utils.data.DataLoader(
-            trainset, batch_size=opt.batch_size,
-            # sampler=DmomWeightedRandomSampler(weights, len(trainset)),
-            sampler=DelayedSampler(len(trainset), opt), drop_last=True,
-            **kwargs)
-    else:
-        train_loader = torch.utils.data.DataLoader(
-            trainset, batch_size=opt.batch_size, drop_last=True,
-            shuffle=True, **kwargs)
-    test_loader = torch.utils.data.DataLoader(
-        IndexedDataset(datasets.MNIST(
+        ]))
+
+    test_dataset = datasets.MNIST(
             opt.data, train=False, transform=transforms.Compose([
                 transforms.ToTensor(),
                 transforms.Normalize((0.1307,), (0.3081,))
-            ])), opt),
-        batch_size=opt.test_batch_size, shuffle=True, **kwargs)
-    return train_loader, test_loader
-
-
-class IndexedCIFAR10(datasets.CIFAR10):
-
-    def __getitem__(self, index):
-        img, target = super(IndexedCIFAR10, self).__getitem__(index)
-        return img, target, index
+            ]))
+    return dataset_to_loaders(train_dataset, test_dataset, opt, **kwargs)
 
 
 def get_cifar10_loaders(opt):
@@ -94,106 +92,45 @@ def get_cifar10_loaders(opt):
     # train_sampler = SubsetRandomSampler(train_idx)
     # valid_sampler = SubsetRandomSampler(valid_idx)
 
-    train_dataset = IndexedDataset(datasets.CIFAR10(root=opt.data, train=True,
-                                   transform=transforms.Compose([
-                                       transforms.RandomHorizontalFlip(),
-                                       transforms.RandomCrop(32, 4),
-                                       transforms.ToTensor(),
-                                       normalize,
-                                   ]), download=True),
-                                   opt)
-    if opt.sampler:
-        train_sampler = DelayedSampler(len(train_dataset), opt)
-    else:
-        train_sampler = None
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=opt.batch_size,
-        sampler=train_sampler,
-        shuffle=(train_sampler is None),
-        num_workers=opt.workers, pin_memory=True, drop_last=True)
-
-    test_loader = torch.utils.data.DataLoader(
-        IndexedDataset(datasets.CIFAR10(
-            root=opt.data, train=False, download=True,
-            transform=transforms.Compose([
-                transforms.ToTensor(),
-                normalize,
-            ])), opt),
-        batch_size=opt.test_batch_size, shuffle=False,
-        num_workers=opt.workers, pin_memory=True)
-    return train_loader, test_loader
-
-
-class IndexedSVHN(datasets.SVHN):
-
-    def __getitem__(self, index):
-        img, target = super(IndexedSVHN, self).__getitem__(index)
-        return img, target, index
-
-
-class IndexedMix(data.Dataset):
-
-    def __init__(self, ds):
-        super(IndexedMix, self).__init__()
-        self.ds = ds
-        self.lens = map(len, ds)
-
-    def __getitem__(self, index):
-        if index < self.lens[0]:
-            img, target, _ = self.ds[0][index]
-        else:
-            img, target, _ = self.ds[1][index-self.lens[0]]
-        return img, target, index
-
-    def __len__(self):
-        return sum(self.lens)
+    train_dataset = datasets.CIFAR10(root=opt.data, train=True,
+                                     transform=transforms.Compose([
+                                         transforms.RandomHorizontalFlip(),
+                                         transforms.RandomCrop(32, 4),
+                                         transforms.ToTensor(),
+                                         normalize,
+                                     ]), download=True)
+    test_dataset = datasets.CIFAR10(
+        root=opt.data, train=False, download=True,
+        transform=transforms.Compose([
+            transforms.ToTensor(),
+            normalize,
+        ]))
+    return dataset_to_loaders(train_dataset, test_dataset, opt)
 
 
 def get_svhn_loaders(opt, **kwargs):
-    kwargs = {'pin_memory': True} if opt.cuda else {}
-    trainset = IndexedMix(
-        (IndexedDataset(datasets.SVHN(
+    train_dataset = torch.utils.data.ConcatDataset(
+        (datasets.SVHN(
             opt.data, split='train', download=True,
             transform=transforms.Compose([
                 transforms.ToTensor(),
                 transforms.Normalize((0.5, 0.5, 0.5),
                                      (0.5, 0.5, 0.5))
-            ])), opt),
-         IndexedDataset(datasets.SVHN(
+            ])),
+         datasets.SVHN(
              opt.data, split='extra', download=True,
              transform=transforms.Compose([
                  transforms.ToTensor(),
                  transforms.Normalize((0.5, 0.5, 0.5),
                                       (0.5, 0.5, 0.5))
-             ])), opt)))
-    if opt.sampler:
-        # weights = torch.ones(len(trainset)).double()
-        train_loader = torch.utils.data.DataLoader(
-            trainset, batch_size=opt.batch_size,
-            # sampler=DmomWeightedRandomSampler(weights, len(trainset)),
-            sampler=DelayedSampler(len(trainset), opt), drop_last=True,
-            num_workers=opt.workers, **kwargs)
-    else:
-        train_loader = torch.utils.data.DataLoader(
-            trainset, batch_size=opt.batch_size, shuffle=True,
-            num_workers=opt.workers, **kwargs)
-    test_loader = torch.utils.data.DataLoader(
-        IndexedDataset(datasets.SVHN(opt.data, split='test', download=True,
-                                     transform=transforms.Compose([
-                                         transforms.ToTensor(),
-                                         transforms.Normalize((0.5, 0.5, 0.5),
-                                                              (0.5, 0.5, 0.5))
-                                     ])), opt),
-        batch_size=opt.test_batch_size, shuffle=True,
-        num_workers=opt.workers, **kwargs)
-    return train_loader, test_loader
-
-
-class IndexedImageFolder(datasets.ImageFolder):
-
-    def __getitem__(self, index):
-        img, target = super(IndexedImageFolder, self).__getitem__(index)
-        return img, target, index
+             ]))))
+    test_dataset = datasets.SVHN(opt.data, split='test', download=True,
+                                 transform=transforms.Compose([
+                                     transforms.ToTensor(),
+                                     transforms.Normalize((0.5, 0.5, 0.5),
+                                                          (0.5, 0.5, 0.5))
+                                 ]))
+    return dataset_to_loaders(train_dataset, test_dataset, opt)
 
 
 def get_imagenet_loaders(opt):
@@ -203,36 +140,22 @@ def get_imagenet_loaders(opt):
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
-    train_dataset = IndexedDataset(datasets.ImageFolder(
+    train_dataset = datasets.ImageFolder(
         traindir,
         transforms.Compose([
             transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             normalize,
-        ])), opt)
+        ]))
 
-    if opt.sampler:
-        train_sampler = DelayedSampler(len(train_dataset), opt)
-    else:
-        train_sampler = None
-
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=opt.batch_size,
-        shuffle=(train_sampler is None),
-        num_workers=opt.workers, pin_memory=True, sampler=train_sampler,
-        drop_last=True)
-
-    val_loader = torch.utils.data.DataLoader(
-        IndexedDataset(datasets.ImageFolder(valdir, transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            normalize,
-        ])), opt),
-        batch_size=opt.test_batch_size, shuffle=False,
-        num_workers=opt.workers, pin_memory=True)
-    return train_loader, val_loader
+    test_dataset = datasets.ImageFolder(valdir, transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        normalize,
+    ]))
+    return dataset_to_loaders(train_dataset, test_dataset, opt)
 
 
 class DmomWeightedRandomSampler(Sampler):
@@ -296,7 +219,7 @@ class DelayedSampler(Sampler):
         elif opt.sampler_weight == 'alpha_batch_sum':
             alpha_val = optimizer.alpha
             alpha_val /= alpha_val.sum()
-        alpha = alpha_val
+        alpha = np.array(alpha_val, dtype=np.float32)
 
         if self.opt.sampler_w2c == '1_over':
             amx = 1. / self.opt.sampler_max_count
@@ -355,6 +278,39 @@ class DelayedSampler(Sampler):
             nonvisited = (self.count != 0)
             count[nonvisited] = self.count[nonvisited]-1
             print('Delay perc: %d delay: %d' % (perc, delay))
+        elif self.opt.sampler_w2c == 'linrank':
+            niters = optimizer.niters
+            params = map(int, self.opt.sampler_params.split(','))
+            perc_a, perc_b, delay_a, delay_b = params
+            epoch_iters = (self.opt.epochs * self.num_samples
+                           / self.opt.batch_size)
+            perc = (1. * niters / epoch_iters) * (perc_b - perc_a) + perc_a
+            count = self.count
+            visited = (count == 0)
+            revisits = (count == 1)
+
+            ids = np.arange(len(alpha))
+            np.random.shuffle(ids)
+            rank = np.zeros(len(alpha))
+            alpha_x = np.array(alpha)
+            alpha_x[revisits] = alpha.max() + 1
+            srti = np.argsort(alpha_x[ids])
+            rank[ids[srti]] = np.arange(len(alpha))
+
+            drop_rank = int(self.num_samples * perc / 100)
+            ids_d = ids[srti[:drop_rank]]
+            ids_r = ids[srti[drop_rank:]]
+            tobevisited = np.zeros(self.num_samples, dtype=np.bool)
+            tobevisited[ids_r] = True
+            count[count > 1] -= 1  # not the revisits that won't be visited
+            # count[:] = 3
+            count[tobevisited] = 0
+
+            needdelay = np.logical_and(visited, np.logical_not(tobevisited))
+            delay = (drop_rank-rank[needdelay])/drop_rank * niters/epoch_iters
+            delay = (1. * delay) * (delay_b - delay_a) + delay_a
+            count[needdelay] = np.int32(np.ceil(delay))
+            print('Delay perc: %d delay: %d' % (perc, count[ids_d].mean()))
         elif self.opt.sampler_w2c == 'autoexp':
             # assume we have dropped p% and revisited k items
             # last_count > 0 for those k items, their ids are in self.indices
@@ -411,6 +367,10 @@ class DelayedSampler(Sampler):
         else:
             weights = self.weights
             self.visits[np.where(self.count == 0)[0]] += 1
+        # print(np.histogram(self.visits, bins=10))
+        # print(alpha.min())
+        # print(alpha.max())
+        # import ipdb; ipdb.set_trace()
         return weights
 
     def __len__(self):
@@ -433,7 +393,7 @@ def random_orthogonal_matrix(gain, shape):
     return np.asarray(gain * q, dtype=np.float)
 
 
-class IndexdLinearData(data.Dataset):
+class LinearDataset(data.Dataset):
 
     def __init__(self, C, D, num, dim, num_class, train=True):
         X = np.zeros((C.shape[0], num))
@@ -449,7 +409,7 @@ class IndexdLinearData(data.Dataset):
     def __getitem__(self, index):
         X = torch.Tensor(self.X[:, index]).float()
         Y = int(self.Y[index])
-        return X, Y, index
+        return X, Y
 
     def __len__(self):
         return self.X.shape[1]
@@ -463,26 +423,14 @@ def get_logreg_loaders(opt, **kwargs):
     D = opt.d_const * random_orthogonal_matrix(
         1.0, (opt.dim, opt.dim, opt.num_class))
     # print("Create train")
-    trainset = IndexdLinearData(C, D, opt.num_train_data, opt.dim,
-                                opt.num_class, train=True)
+    train_dataset = LinearDataset(C, D, opt.num_train_data, opt.dim,
+                                  opt.num_class, train=True)
     # print("Create test")
-    testset = IndexdLinearData(C, D, opt.num_test_data, opt.dim, opt.num_class,
-                               train=False)
-    torch.save((trainset.X, trainset.Y, testset.X, testset.Y,
+    test_dataset = LinearDataset(C, D,
+                                 opt.num_test_data, opt.dim, opt.num_class,
+                                 train=False)
+    torch.save((train_dataset.X, train_dataset.Y,
+                test_dataset.X, test_dataset.Y,
                 C), opt.logger_name + '/data.pth.tar')
 
-    if opt.sampler:
-        # weights = torch.ones(len(trainset)).double()
-        train_loader = torch.utils.data.DataLoader(
-            trainset, batch_size=opt.batch_size,
-            # sampler=DmomWeightedRandomSampler(weights, len(trainset)),
-            sampler=DelayedSampler(len(trainset), opt),
-            drop_last=True,
-            **kwargs)
-    else:
-        train_loader = torch.utils.data.DataLoader(
-            trainset, batch_size=opt.batch_size, shuffle=True, **kwargs)
-    test_loader = torch.utils.data.DataLoader(
-        testset,
-        batch_size=opt.test_batch_size, shuffle=True, **kwargs)
-    return train_loader, test_loader
+    return dataset_to_loaders(train_dataset, test_dataset, opt)

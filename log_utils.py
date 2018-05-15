@@ -1,8 +1,9 @@
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 import numpy as np
-import tensorboard_logger as tb_logger
+# import tensorboard_logger as tb_logger
 from tensorboardX import SummaryWriter
 import time
+import torch
 
 
 def hist_bins(val):
@@ -25,30 +26,35 @@ def hist_bins(val):
     return bins
 
 
-class TBWrapper(object):
-    def configure(self, logger_name, flush_secs=5, opt=None):
-        tb_logger.configure(logger_name, flush_secs=flush_secs)
-
-    def log_value(self, name, val, step):
-        tb_logger.log_value(name, val, step=step)
-
-    def log_hist(self, **kwargs):
-        pass
-
-    def log_img(self, **kwargs):
-        pass
+# class TBWrapper(object):
+#     def configure(self, logger_name, flush_secs=5, opt=None):
+#         tb_logger.configure(logger_name, flush_secs=flush_secs)
+#
+#     def log_value(self, name, val, step):
+#         tb_logger.log_value(name, val, step=step)
+#
+#     def log_hist(self, **kwargs):
+#         pass
+#
+#     def log_img(self, **kwargs):
+#         pass
 
 
 class TBXWrapper(object):
     def configure(self, logger_name, flush_secs=5, opt=None):
         self.writer = SummaryWriter(logger_name, flush_secs=flush_secs)
         self.logger_name = logger_name
+        self.logobj = defaultdict(lambda: list())
         self.opt = opt
 
     def log_value(self, name, val, step):
         self.writer.add_scalar(name, val, step)
+        self.logobj[name] += [(time.time(), step, float(val))]
         if self.opt.log_nex:
             self.writer.add_scalar(name+'_Nex', val, step*self.opt.batch_size)
+            self.logobj[name+'_Nex'] += [(time.time(),
+                                          step*self.opt.batch_size,
+                                          float(val))]
 
     def log_hist(self, name, val, step, log_scale=False):
         # https://github.com/lanpa/tensorboard-pytorch/issues/42
@@ -57,9 +63,14 @@ class TBXWrapper(object):
             val = np.log(np.maximum(np.exp(-20), val))
             name += '_log'
         self.writer.add_histogram(name, val, step, bins='doane')
+        self.logobj[name] += [(time.time(), step, np.histogram(val, bins=100))]
 
     def log_img(self, name, val, step):
         self.writer.add_image(name, val, step)
+        # self.logobj[name] += [(time.time(), step, np.array(val))]
+
+    def save_log(self, filename='log.pth.tar'):
+        torch.save(dict(self.logobj), self.opt.logger_name+'/'+filename)
 
 
 class AverageMeter(object):
