@@ -1093,7 +1093,7 @@ def cifar10_autoexp(args):
 
 def mnist_linrank(args):
     dataset = 'mnist'
-    log_dir = 'runs_%s_linrank' % dataset
+    log_dir = 'runs_%s_linrank_wnoise' % dataset
     shared_args = [('dataset', [dataset]),
                    ('lr', [0.01]),
                    ('epochs', [
@@ -1104,6 +1104,8 @@ def mnist_linrank(args):
                    # ('lr_decay_epoch', [30]),
                    ('momentum', [0.9]),
                    # ('exp_lr', ['']),
+                   ('wnoise', ['']),
+                   # ('wnoise_stddev', [1., .1, .01, .001]),
                    ]
     args += [OrderedDict([('optim', ['sgd'])] + shared_args)]
     shared_args += [('optim', ['dmom_jvp']),
@@ -1113,8 +1115,8 @@ def mnist_linrank(args):
                     ('sampler_params', ['50,90,2,200']),
                     ('sampler_w2c', ['linrank']),
                     ]
-    args += [OrderedDict([('alpha', ['one']),
-                          ]+shared_args)]
+    # args += [OrderedDict([('alpha', ['one']),
+    #                       ]+shared_args)]
     args += [OrderedDict([('alpha', ['loss']),
                           ('dmom', [0.9]),
                           ]+shared_args)]
@@ -1123,7 +1125,7 @@ def mnist_linrank(args):
 
 def cifar10_linrank(args):
     dataset = 'cifar10'
-    log_dir = 'runs_%s_linrank_explr' % dataset
+    log_dir = 'runs_%s_linrank_explr_wnoise' % dataset
     shared_args = [('dataset', [dataset]),
                    ('arch', ['resnet32']),
                    ('epochs', [
@@ -1131,8 +1133,8 @@ def cifar10_linrank(args):
                        # (100, OrderedDict([('lr_decay_epoch', ['50,75'])])),
                        (200, OrderedDict([('exp_lr', ['']),
                                           ('lr_decay_epoch', [100])])),
-                       (100, OrderedDict([('exp_lr', ['']),
-                                          ('lr_decay_epoch', [50])])),
+                       # (100, OrderedDict([('exp_lr', ['']),
+                       #                    ('lr_decay_epoch', [50])])),
                    ]),
                    ('batch_size', [
                        (32, OrderedDict([('lr', [.1])])),
@@ -1143,6 +1145,8 @@ def cifar10_linrank(args):
                    # ('lr_decay_epoch', [100]),
                    # ('lr_decay_epoch', ['100,150']),
                    ('log_nex', ['']),
+                   # ('data_aug', ['']),
+                   ('wnoise', ['']),
                    ]
     args += [OrderedDict([('optim', ['sgd']),
                           ]+shared_args)]
@@ -1169,7 +1173,7 @@ def cifar10_linrank(args):
 def svhn_linrank(args):
     # Same as cifar10 resnet32
     dataset = 'svhn'
-    log_dir = 'runs_%s_linrank_explr' % dataset
+    log_dir = 'runs_%s_linrank_explr_wnoise' % dataset
     shared_args = [('dataset', [dataset]),
                    ('arch', ['resnet32']),
                    ('epochs', [
@@ -1185,6 +1189,7 @@ def svhn_linrank(args):
                    ('weight_decay', [1e-4]),
                    # ('lr', [0.1]),
                    ('log_nex', ['']),
+                   ('wnoise', ['']),
                    ]
     args += [OrderedDict([('optim', ['sgd']),
                           ]+shared_args)]
@@ -1197,7 +1202,7 @@ def svhn_linrank(args):
                     ('sampler_w2c', ['linrank']),
                     ('sampler_params', ['50,90,2,200']),
                     # ('seed', [1, 2]),
-                    ('sampler_maxw', [1, 5]),
+                    # ('sampler_maxw', [1, 5]),
                     ]
     # args += [OrderedDict([('alpha', ['one']),
     #                       ]+shared_args)]
@@ -1223,9 +1228,9 @@ if __name__ == '__main__':
     # args, log_dir = svhn_bs(args)
     # args, log_dir = mnist_autoexp(args)
     # args, log_dir = cifar10_autoexp(args)
-    # args, log_dir = mnist_linrank(args)
+    args, log_dir = mnist_linrank(args)
     # args, log_dir = cifar10_linrank(args)
-    args, log_dir = svhn_linrank(args)
+    # args, log_dir = svhn_linrank(args)
     # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2', 'bolt1_gpu0,1,2,3']
     # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2',
     #           'bolt1_gpu0,1', 'bolt1_gpu2,3',
@@ -1242,8 +1247,8 @@ if __name__ == '__main__':
     # njobs = [2, 2, 2, 2,
     #          1, 1, 1, 1]
     # njobs = [1, 2, 1]
-    njobs = [2, 2, 1, 1]
-    # njobs = [2] * 8
+    # njobs = [2, 2, 2, 2]
+    njobs = [2] * 8
     # njobs = [2, 1, 2, 1,
     #          2, 1, 2, 1]
     jobs = []
@@ -1252,7 +1257,7 @@ if __name__ == '__main__':
         # jobs += ['%s_job%d' % (s, i) for s in jobs_0]
 
     run_single = RunSingle(log_dir)
-    # run_single.num = 18
+    run_single.num = 3
 
     # args = OrderedDict([('lr', [1, 2]), ('batch_size', [10, 20])])
     # args = OrderedDict([('lr', [(1, OrderedDict([('batch_size', [10])])),

@@ -49,3 +49,6 @@ log_nex: False
 lr_scale: False
 sampler_maxw: 1
 tblog_interval: 100
+data_aug: False
+wnoise: False
+wnoise_stddev: 1.e-3

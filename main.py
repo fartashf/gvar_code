@@ -22,7 +22,7 @@ import models.imagenet
 # import nonacc_autograd
 from optim.dmom import DMomSGD
 from optim.add_dmom import AddDMom
-from optim.jvp import DMomSGDJVP
+from optim.jvp import DMomSGDJVP, add_weight_noise, remove_weight_noise
 from log_utils import TBXWrapper
 tb_logger = TBXWrapper()
 
@@ -150,6 +150,12 @@ def main():
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--sampler_maxw',
                         default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--data_aug',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--wnoise',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--wnoise_stddev',
+                        default=argparse.SUPPRESS, type=float)
     args = parser.parse_args()
 
     yaml_path = os.path.join('options/{}/{}'.format(args.dataset,
@@ -319,6 +325,8 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
         if opt.cuda:
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data), Variable(target)
+        if opt.wnoise:
+            add_weight_noise(optimizer, opt)
         optimizer.zero_grad()
         output = model(data)
         if opt.optim == 'dmom':
@@ -354,6 +362,8 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
             optimizer.profiler.toc('backward')
             optimizer.step()
             optimizer.profiler.toc('step')
+        if opt.wnoise:
+            remove_weight_noise(optimizer, opt)
         optimizer.niters += 1
         optimizer.profiler.end()
 

@@ -92,13 +92,26 @@ def get_cifar10_loaders(opt):
     # train_sampler = SubsetRandomSampler(train_idx)
     # valid_sampler = SubsetRandomSampler(valid_idx)
 
+    if opt.data_aug:
+        transform = [
+            transforms.RandomAffine(10, (.1, .1), (0.7, 1.2), 10),
+            transforms.ColorJitter(.2, .2, .2),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomCrop(32),
+            transforms.ToTensor(),
+            normalize,
+        ]
+    else:
+        transform = [
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomCrop(32, 4),
+            transforms.ToTensor(),
+            normalize,
+        ]
+
     train_dataset = datasets.CIFAR10(root=opt.data, train=True,
-                                     transform=transforms.Compose([
-                                         transforms.RandomHorizontalFlip(),
-                                         transforms.RandomCrop(32, 4),
-                                         transforms.ToTensor(),
-                                         normalize,
-                                     ]), download=True)
+                                     transform=transforms.Compose(transform),
+                                     download=True)
     test_dataset = datasets.CIFAR10(
         root=opt.data, train=False, download=True,
         transform=transforms.Compose([
@@ -109,21 +122,30 @@ def get_cifar10_loaders(opt):
 
 
 def get_svhn_loaders(opt, **kwargs):
+    normalize = transforms.Normalize((0.5, 0.5, 0.5),
+                                     (0.5, 0.5, 0.5))
+    if opt.data_aug:
+        transform = [
+            transforms.RandomAffine(10, (.1, .1), (0.7, 1.), 10),
+            transforms.ColorJitter(.2, .2, .2),
+            transforms.RandomCrop(32),
+            transforms.ToTensor(),
+            normalize,
+        ]
+    else:
+        transform = [
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5),
+                                 (0.5, 0.5, 0.5))
+        ]
+
     train_dataset = torch.utils.data.ConcatDataset(
         (datasets.SVHN(
             opt.data, split='train', download=True,
-            transform=transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.5, 0.5, 0.5),
-                                     (0.5, 0.5, 0.5))
-            ])),
+            transform=transforms.Compose(transform)),
          datasets.SVHN(
              opt.data, split='extra', download=True,
-             transform=transforms.Compose([
-                 transforms.ToTensor(),
-                 transforms.Normalize((0.5, 0.5, 0.5),
-                                      (0.5, 0.5, 0.5))
-             ]))))
+             transform=transforms.Compose(transform))))
     test_dataset = datasets.SVHN(opt.data, split='test', download=True,
                                  transform=transforms.Compose([
                                      transforms.ToTensor(),
@@ -171,6 +193,23 @@ class DmomWeightedRandomSampler(Sampler):
 
     def __len__(self):
         return self.num_samples
+
+
+class DMomSampler(Sampler):
+    def __init__(self, num_samples, opt):
+        self.num_samples = num_samples
+        self.opt = opt
+        self.scheduler = None
+        self.training = True
+
+    def __iter__(self):
+        if self.training:
+            I = self.next_epoch()
+            return (I[i] for i in torch.randperm(len(I)))
+        return iter(torch.randperm(self.num_samples))
+
+    def update(self, optimizer):
+        self.scheduler.schedule()
 
 
 class DelayedSampler(Sampler):

@@ -275,3 +275,22 @@ class DMomSGDJVP(optim.Optimizer):
                     fgbar.zero_().addcmul_(1/bias_correction2, mom, exp_avg_sq)
                 elif 'Figbar' in self.opt.alpha:
                     fgbar.zero_().addcdiv_(bias_correction2, mom, exp_avg_sq)
+
+
+def add_weight_noise(optimizer, opt):
+    param_groups = optimizer.param_groups
+    for group in param_groups:
+        for p in group['params']:
+            state = optimizer.state[p]
+            if 'wnoise' not in state:
+                state['wnoise'] = torch.zeros_like(p.data)
+            state['wnoise'].normal_(0, opt.wnoise_stddev)
+            p.data.add_(state['wnoise'])
+
+
+def remove_weight_noise(optimizer, opt):
+    param_groups = optimizer.param_groups
+    for group in param_groups:
+        for p in group['params']:
+            state = optimizer.state[p]
+            p.data.add_(-state['wnoise'])

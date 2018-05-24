@@ -2,7 +2,8 @@ import cPickle
 import numpy as np
 import os
 
-CIFAR_DATA_DIR = '%s/datasets/cifar-10-batches-py'%os.getenv("HOME")
+# CIFAR_DATA_DIR = '%s/datasets/cifar-10-batches-py'%os.getenv("HOME")
+CIFAR_DATA_DIR = '../../data/cifar10/cifar-10-batches-py/'
 
 class Data(object):
     def __init__(self, X_train, y_train, X_test, y_test):
@@ -10,9 +11,13 @@ class Data(object):
         self.y_train = y_train
         self.X_test = X_test
         self.y_test = y_test
+        self.scheduler = None
+        self.X_train_shuf = np.zeros(0)  # force the first shuffle
+        self.y_train_shuf = np.zeros(0)
+        self.index_shuf = []
 
     def dimension(self):
-        return np.prod(self.X_train.shape[1:])
+        return np.prod(self.X_train_shuf.shape[1:])
 
     def shuffle(self):
         #train_perm = np.random.permutation(self.X_train.shape[0])
@@ -20,10 +25,23 @@ class Data(object):
 
         # from http://stackoverflow.com/questions/4601373/better-way-to-shuffle-two-numpy-arrays-in-unison
         # shuffle both arrays in-place
-        rng_state = np.random.get_state()
-        np.random.shuffle(self.X_train)
-        np.random.set_state(rng_state)
-        np.random.shuffle(self.y_train)
+        self.X_train_shuf = self.X_train.copy()
+        self.y_train_shuf = self.y_train.copy()
+        ntrain = self.X_train.shape[0]
+
+        # rng_state = np.random.get_state()
+        # np.random.shuffle(self.X_train_shuf)
+        # np.random.set_state(rng_state)
+        # np.random.shuffle(self.y_train_shuf)
+
+        if self.scheduler:
+            self.index_shuf = self.scheduler.next_epoch()
+        else:
+            self.index_shuf = np.arange(ntrain)
+
+        np.random.shuffle(self.index_shuf)
+        self.X_train_shuf = self.X_train[self.index_shuf]
+        self.y_train_shuf = self.y_train[self.index_shuf]
 
     @staticmethod
     def batches(X, y, mbsize):
@@ -36,25 +54,31 @@ class Data(object):
             curr_y = y[start:end, ...]
             if curr_X.ndim > 2:
                 curr_X = curr_X.reshape((curr_X.shape[0], -1), order='F')
-            
+
             if y is not None:
                 yield curr_X, curr_y
             else:
                 yield curr_X
 
+    def update_alpha(self, idx, alpha):
+        if self.scheduler:
+            self.scheduler.update_alpha(idx, alpha)
+
     def train_batches_loop(self, X, y, mbsize, reshuffle=False):
         while True:
-            for result in self.batches(self.X_train, self.y_train, mbsize):
+            for result in self.batches(self.X_train_shuf, self.y_train_shuf, mbsize):
                 yield result
             if reshuffle:
                 self.shuffle()
-            
+
 
     def num_train_batches(self, mbsize):
-        return self.X_train.shape[0] // mbsize
+        return self.X_train_shuf.shape[0] // mbsize
 
     def train_batches(self, mbsize):
-        return self.batches(self.X_train, self.y_train, mbsize)
+        if self.scheduler:
+            self.scheduler.niters += 1
+        return self.batches(self.X_train_shuf, self.y_train_shuf, mbsize)
 
     def test_batches(self, mbsize):
         return self.batches(self.X_test, self.y_test, mbsize)
@@ -63,7 +87,7 @@ class Data(object):
         batch_id = np.random.randint(0, self.num_train_batches(mbsize))
         start = batch_id * mbsize
         end = start + mbsize
-        return self.X_train[start:end, ...], self.y_train[start:end, ...]
+        return self.X_train_shuf[start:end, ...], self.y_train_shuf[start:end, ...]
 
 
 
@@ -73,7 +97,7 @@ class DataParams(object):
         self.normalize = normalize
         self.transform = transform
         self.unit_variance = unit_variance
-        
+
     @classmethod
     def default(cls):
         return cls()
@@ -81,6 +105,7 @@ class DataParams(object):
 
 class DataWithTransformations(Data):
     def __init__(self, X_train_full, y_train, X_test_full, y_test):
+        super(DataWithTransformations, self).__init__(X_train_full, y_train, X_test_full, y_test)
         self.X_train_full = X_train_full
         self.y_train = y_train
         self.y_train_orig = self.y_train.copy()
@@ -134,7 +159,7 @@ def load_data(params):
     ##     ax.imshow(X_train_[i, :, :, :])
     ## fig.canvas.draw()
 
-    
+
     test_obj = cPickle.load(open(cifar_test_batch_path()))
     X_test = test_obj['data'].astype(float)
     y_test = np.array(test_obj['labels'])

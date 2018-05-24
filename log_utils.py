@@ -4,6 +4,7 @@ import numpy as np
 from tensorboardX import SummaryWriter
 import time
 import torch
+import os
 
 
 def hist_bins(val):
@@ -70,6 +71,10 @@ class TBXWrapper(object):
         # self.logobj[name] += [(time.time(), step, np.array(val))]
 
     def save_log(self, filename='log.pth.tar'):
+        try:
+            os.makedirs(self.opt.logger_name)
+        except os.error:
+            pass
         torch.save(dict(self.logobj), self.opt.logger_name+'/'+filename)
 
 
