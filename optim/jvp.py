@@ -294,3 +294,177 @@ def remove_weight_noise(optimizer, opt):
         for p in group['params']:
             state = optimizer.state[p]
             p.data.add_(-state['wnoise'])
+
+
+class DMomSGDNoScheduler(optim.Optimizer):
+    # http://pytorch.org/docs/master/_modules/torch/optim/sgd.html
+    def __init__(self, params, opt, train_size, lr, momentum=0, dampening=0,
+                 weight_decay=0, nesterov=False):
+        if lr < 0.0:
+            raise ValueError("Invalid learning rate: {}".format(lr))
+        if momentum < 0.0:
+            raise ValueError("Invalid momentum value: {}".format(momentum))
+        if weight_decay < 0.0:
+            raise ValueError(
+                "Invalid weight_decay value: {}".format(weight_decay))
+
+        defaults = dict(lr=lr, momentum=momentum, dampening=dampening,
+                        weight_decay=weight_decay, nesterov=nesterov)
+        if nesterov and (momentum <= 0 or dampening != 0):
+            raise ValueError(
+                "Nesterov momentum requires a momentum and zero dampening")
+        params = list(params)
+        self.W = params
+        super(DMomSGDNoScheduler, self).__init__(params, defaults)
+        self.opt = opt
+        self.g_bar = None
+        self.scheduler = None
+
+    def step(self, idx, loss, target, **kwargs):
+        self.scheduler.loss[idx] = loss.data.cpu().numpy()
+        target = target.data.cpu().numpy().copy()
+
+        self.profiler.tic()
+        alpha = self.compute_alpha(loss)
+        self.scheduler.update_alpha(idx, alpha)
+        self.profiler.toc('alpha')
+
+        self.zero_grad()
+        weights = torch.Tensor(self.scheduler.weights[idx]/len(idx)).cuda()
+        loss.backward(weights)
+        self.profiler.toc('backward')
+
+        gv, gvn = self.step_sgd()
+        self.logger.update('grad_var', gv, len(idx))
+        self.logger.update('grad_var_n', gvn, len(idx))
+        if 'F' in self.opt.alpha:
+            self.compute_moments()
+        self.profiler.toc('update')
+
+    def step_sgd(self):
+        gv = 0
+        gn = 0
+        pn = 0
+        for group in self.param_groups:
+            weight_decay = group['weight_decay']
+            momentum = group['momentum']
+            dampening = group['dampening']
+            nesterov = group['nesterov']
+
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                d_p = p.grad.data
+                if weight_decay != 0:
+                    d_p.add_(weight_decay, p.data)
+                if momentum != 0:
+                    param_state = self.state[p]
+                    if 'momentum_buffer' not in param_state:
+                        buf = param_state['momentum_buffer'] =\
+                            torch.zeros_like(p.data)
+                        buf.mul_(momentum).add_(d_p)
+                    else:
+                        buf = param_state['momentum_buffer']
+                        gv += (buf-d_p).pow(2).sum()
+                        gn += buf.pow(2).sum()
+                        pn += torch.numel(buf)
+                        buf.mul_(momentum).add_(1 - dampening, d_p)
+                    if nesterov:
+                        d_p = d_p.add(momentum, buf)
+                    else:
+                        d_p = buf
+
+                p.data.add_(-group['lr'], d_p)
+        return gv/(pn + 1e-7), gv/(gn + 1e-7)
+
+    def compute_alpha(self, loss):
+        g_bar = self.get_gbar()
+        if self.opt.alpha == 'loss':
+            alpha = loss.data.cpu().numpy()
+        elif self.opt.alpha == 'gtheta_abs':
+            alpha = np.abs(loss_jvp(self.W, loss, g_bar).data.cpu().numpy())
+        elif self.opt.alpha == 'one' or g_bar is None:
+            alpha = np.ones((len(loss), ))
+        elif 'gbar_abs' in self.opt.alpha:
+            alpha = np.abs(loss_jvp(self.W, loss, g_bar).data.cpu().numpy())
+        elif 'gbar_max0' in self.opt.alpha:
+            alpha = np.maximum(
+                loss_jvp(self.W, loss, g_bar).data.cpu().numpy(),
+                0)
+        elif self.opt.alpha == 'lgg':
+            alpha1 = loss.data.cpu().numpy()
+            alpha1 /= alpha1.sum()
+            alpha2 = np.abs(loss_jvp(self.W, loss, g_bar).data.cpu().numpy())
+            alpha2 /= alpha2.sum()
+            alpha = alpha1 + alpha2
+        return alpha
+
+    def get_gbar(self):
+        if (self.g_bar is not None
+                or self.opt.alpha == 'loss'
+                or self.opt.alpha == 'one'):
+            return self.g_bar
+
+        if 'theta' in self.opt.alpha:
+            self.g_bar = [w.data for w in self.W]
+            return self.g_bar
+        elif 'F' in self.opt.alpha:
+            m = [self.state[p]['fgbar']
+                 for group in self.param_groups
+                 for p in group['params']
+                 if p.grad is not None]
+        # elif 'Figbar' in self.opt.alpha:
+        #     m = [1/(1e-8+self.state[p]['exp_avg_sq_bc'])
+        #          for group in self.param_groups
+        #          for p in group['params']
+        #          if p.grad is not None]
+        elif 'gbar' in self.opt.alpha:
+            m = [self.state[p]['momentum_buffer']
+                 for group in self.param_groups
+                 for p in group['params']
+                 if p.grad is not None]
+        if len(m) != 0:
+            self.g_bar = m
+
+        return self.g_bar
+
+    def compute_moments(self):
+        """
+        From Adam
+        """
+        beta2 = 0.999
+
+        for group in self.param_groups:
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                grad = p.grad.data
+
+                state = self.state[p]
+
+                # State initialization
+                if 'exp_avg' not in state:
+                    state['step'] = 0
+                    # Exponential moving average of squared gradient values
+                    state['exp_avg_sq'] = torch.zeros_like(p.data)
+                    state['fgbar'] = torch.zeros_like(p.data)
+
+                exp_avg_sq = state['exp_avg_sq']
+                fgbar = state['fgbar']
+                mom = state['momentum_buffer']
+
+                state['step'] += 1
+
+                if group['weight_decay'] != 0:
+                    grad = grad.add(group['weight_decay'], p.data)
+
+                # Decay the first and second moment running average coefficient
+                exp_avg_sq.mul_(beta2).addcmul_(1 - beta2, grad, grad)
+
+                bias_correction2 = 1 - beta2 ** state['step']
+
+                # exp_avg_sq_bc.copy_(exp_avg_sq).div_(bias_correction2)
+                if 'Fgbar' in self.opt.alpha:
+                    fgbar.zero_().addcmul_(1/bias_correction2, mom, exp_avg_sq)
+                elif 'Figbar' in self.opt.alpha:
+                    fgbar.zero_().addcdiv_(bias_correction2, mom, exp_avg_sq)

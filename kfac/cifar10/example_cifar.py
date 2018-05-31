@@ -10,7 +10,7 @@ import kfac
 import resnet_model
 
 sys.path.append('../../')
-from scheduler import DMomScheduler
+import schedulers
 from log_utils import LogCollector, TBXWrapper
 tb_logger = TBXWrapper()
 
@@ -306,7 +306,7 @@ def run_kfac():
       #        'sampler_start_epoch': FLAGS.sampler_start_epoch,
       #        'maxiter': FLAGS.maxiter}
       # opt = DictWrapper(opt)
-      data.scheduler = DMomScheduler(data.X_train.shape[0], opt)
+      data.scheduler = schedulers.get_scheduler(data.X_train.shape[0], opt)
 
   #train_images, train_labels = cifar10_input.inputs(
   #  eval_data=False, data_dir=CIFAR_DATA_DIR, batch_size=BATCHSIZE, image_size=32)

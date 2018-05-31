@@ -4,6 +4,7 @@ import torch.utils.data as data
 from torch.utils.data.sampler import Sampler
 import numpy as np
 import os
+import schedulers
 
 
 def get_loaders(opt):
@@ -25,7 +26,10 @@ def dataset_to_loaders(train_dataset, test_dataset, opt):
     kwargs = {'num_workers': opt.workers,
               'pin_memory': True} if opt.cuda else {}
     if opt.sampler:
-        train_sampler = DelayedSampler(len(train_dataset), opt)
+        if opt.scheduler:
+            train_sampler = DMomSampler(len(train_dataset), opt)
+        else:
+            train_sampler = DelayedSampler(len(train_dataset), opt)
     else:
         train_sampler = None
     train_loader = torch.utils.data.DataLoader(
@@ -199,17 +203,23 @@ class DMomSampler(Sampler):
     def __init__(self, num_samples, opt):
         self.num_samples = num_samples
         self.opt = opt
-        self.scheduler = None
         self.training = True
+        self.scheduler = schedulers.get_scheduler(num_samples, opt)
 
     def __iter__(self):
         if self.training:
-            I = self.next_epoch()
+            I = self.scheduler.next_epoch()
+            self.indices = I
             return (I[i] for i in torch.randperm(len(I)))
         return iter(torch.randperm(self.num_samples))
 
-    def update(self, optimizer):
+    def update(self):
         self.scheduler.schedule()
+
+    def __len__(self):
+        if self.training:
+            return len(self.indices)
+        return self.num_samples
 
 
 class DelayedSampler(Sampler):

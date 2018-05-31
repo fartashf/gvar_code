@@ -22,7 +22,8 @@ import models.imagenet
 # import nonacc_autograd
 from optim.dmom import DMomSGD
 from optim.add_dmom import AddDMom
-from optim.jvp import DMomSGDJVP, add_weight_noise, remove_weight_noise
+from optim.jvp import DMomSGDJVP, DMomSGDNoScheduler
+from optim.jvp import add_weight_noise, remove_weight_noise
 from log_utils import TBXWrapper
 tb_logger = TBXWrapper()
 
@@ -172,6 +173,7 @@ def main():
         opt.lr = opt.lr * opt.batch_size/128.
 
     opt.cuda = not opt.no_cuda and torch.cuda.is_available()
+    opt.scheduler = (opt.optim == 'dmom_ns')
 
     logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
     tb_logger.configure(opt.logger_name, flush_secs=5, opt=opt)
@@ -183,6 +185,9 @@ def main():
         torch.cuda.manual_seed(opt.seed)
 
     train_loader, test_loader, train_test_loader = get_loaders(opt)
+
+    epoch_iters = int(np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
+    opt.maxiter = epoch_iters * opt.epochs
 
     if opt.dataset == 'mnist':
         if opt.arch == 'cnn':
@@ -225,6 +230,12 @@ def main():
                                train_size=len(train_loader.dataset),
                                lr=opt.lr, momentum=opt.momentum,
                                weight_decay=opt.weight_decay)
+    elif opt.optim == 'dmom_ns':
+        optimizer = DMomSGDNoScheduler(model.parameters(),
+                                       opt,
+                                       train_size=len(train_loader.dataset),
+                                       lr=opt.lr, momentum=opt.momentum,
+                                       weight_decay=opt.weight_decay)
     elif opt.optim == 'ssgd':
         # optimizer = SimpleSGD(model.parameters(),
         #                       lr=opt.lr, momentum=opt.momentum)
@@ -241,8 +252,11 @@ def main():
                               lr=opt.lr, momentum=opt.momentum,
                               weight_decay=opt.weight_decay)
     optimizer.niters = 0
+    optimizer.logger = LogCollector(opt)
+    if opt.scheduler:
+        optimizer.scheduler = train_loader.sampler.scheduler
+        optimizer.scheduler.logger = optimizer.logger
 
-    epoch_iters = int(np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
     count_nz = []
     epoch = 0
     count_lr_update = 0
@@ -281,10 +295,20 @@ def main():
         if opt.log_image:
             vis_samples(optimizer.alpha, train_loader.dataset, opt.epochs)
 
-        optimizer.logger = LogCollector(opt)
+        optimizer.logger.reset()
         optimizer.log_perc('last_')
         logging.info(str(optimizer.logger))
         optimizer.logger.tb_log(tb_logger, step=optimizer.niters)
+
+    if opt.scheduler:
+        scheduler = optimizer.scheduler
+        if opt.log_image:
+            vis_samples(scheduler.alpha, train_loader.dataset, opt.epochs)
+
+        scheduler.logger.reset()
+        scheduler.log_perc('last_')
+        logging.info(str(scheduler.logger))
+        scheduler.logger.tb_log(tb_logger, step=optimizer.niters)
 
 
 def fix_bn(m):
@@ -295,7 +319,6 @@ def fix_bn(m):
 def train(epoch, train_loader, model, optimizer, opt, test_loader,
           save_checkpoint, train_test_loader):
     batch_time = AverageMeter()
-    optimizer.logger = LogCollector(opt)
     optimizer.profiler = Profiler()
     model.train()
     end = time.time()
@@ -303,20 +326,33 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
     if opt.sampler and epoch >= opt.sampler_start_epoch:
         # optimizer.weights += 1e-5
         # optimizer.weights /= optimizer.weights.sum()
-        optimizer.weights = train_loader.sampler.update(optimizer)
-        count = train_loader.sampler.count
-        count_nz = float((count == 0).sum())
-        logger = LogCollector(opt)
+        optimizer.logger.reset()
+        logger = optimizer.logger
         niters = optimizer.niters
-        logger.tb_log(tb_logger, step=niters)
+        if opt.scheduler:
+            train_loader.sampler.update()
+            count = train_loader.sampler.scheduler.count
+        else:
+            optimizer.weights = train_loader.sampler.update(optimizer)
+            count = train_loader.sampler.count
+        count_nz = float((count == 0).sum())
         logger.update('touch_p', count_nz*100./len(count), 1)
         logger.update('touch', count_nz, 1)
         logger.update('count_h', count, 1, hist=True)
-        logger.update('weights_h', train_loader.sampler.weights, 1, hist=True)
-        logger.update('visits_h', train_loader.sampler.visits, 1, hist=True)
+        if opt.scheduler:
+            logger.update('weights_h',
+                          train_loader.sampler.scheduler.weights, 1, hist=True)
+            logger.update('visits_h',
+                          train_loader.sampler.scheduler.visits, 1, hist=True)
+        else:
+            logger.update('weights_h',
+                          train_loader.sampler.weights, 1, hist=True)
+            logger.update('visits_h',
+                          train_loader.sampler.visits, 1, hist=True)
         logging.info(str(logger))
         logger.tb_log(tb_logger, step=niters)
     epoch_iters = int(np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
+    optimizer.logger.reset()
     for batch_idx, (data, target, idx) in enumerate(train_loader):
         if optimizer.niters == opt.epochs*epoch_iters:
             break
@@ -336,7 +372,7 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
             grads = nonacc_grad(model, loss)
             optimizer.profiler.toc('backward')
             optimizer.step(idx, grads, loss, target)
-        elif opt.optim == 'dmom_jvp':
+        elif opt.optim == 'dmom_jvp' or opt.optim == 'dmom_ns':
             optimizer.profiler.tic()
             loss = F.nll_loss(output, target, reduce=False)
             # TODO: /batch_size
@@ -365,6 +401,8 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
         if opt.wnoise:
             remove_weight_noise(optimizer, opt)
         optimizer.niters += 1
+        if opt.scheduler:
+            train_loader.sampler.scheduler.niters += 1
         optimizer.profiler.end()
 
         batch_time.update(time.time() - end)
@@ -406,10 +444,20 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
             tb_logger.save_log()
 
     if opt.optim == 'dmom' or opt.optim == 'dmom_jvp':  # and epoch > 9:
-        optimizer.logger = LogCollector(opt)
+        optimizer.logger.reset()
         optimizer.log_perc()
         logging.info(str(optimizer.logger))
         optimizer.logger.tb_log(tb_logger, step=niters)
+
+    if opt.scheduler:
+        scheduler = optimizer.scheduler
+        if opt.log_image:
+            vis_samples(scheduler.alpha, train_loader.dataset, opt.epochs)
+
+        scheduler.logger.reset()
+        scheduler.log_perc('last_')
+        logging.info(str(scheduler.logger))
+        scheduler.logger.tb_log(tb_logger, step=optimizer.niters)
 
 
 def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
@@ -417,6 +465,7 @@ def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
     test_loss = 0
     correct = 0
     test_loader.sampler.training = False
+    loss_h = np.zeros(len(test_loader))
     with torch.no_grad():
         for data, target, idx in test_loader:
             if opt.cuda:
@@ -425,7 +474,11 @@ def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
             data, target = Variable(data), Variable(target)
             output = model(data)
             # sum up batch loss
-            test_loss += F.nll_loss(output, target, size_average=False).item()
+            # test_loss += F.nll_loss(output, target,
+            #                         size_average=False).item()
+            loss = F.nll_loss(output, target, reduce=False)
+            test_loss += loss.sum().item()
+            loss_h[idx] = loss.cpu().numpy()
             # get the index of the max log-probability
             pred = output.data.max(1, keepdim=True)[1]
             # measure accuracy and record loss
@@ -452,6 +505,8 @@ def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
         tb_logger.log_value('%sacc' % prefix, accuracy, step=niters)
         tb_logger.log_value('%serror' % prefix, error, step=niters)
         test_loader.sampler.training = True
+    tb_logger.log_hist('%sloss_h' % prefix, loss_h, step=niters,
+                       log_scale=True)
     return accuracy
 
 

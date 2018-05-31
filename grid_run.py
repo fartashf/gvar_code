@@ -9,12 +9,13 @@ class RunSingle(object):
         self.num = 0
 
     def __call__(self, args):
-        logger_name = '%s/%02d_' % (self.log_dir, self.num)
+        logger_name = 'runs/%s/%02d_' % (self.log_dir, self.num)
         cmd = ['python main.py']
         self.num += 1
         for k, v in args:
-            cmd += ['--{} {}'.format(k, v)]
-            logger_name += '{}_{},'.format(k, v)
+            if v is not None:
+                cmd += ['--{} {}'.format(k, v)]
+                logger_name += '{}_{},'.format(k, v)
         dir_name = logger_name.strip(',')
         cmd += ['--logger_name "$dir_name"']
         cmd += ['> "$dir_name/log" 2>&1']
@@ -35,18 +36,19 @@ def deep_product(args, index=0, cur_args=[]):
         # for v in product(*values):
         keys = args.keys()
         values = args.values()
-        if isinstance(values[index], list):
-            for v in values[index]:
-                if not isinstance(v, tuple):
-                    next_args = cur_args + [(keys[index], v)]
+        if not isinstance(values[index], list):
+            values[index] = [values[index]]
+        for v in values[index]:
+            if not isinstance(v, tuple):
+                next_args = cur_args + [(keys[index], v)]
+                for a in deep_product(args, index+1, next_args):
+                    yield a
+            else:
+                for dv in deep_product(v[1]):
+                    next_args = cur_args + [(keys[index], v[0])]
+                    next_args += dv
                     for a in deep_product(args, index+1, next_args):
                         yield a
-                else:
-                    for dv in deep_product(v[1]):
-                        next_args = cur_args + [(keys[index], v[0])]
-                        next_args += dv
-                        for a in deep_product(args, index+1, next_args):
-                            yield a
 
 
 def run_multi(run_single, args):
@@ -1213,6 +1215,179 @@ def svhn_linrank(args):
     return args, log_dir
 
 
+def mnist_expsnooze(args):
+    dataset = 'mnist'
+    log_dir = 'runs_%s_expsnooze_ad_hist' % dataset
+    shared_args = [('dataset', dataset),
+                   ('lr', 0.01),
+                   ('epochs', [
+                       # (100, OrderedDict([('lr_decay_epoch', 50)])),
+                       # (40, OrderedDict([('lr_decay_epoch', 20)])),
+                       (100, OrderedDict([('lr_decay_epoch', 100)])),
+                   ]),
+                   # ('lr_decay_epoch', 30),
+                   ('momentum', 0.9),
+                   # ('exp_lr', ''),
+                   # ('wnoise', ''),
+                   # ('wnoise_stddev', [1., .1, .01, .001]),
+                   ]
+    args += [OrderedDict([('optim', 'sgd')] + shared_args)]
+    shared_args += [('optim', 'dmom_ns'),
+                    # ('seed', [1, 2]),
+                    ('alpha_norm', 'sum'),
+                    ('sampler', ''),
+                    ('sampler_w2c', [
+                        ('exp_snooze_th',
+                         OrderedDict([('sampler_params',
+                                       [1e-3]
+                                       # [1e-3, 1e-4]
+                                       # [1e-5, 1e-6]
+                                       )])),
+                        # ('exp_snooze_med',
+                        #  OrderedDict([('sampler_params',
+                        #                # [1e-1, 1e-2, 1e-3]
+                        #                [1., .5]
+                        #                )])),
+                        # ('exp_snooze_mean',
+                        #  OrderedDict([('sampler_params',
+                        #                # [1e-1, 1e-2, 1e-3]
+                        #                [1., .5]
+                        #                )])),
+                        # ('exp_snooze_perc',
+                        #  OrderedDict([('sampler_params',
+                        #                ['10,1.', '10,10', '1,10']
+                        #                )])),
+                        # ('exp_snooze_lin',
+                        #  OrderedDict([('sampler_params',
+                        #                ['50,1', '50,2', '50,4',
+                        #                 '10,1', '10,2', '10,4']
+                        #                )])),
+                        # ('exp_snooze_expdec',
+                        #  OrderedDict([('sampler_params',
+                        #                ['1e-3,100', '1e-3,50']
+                        #                )])),
+                        ('exp_snooze_stepdec',
+                         OrderedDict([('sampler_params',
+                                       ['1e-3,50']
+                                       )])),
+                    ]),
+                    ]
+    # args += [OrderedDict([('alpha', 'one'),
+    #                       ]+shared_args)]
+    args += [OrderedDict([('alpha', 'loss'),
+                          ('dmom', 0.9),
+                          ]+shared_args)]
+    return args, log_dir
+
+
+def cifar10_expsnooze(args):
+    dataset = 'cifar10'
+    log_dir = 'runs_%s_expsnooze_ad' % dataset
+    shared_args = [('dataset', dataset),
+                   ('arch', 'resnet32'),
+                   ('epochs', [
+                       # (200, OrderedDict([('lr_decay_epoch', '100,150')])),
+                       # (100, OrderedDict([('lr_decay_epoch', '50,75')])),
+                       (200, OrderedDict([('exp_lr', ''),
+                                          ('lr_decay_epoch', 100)])),
+                       # (100, OrderedDict([('exp_lr', ''),
+                       #                    ('lr_decay_epoch', 50)])),
+                   ]),
+                   # ('batch_size', [
+                   #     (32, OrderedDict([('lr', .1)])),
+                   #     (1024, OrderedDict([('lr', .5)])),
+                   # ]),
+                   # ('log_nex', ''),
+                   ('lr', 0.1),
+                   ('weight_decay', 1e-4),
+                   # ('lr_decay_epoch', 100),
+                   # ('lr_decay_epoch', '100,150'),
+                   # ('data_aug', ''),
+                   # ('wnoise', [None, '']),
+                   ]
+    # args += [OrderedDict([('optim', 'sgd'),
+    #                       ]+shared_args)]
+    # args += [OrderedDict([('optim', 'dmom_jvp'),
+    #                       ('alpha', 'one'),
+    #                       ]+shared_args)]
+    shared_args += [('optim', 'dmom_ns'),
+                    ('alpha_norm', 'sum'),
+                    ('sampler', ''),
+                    ('sampler_w2c', [
+                        # ('linrank',
+                        #  OrderedDict([('sampler_params',
+                        #                ['50,90,2,200']
+                        #                )])),
+                        # ('exp_snooze_th',
+                        #  OrderedDict([('sampler_params',
+                        #                # [1e-3, 1e-4]
+                        #                [1e-5, 1e-6]
+                        #                )])),
+                        # ('exp_snooze_expdec',
+                        #  OrderedDict([('sampler_params',
+                        #                ['1e-3,100', '1e-3,50']
+                        #                )])),
+                        ('exp_snooze_stepdec',
+                         OrderedDict([('sampler_params',
+                                       # ['1e-3,50']
+                                       ['1e-3,100']
+                                       )])),
+                    ]),
+                    # ('seed', [1, 2]),
+                    # ('sampler_maxw', [2, 5]),
+                    ]
+    # args += [OrderedDict([('alpha', 'one'),
+    #                       ]+shared_args)]
+    args += [OrderedDict([('alpha', 'loss'),
+                          # ('dmom', [0., 0.5, 0.9]),
+                          ('dmom', 0.9),
+                          ]+shared_args)]
+    return args, log_dir
+
+
+def svhn_expsnooze(args):
+    # Same as cifar10 resnet32
+    dataset = 'svhn'
+    log_dir = 'runs_%s_expsnooze' % dataset
+    shared_args = [('dataset', dataset),
+                   ('arch', 'resnet32'),
+                   ('epochs', [
+                       # (160, OrderedDict([('lr_decay_epoch', '80,120')])),
+                       # (120, OrderedDict([('lr_decay_epoch', '60,90')])),
+                       (160, OrderedDict([('exp_lr', ''),
+                                          ('lr_decay_epoch', 80)])),
+                   ]),
+                   # ('batch_size', [
+                   #     (128, OrderedDict([('lr', .1)])),
+                   #     (1024, OrderedDict([('lr', .5)])),
+                   # ]),
+                   ('weight_decay', 1e-4),
+                   # ('lr', 0.1),
+                   # ('log_nex', ''),
+                   ('wnoise', [None, '']),
+                   ]
+    args += [OrderedDict([('optim', 'sgd'),
+                          ]+shared_args)]
+    # args += [OrderedDict([('optim', 'dmom_jvp'),
+    #                       ('alpha', 'one'),
+    #                       ]+shared_args)]
+    shared_args += [('optim', 'dmom_ns'),
+                    ('alpha_norm', 'sum'),
+                    ('sampler', ''),
+                    ('sampler_w2c', 'exp_snooze'),
+                    ('sampler_params', [1e-2, 1e-3, 1e-4]),
+                    # ('seed', [1, 2]),
+                    # ('sampler_maxw', [1, 5]),
+                    ]
+    # args += [OrderedDict([('alpha', 'one'),
+    #                       ]+shared_args)]
+    args += [OrderedDict([('alpha', 'loss'),
+                          # ('dmom', [0., 0.5, 0.9]),
+                          ('dmom', 0.9),
+                          ]+shared_args)]
+    return args, log_dir
+
+
 if __name__ == '__main__':
     args = []
     # args, log_dir = cifar10_resnet_explr(args)
@@ -1228,16 +1403,19 @@ if __name__ == '__main__':
     # args, log_dir = svhn_bs(args)
     # args, log_dir = mnist_autoexp(args)
     # args, log_dir = cifar10_autoexp(args)
-    args, log_dir = mnist_linrank(args)
+    # args, log_dir = mnist_linrank(args)
     # args, log_dir = cifar10_linrank(args)
     # args, log_dir = svhn_linrank(args)
+    args, log_dir = mnist_expsnooze(args)
+    # args, log_dir = cifar10_expsnooze(args)
+    # args, log_dir = svhn_expsnooze(args)
     # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2', 'bolt1_gpu0,1,2,3']
     # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2',
     #           'bolt1_gpu0,1', 'bolt1_gpu2,3',
     #           ]
     jobs_0 = ['bolt2_gpu0', 'bolt2_gpu1', 'bolt2_gpu2', 'bolt2_gpu3',
-              'bolt1_gpu0', 'bolt1_gpu1', 'bolt1_gpu2', 'bolt1_gpu3',
-              # 'bolt0_gpu0', 'bolt0_gpu1', 'bolt0_gpu2']  # , 'bolt0_gpu3']
+              'bolt1_gpu1', 'bolt1_gpu2', 'bolt1_gpu3',  # 'bolt1_gpu0',
+              'bolt0_gpu0', 'bolt0_gpu1', 'bolt0_gpu2', 'bolt0_gpu3'
               ]
     # jobs_0 = ['bolt2_gpu0', 'bolt1_gpu0', 'bolt2_gpu1', 'bolt1_gpu1',
     #           'bolt2_gpu2', 'bolt1_gpu2', 'bolt2_gpu3', 'bolt1_gpu3',
@@ -1248,7 +1426,7 @@ if __name__ == '__main__':
     #          1, 1, 1, 1]
     # njobs = [1, 2, 1]
     # njobs = [2, 2, 2, 2]
-    njobs = [2] * 8
+    njobs = [1] * 12
     # njobs = [2, 1, 2, 1,
     #          2, 1, 2, 1]
     jobs = []
@@ -1257,7 +1435,7 @@ if __name__ == '__main__':
         # jobs += ['%s_job%d' % (s, i) for s in jobs_0]
 
     run_single = RunSingle(log_dir)
-    run_single.num = 3
+    # run_single.num = 5
 
     # args = OrderedDict([('lr', [1, 2]), ('batch_size', [10, 20])])
     # args = OrderedDict([('lr', [(1, OrderedDict([('batch_size', [10])])),

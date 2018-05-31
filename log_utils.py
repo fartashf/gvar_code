@@ -225,6 +225,9 @@ class LogCollector(object):
         self.meters = OrderedDict()
         self.log_keys = opt.log_keys.split(',')
 
+    def reset(self):
+        self.meters = OrderedDict()
+
     def update(self, k, v, n=0, hist=False, log_scale=False):
         if k not in self.meters:
             if type(v).__module__ == np.__name__:
