@@ -52,3 +52,8 @@ tblog_interval: 100
 data_aug: False
 wnoise: False
 wnoise_stddev: 1.e-3
+min_batches: 1
+tauXstd: False
+tauXstdL: False
+scheduler: False
+pretrained: False

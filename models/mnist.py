@@ -86,3 +86,61 @@ class MLP(nn.Module):
             x = F.dropout(x, training=self.training)
         x = self.fc4(x)
         return F.log_softmax(x, dim=-1)
+
+
+class SmallMLP(nn.Module):
+    def __init__(self, dropout=True):
+        """
+        Like MLP but smaller hidden dims
+        """
+        super(SmallMLP, self).__init__()
+        self.dropout = dropout
+        self.fc1 = nn.Linear(28*28, 50)
+        self.fc2 = nn.Linear(50, 50)
+        # self.fc3 = nn.Linear(1024, 1024)
+        self.fc4 = nn.Linear(50, 10)
+
+    def forward(self, x):
+        x = x.view(-1, 28*28)
+        if self.dropout:
+            x = F.dropout(x, training=self.training, p=0.2)
+        x = F.relu(self.fc1(x))
+        if self.dropout:
+            x = F.dropout(x, training=self.training)
+        x = F.relu(self.fc2(x))
+        # if self.dropout:
+        #     x = F.dropout(x, training=self.training)
+        # x = F.relu(self.fc3(x))
+        if self.dropout:
+            x = F.dropout(x, training=self.training)
+        x = self.fc4(x)
+        return F.log_softmax(x, dim=-1)
+
+
+class SuperSmallMLP(nn.Module):
+    def __init__(self, dropout=True):
+        """
+        Like MLP but smaller hidden dims
+        """
+        super(SuperSmallMLP, self).__init__()
+        self.dropout = dropout
+        self.fc1 = nn.Linear(28*28, 20)
+        self.fc2 = nn.Linear(20, 20)
+        # self.fc3 = nn.Linear(1024, 1024)
+        self.fc4 = nn.Linear(20, 10)
+
+    def forward(self, x):
+        x = x.view(-1, 28*28)
+        if self.dropout:
+            x = F.dropout(x, training=self.training, p=0.2)
+        x = F.relu(self.fc1(x))
+        if self.dropout:
+            x = F.dropout(x, training=self.training)
+        x = F.relu(self.fc2(x))
+        # if self.dropout:
+        #     x = F.dropout(x, training=self.training)
+        # x = F.relu(self.fc3(x))
+        if self.dropout:
+            x = F.dropout(x, training=self.training)
+        x = self.fc4(x)
+        return F.log_softmax(x, dim=-1)

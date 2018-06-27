@@ -236,9 +236,7 @@ class DMomSGDJVP(optim.Optimizer):
         self.alpha_normed_pre = self.alpha_normed
 
     def compute_moments(self):
-        """
-        From Adam
-        """
+        """ From Adam """
         beta2 = 0.999
 
         for group in self.param_groups:
@@ -334,9 +332,10 @@ class DMomSGDNoScheduler(optim.Optimizer):
         loss.backward(weights)
         self.profiler.toc('backward')
 
-        gv, gvn = self.step_sgd()
-        self.logger.update('grad_var', gv, len(idx))
-        self.logger.update('grad_var_n', gvn, len(idx))
+        gv, gvn, gn = self.step_sgd()
+        self.logger.update('grad_var', gv, 1)
+        self.logger.update('grad_var_n', gvn, 1)
+        self.logger.update('gbar_norm', gn, 1)
         if 'F' in self.opt.alpha:
             self.compute_moments()
         self.profiler.toc('update')
@@ -375,7 +374,7 @@ class DMomSGDNoScheduler(optim.Optimizer):
                         d_p = buf
 
                 p.data.add_(-group['lr'], d_p)
-        return gv/(pn + 1e-7), gv/(gn + 1e-7)
+        return gv/(pn + 1e-7), gv/(gn + 1e-7), gn
 
     def compute_alpha(self, loss):
         g_bar = self.get_gbar()
@@ -429,9 +428,7 @@ class DMomSGDNoScheduler(optim.Optimizer):
         return self.g_bar
 
     def compute_moments(self):
-        """
-        From Adam
-        """
+        """ From Adam """
         beta2 = 0.999
 
         for group in self.param_groups:

@@ -14,6 +14,7 @@ import shutil
 from data import get_loaders
 import yaml
 import os
+import glob
 import models
 import models.mnist
 import models.cifar10
@@ -24,6 +25,7 @@ from optim.dmom import DMomSGD
 from optim.add_dmom import AddDMom
 from optim.jvp import DMomSGDJVP, DMomSGDNoScheduler
 from optim.jvp import add_weight_noise, remove_weight_noise
+from optim.sgd import optim_log
 from log_utils import TBXWrapper
 tb_logger = TBXWrapper()
 
@@ -137,7 +139,7 @@ def main():
                         default=argparse.SUPPRESS, type=int)
     parser.add_argument('--wmomentum', type=float, default=argparse.SUPPRESS)
     parser.add_argument('--log_keys',
-                        default='touch,touch_p,alpha_normed_h,count_h')
+                        default='touch,touch_p,alpha_normed_h,count_h,tau')
     parser.add_argument('--sampler_params', default='10,90,5,100')
     parser.add_argument('--sampler_repetition',
                         default=argparse.SUPPRESS, action='store_true')
@@ -157,6 +159,18 @@ def main():
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--wnoise_stddev',
                         default=argparse.SUPPRESS, type=float)
+    parser.add_argument('--min_batches',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--tauXstd',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--tauXstdL',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--resume', default='', type=str, metavar='PATH',
+                        help='path to latest checkpoint (default: none)')
+    parser.add_argument('--scheduler',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--pretrained',
+                        default=argparse.SUPPRESS, action='store_true')
     args = parser.parse_args()
 
     yaml_path = os.path.join('options/{}/{}'.format(args.dataset,
@@ -173,7 +187,10 @@ def main():
         opt.lr = opt.lr * opt.batch_size/128.
 
     opt.cuda = not opt.no_cuda and torch.cuda.is_available()
-    opt.scheduler = (opt.optim == 'dmom_ns')
+    if opt.optim == 'dmom_ns':
+        opt.scheduler = True
+    if opt.scheduler:
+        opt.sampler = True
 
     logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
     tb_logger.configure(opt.logger_name, flush_secs=5, opt=opt)
@@ -194,6 +211,10 @@ def main():
             model = models.mnist.Convnet()
         elif opt.arch == 'mlp':
             model = models.mnist.MLP()
+        elif opt.arch == 'smlp':
+            model = models.mnist.SmallMLP()
+        elif opt.arch == 'ssmlp':
+            model = models.mnist.SuperSmallMLP()
         # else:
         #     model = models.mnist.MNISTNet()
     elif opt.dataset == 'cifar10' or opt.dataset == 'svhn':
@@ -206,7 +227,7 @@ def main():
             model = models.cifar10.__dict__[opt.arch]()
         model = torch.nn.DataParallel(model)
     elif opt.dataset == 'imagenet':
-        model = models.imagenet.Model(opt.arch)
+        model = models.imagenet.Model(opt.arch, opt.pretrained)
     elif opt.dataset == 'logreg':
         model = models.logreg.Linear(opt.dim, opt.num_class)
     elif opt.dataset == '10class':
@@ -247,20 +268,45 @@ def main():
                             train_size=len(train_loader.dataset),
                             lr=opt.lr, momentum=opt.momentum,
                             dmom=opt.dmom)
-    else:
+    elif opt.optim == 'sgd':
         optimizer = optim.SGD(model.parameters(),
                               lr=opt.lr, momentum=opt.momentum,
+                              weight_decay=opt.weight_decay)
+    elif opt.optim == 'adam':
+        optimizer = optim.SGD(model.parameters(),
+                              lr=opt.lr,
                               weight_decay=opt.weight_decay)
     optimizer.niters = 0
     optimizer.logger = LogCollector(opt)
     if opt.scheduler:
         optimizer.scheduler = train_loader.sampler.scheduler
         optimizer.scheduler.logger = optimizer.logger
+    epoch = 0
+    save_checkpoint = SaveCheckpoint()
+
+    # optionally resume from a checkpoint
+    if opt.resume:
+        resume = glob.glob(opt.resume)
+        resume = resume[0] if len(resume) > 0 else opt.resume
+        if os.path.isfile(resume):
+            print("=> loading checkpoint '{}'".format(resume))
+            checkpoint = torch.load(resume)
+            epoch = checkpoint['epoch']
+            model.load_state_dict(checkpoint['model'])
+            optimizer.niters = checkpoint['niters']
+            best_prec1 = checkpoint['best_prec1']
+            save_checkpoint.best_prec1 = best_prec1
+            print("=> loaded checkpoint '{}' (epoch {}, best_prec {})"
+                  .format(resume, epoch, best_prec1))
+            if opt.train_accuracy:
+                test(model, train_test_loader, opt, optimizer.niters,
+                     'Train', 'T')
+            test(model, test_loader, opt, optimizer.niters)
+        else:
+            print("=> no checkpoint found at '{}'".format(resume))
 
     count_nz = []
-    epoch = 0
     count_lr_update = 0
-    save_checkpoint = SaveCheckpoint()
     # for epoch in range(opt.epochs):
     while optimizer.niters < opt.epochs*epoch_iters:
         optimizer.epoch = epoch
@@ -323,28 +369,31 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
     model.train()
     end = time.time()
     # update sampler weights
-    if opt.sampler and epoch >= opt.sampler_start_epoch:
+    if opt.sampler and epoch >= opt.sampler_start_epoch and not opt.scheduler:
         # optimizer.weights += 1e-5
         # optimizer.weights /= optimizer.weights.sum()
         optimizer.logger.reset()
         logger = optimizer.logger
         niters = optimizer.niters
-        if opt.scheduler:
-            train_loader.sampler.update()
-            count = train_loader.sampler.scheduler.count
-        else:
+        # if opt.scheduler:
+        #     count = train_loader.sampler.scheduler.count
+        # else:
+        if True:
             optimizer.weights = train_loader.sampler.update(optimizer)
             count = train_loader.sampler.count
         count_nz = float((count == 0).sum())
         logger.update('touch_p', count_nz*100./len(count), 1)
         logger.update('touch', count_nz, 1)
         logger.update('count_h', count, 1, hist=True)
-        if opt.scheduler:
-            logger.update('weights_h',
-                          train_loader.sampler.scheduler.weights, 1, hist=True)
-            logger.update('visits_h',
-                          train_loader.sampler.scheduler.visits, 1, hist=True)
-        else:
+        # if opt.scheduler:
+        #     logger.update('weights_h',
+        #                   train_loader.sampler.scheduler.weights,
+        #                   1, hist=True)
+        #     logger.update('visits_h',
+        #                   train_loader.sampler.scheduler.visits,
+        #                   1, hist=True)
+        # else:
+        if True:
             logger.update('weights_h',
                           train_loader.sampler.weights, 1, hist=True)
             logger.update('visits_h',
@@ -387,6 +436,20 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
         elif opt.optim == 'adddmom':
             loss_i = F.nll_loss(output, target, reduce=False)
             loss = optimizer.step(idx, loss_i)
+        elif opt.scheduler:
+            scheduler = optimizer.scheduler
+            optimizer.profiler.tic()
+            loss = F.nll_loss(output, target, reduce=False)
+            optimizer.profiler.toc('forward')
+            alpha = loss.data.cpu().numpy()
+            scheduler.update_alpha(idx, alpha)
+            optimizer.profiler.toc('alpha')
+            weights = torch.Tensor(scheduler.weights[idx]/len(idx)).cuda()
+            loss.backward(weights)
+            optimizer.profiler.toc('backward')
+            optim_log(optimizer, optimizer.logger)
+            optimizer.step()
+            optimizer.profiler.toc('step')
         else:
             optimizer.profiler.tic()
             loss = F.nll_loss(output, target)
@@ -396,6 +459,7 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
             # import ipdb; ipdb.set_trace()
             loss.backward()
             optimizer.profiler.toc('backward')
+            optim_log(optimizer, optimizer.logger)
             optimizer.step()
             optimizer.profiler.toc('step')
         if opt.wnoise:
@@ -455,7 +519,7 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
             vis_samples(scheduler.alpha, train_loader.dataset, opt.epochs)
 
         scheduler.logger.reset()
-        scheduler.log_perc('last_')
+        scheduler.log_perc()
         logging.info(str(scheduler.logger))
         scheduler.logger.tb_log(tb_logger, step=optimizer.niters)
 
@@ -465,7 +529,7 @@ def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
     test_loss = 0
     correct = 0
     test_loader.sampler.training = False
-    loss_h = np.zeros(len(test_loader))
+    loss_h = np.zeros(len(test_loader.dataset))
     with torch.no_grad():
         for data, target, idx in test_loader:
             if opt.cuda:
@@ -582,12 +646,12 @@ def vis_samples(alphas, train_dataset, epoch):
 
 
 def adjust_learning_rate(optimizer, epoch, opt):
-    """Sets the learning rate to the initial LR decayed by 10"""
+    """ Sets the learning rate to the initial LR decayed by 10 """
     if opt.exp_lr:
-        """
+        """ test
         A=np.arange(200);
         np.round(np.power(.1, np.power(2., A/80.)-1), 6)[[0,80,120,160]]
-        """
+        test """
         last_epoch = 2. ** (float(epoch) / int(opt.lr_decay_epoch)) - 1
     else:
         last_epoch = epoch // int(opt.lr_decay_epoch)

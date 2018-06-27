@@ -4,12 +4,21 @@ import numpy as np
 def get_scheduler(train_size, opt):
     sched_dict = {'linrank': LinRankScheduler,
                   'exp_snooze_th': ExpSnoozerThresh,
+                  'expsnz_tau': ExpSnoozerThresh,
                   'exp_snooze_med': ExpSnoozerMedian,
                   'exp_snooze_mean': ExpSnoozerMean,
                   'exp_snooze_perc': ExpSnoozerPerc,
                   'exp_snooze_lin': ExpSnoozerLinearRank,
-                  'exp_snooze_expdec': ExpSnoozerExpDecay,
-                  'exp_snooze_stepdec': ExpSnoozerStepDecay,
+                  'exp_snooze_expdec': ExpSnoozerDecInc,
+                  'exp_snooze_stepdec': ExpSnoozerDecInc,
+                  'exp_snooze_expinc': ExpSnoozerDecInc,
+                  'exp_snooze_stepinc': ExpSnoozerDecInc,
+                  'exp_snooze_tauXstd': ExpSnoozerThreshStd,
+                  'expsnz_tauXstd': ExpSnoozerThreshStd,
+                  'exp_snooze_tauXstdL': ExpSnoozerThreshStdLog,
+                  'expsnz_tauXstdL': ExpSnoozerThreshStdLog,
+                  'expsnz_cumsum': ExpSnoozerCumSum,
+                  'expsnz_tauXmu': ExpSnoozerThreshMean,
                   }
     return sched_dict[opt.sampler_w2c](train_size, opt)
 
@@ -38,7 +47,8 @@ class DMomScheduler(object):
 
     def next_epoch(self):
         I = range(self.num_samples)
-        if self.opt.sampler and self.epoch >= self.opt.sampler_start_epoch:
+        if ((self.opt.scheduler or self.opt.sampler)
+                and self.epoch >= self.opt.sampler_start_epoch):
             self.indices = self.schedule()
             print(len(self.indices))
             # print(np.histogram(self.visits, bins='doane')[0])
@@ -85,7 +95,7 @@ class DMomScheduler(object):
         # normalize alphas to sum to 1
         if self.opt.alpha_norm == 'sum':
             alpha_val /= alpha_val.sum()
-        elif self.opt.alpha_norm == 'none':
+        elif self.opt.alpha_norm == 'bs':
             alpha_val /= len(alpha_val)
         return alpha_val
 
@@ -105,6 +115,14 @@ class DMomScheduler(object):
             saf = sa[np.where(sa < sa.size/10)[0]]
             self.logger.update(prefix+'big_alpha_vs_pre_h', saf, 1, hist=True)
         self.alpha_normed_pre = self.alpha_normed
+
+        count = self.count
+        count_nz = float((count == 0).sum())
+        self.logger.update('touch_p', count_nz*100./len(count), 1)
+        self.logger.update('touch', count_nz, 1)
+        self.logger.update('count_h', count, 1, hist=True)
+        self.logger.update('weights_h', self.weights, 1, hist=True)
+        self.logger.update('visits_h', self.visits, 1, hist=True)
 
 
 class LinRankScheduler(DMomScheduler):
@@ -150,12 +168,15 @@ class LinRankScheduler(DMomScheduler):
         delay = (1. * delay) * (delay_b - delay_a) + delay_a
         count[needdelay] = np.int32(np.ceil(delay))
         print('Delay perc: %d delay: %d' % (perc, count[ids_d].mean()))
+        tau = alpha_x[ids_d].max()
+        self.logger.update('tau', float(tau), 1)
 
         # shared updates
         self.weights[self.indices] = 0
         self.weights = np.minimum(self.opt.sampler_maxw, self.weights + 1)
         self.count = np.around(count - np.min(count))  # min should be 0
-        while (self.count == 0).sum() < self.opt.batch_size:
+        while ((self.count == 0).sum() <
+               self.opt.min_batches * self.opt.batch_size):
             self.count = np.maximum(0, self.count - 1)
         return np.where(self.count == 0)[0]
 
@@ -170,11 +191,13 @@ class ExpSnoozer(DMomScheduler):
         self.num_bumped = 0
 
     def schedule_tau(self, tau):
+        alpha = np.array(self.alpha_normed, dtype=np.float32)
+        awake_cond = alpha >= tau
         tau = float(tau)
         self.logger.update('tau', tau, 1)
-        alpha = np.array(self.alpha_normed, dtype=np.float32)
-        awake = np.logical_and(self.active, alpha >= tau)
-        snoozed = np.logical_and(self.active, alpha < tau)
+
+        awake = np.logical_and(self.active, awake_cond)
+        snoozed = np.logical_and(self.active, np.logical_not(awake_cond))
         bumped = np.logical_and(awake, self.delta > 0)
         self.num_bumped = nb = bumped.sum()
         self.delta[awake] = 0
@@ -185,7 +208,7 @@ class ExpSnoozer(DMomScheduler):
         # shared updates
         self.weights[:] = 1
         self.active[:] = False
-        while self.active.sum() < self.opt.batch_size:
+        while self.active.sum() < self.opt.min_batches * self.opt.batch_size:
             self.wait[np.logical_not(self.active)] += 1
             self.active[np.power(2, self.delta) == self.wait] = True
         self.count[:] = np.power(2, self.delta) - self.wait
@@ -244,27 +267,64 @@ class ExpSnoozerLinearRank(ExpSnoozer):
         return I
 
 
-class ExpSnoozerExpDecay(ExpSnoozer):
+class ExpSnoozerDecInc(ExpSnoozer):
     def __init__(self, train_size, opt):
-        super(ExpSnoozerExpDecay, self).__init__(train_size, opt)
+        super(ExpSnoozerDecInc, self).__init__(train_size, opt)
         params = map(float, self.opt.sampler_params.split(','))
         self.tau, self.decay_epoch = params
 
     def schedule(self):
-        epoch = self.niters//self.epoch_iters
-        last_epoch = 2. ** (float(epoch) / int(self.decay_epoch)) - 1
-        tau = self.tau * (0.1 ** last_epoch)
+        epoch = float(self.niters//self.epoch_iters)
+        if (self.opt.sampler_w2c.endswith('stepdec') or
+                self.opt.sampler_w2c.endswith('stepinc')):
+            epoch = int(epoch)
+        last_epoch = 2. ** (epoch / int(self.decay_epoch)) - 1
+        base = 0.1 if self.opt.sampler_w2c.endswith('dec') else 10.
+        tau = self.tau * (base ** last_epoch)
         return self.schedule_tau(tau)
 
 
-class ExpSnoozerStepDecay(ExpSnoozer):
-    def __init__(self, train_size, opt):
-        super(ExpSnoozerStepDecay, self).__init__(train_size, opt)
-        params = map(float, self.opt.sampler_params.split(','))
-        self.tau, self.decay_epoch = params
-
+class ExpSnoozerThreshStd(ExpSnoozer):
     def schedule(self):
-        epoch = self.niters//self.epoch_iters
-        last_epoch = epoch // int(self.decay_epoch)
-        tau = self.tau * (0.1 ** last_epoch)
+        tau = float(self.opt.sampler_params)
+        alpha = np.array(self.alpha_normed, dtype=np.float32)
+        mu = np.mean(alpha[alpha > np.exp(-20)])
+        std = np.std(alpha[alpha > np.exp(-20)])
+        # awake_cond = np.logical_and(alpha >= mu-tau*std,
+        #                             alpha <= mu+tau*std)
+        self.logger.update('tauloss_mu', float(mu), 1)
+        self.logger.update('tauloss_std', float(std), 1)
+        tau = mu-tau*std
+        return self.schedule_tau(tau)
+
+
+class ExpSnoozerThreshStdLog(ExpSnoozer):
+    def schedule(self):
+        tau = float(self.opt.sampler_params)
+        alpha = np.array(self.alpha_normed, dtype=np.float32)
+        mu = np.mean(np.log(alpha[alpha > np.exp(-20)]))
+        std = np.std(np.log(alpha[alpha > np.exp(-20)]))
+        self.logger.update('tauloss_mu', float(mu), 1)
+        self.logger.update('tauloss_std', float(std), 1)
+        tau = mu-tau*std
+        tau = np.exp(tau)
+        return self.schedule_tau(tau)
+
+
+class ExpSnoozerCumSum(ExpSnoozer):
+    def schedule(self):
+        tau = float(self.opt.sampler_params)
+        alpha = np.array(self.alpha_normed, dtype=np.float32)
+        alpha_cs = np.cumsum(np.sort(alpha))
+        idx = np.argmin(np.abs(alpha_cs - alpha_cs[-1]*tau))
+        tau = alpha[idx]
+        return self.schedule_tau(tau)
+
+
+class ExpSnoozerThreshMean(ExpSnoozer):
+    def schedule(self):
+        tau = float(self.opt.sampler_params)
+        alpha = np.array(self.alpha_normed, dtype=np.float32)
+        mu = np.mean(alpha[alpha > np.exp(-20)])
+        tau = tau*mu
         return self.schedule_tau(tau)

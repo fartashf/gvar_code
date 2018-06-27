@@ -57,6 +57,9 @@ class TBXWrapper(object):
                                           step*self.opt.batch_size,
                                           float(val))]
 
+    def add_scalar(self, name, val, step):
+        self.log_value(name, val, step)
+
     def log_hist(self, name, val, step, log_scale=False):
         # https://github.com/lanpa/tensorboard-pytorch/issues/42
         # bins = hist_bins(val)
@@ -76,6 +79,9 @@ class TBXWrapper(object):
         except os.error:
             pass
         torch.save(dict(self.logobj), self.opt.logger_name+'/'+filename)
+
+    def close(self):
+        self.writer.close()
 
 
 class AverageMeter(object):

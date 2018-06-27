@@ -214,7 +214,8 @@ class DMomSampler(Sampler):
         return iter(torch.randperm(self.num_samples))
 
     def update(self):
-        self.scheduler.schedule()
+        # self.scheduler.schedule()
+        raise NotImplemented("Should not be called.")
 
     def __len__(self):
         if self.training:

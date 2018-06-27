@@ -23,3 +23,27 @@ class SimpleSGD(optim.Optimizer):
                 d_p = buf
                 p.data.add_(-group['lr'], d_p)
 
+
+def optim_log(optimizer, logger):
+    gv = 0
+    gn = 0
+    pn = 0
+    for group in optimizer.param_groups:
+        weight_decay = group['weight_decay']
+        momentum = group['momentum']
+
+        for p in group['params']:
+            if p.grad is None:
+                continue
+            d_p = p.grad.data
+            if momentum != 0:
+                param_state = optimizer.state[p]
+                if 'momentum_buffer' in param_state:
+                    buf = param_state['momentum_buffer']
+                    gv += (buf-(d_p+weight_decay*p.data)).pow(2).sum()
+                    gn += buf.pow(2).sum()
+                    pn += torch.numel(buf)
+
+    logger.update('grad_var', gv/(pn + 1e-7), 1)
+    logger.update('grad_var_n', gv/(gn + 1e-7), 1)
+    logger.update('gbar_norm', gn, 1)
