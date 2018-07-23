@@ -19,6 +19,7 @@ def get_scheduler(train_size, opt):
                   'expsnz_tauXstdL': ExpSnoozerThreshStdLog,
                   'expsnz_cumsum': ExpSnoozerCumSum,
                   'expsnz_tauXmu': ExpSnoozerThreshMean,
+                  'expsnz_tauXstdLB': ExpSnoozerThreshStdLogBiased,
                   }
     return sched_dict[opt.sampler_w2c](train_size, opt)
 
@@ -33,6 +34,7 @@ class DMomScheduler(object):
         self.alpha_normed_pre = None
         self.loss = np.ones((train_size,))
         self.epoch = 0
+        self.target = np.zeros((train_size,))
 
         num_samples = train_size
         self.num_samples = num_samples
@@ -44,6 +46,7 @@ class DMomScheduler(object):
         self.epoch_iters = int(np.ceil(1.*self.num_samples/opt.batch_size))
 
         self.logger = None
+        self.abias = 0
 
     def next_epoch(self):
         I = range(self.num_samples)
@@ -115,14 +118,28 @@ class DMomScheduler(object):
             saf = sa[np.where(sa < sa.size/10)[0]]
             self.logger.update(prefix+'big_alpha_vs_pre_h', saf, 1, hist=True)
         self.alpha_normed_pre = self.alpha_normed
+        self.logger.update(prefix+'alpha_normed_biased_h',
+                           self.alpha_normed-self.abias,
+                           1, hist=True, log_scale=True)
 
         count = self.count
         count_nz = float((count == 0).sum())
-        self.logger.update('touch_p', count_nz*100./len(count), 1)
-        self.logger.update('touch', count_nz, 1)
-        self.logger.update('count_h', count, 1, hist=True)
-        self.logger.update('weights_h', self.weights, 1, hist=True)
-        self.logger.update('visits_h', self.visits, 1, hist=True)
+        self.logger.update(prefix+'touch_p', count_nz*100./len(count), 1)
+        self.logger.update(prefix+'touch', count_nz, 1)
+        self.logger.update(prefix+'count_h', count, 1, hist=True)
+        self.logger.update(prefix+'weights_h', self.weights, 1, hist=True)
+        self.logger.update(prefix+'visits_h', self.visits, 1, hist=True)
+        closs_h = class_loss(self.loss, self.target)
+        self.logger.update(prefix+'slossC_h', closs_h, 1, hist=True,
+                           log_scale=True, bins=min(len(closs_h), 100))
+
+
+def class_loss(loss, target):
+    nclasses = int(target.max()+1)
+    closs_h = np.zeros(nclasses)
+    for i in range(nclasses):
+        closs_h[i] = loss[target == i].sum()
+    return closs_h
 
 
 class LinRankScheduler(DMomScheduler):
@@ -327,4 +344,20 @@ class ExpSnoozerThreshMean(ExpSnoozer):
         alpha = np.array(self.alpha_normed, dtype=np.float32)
         mu = np.mean(alpha[alpha > np.exp(-20)])
         tau = tau*mu
+        return self.schedule_tau(tau)
+
+
+class ExpSnoozerThreshStdLogBiased(ExpSnoozer):
+    def schedule(self):
+        tau = float(self.opt.sampler_params)
+        alpha = np.array(self.alpha_normed, dtype=np.float32)
+        self.abias = np.percentile(alpha, 10)/10
+        print(self.abias)
+        alpha -= self.abias
+        mu = np.mean(np.log(alpha[alpha > np.exp(-20)]))
+        std = np.std(np.log(alpha[alpha > np.exp(-20)]))
+        self.logger.update('tauloss_mu', float(mu), 1)
+        self.logger.update('tauloss_std', float(std), 1)
+        tau = mu-tau*std
+        tau = self.abias+np.exp(tau)
         return self.schedule_tau(tau)

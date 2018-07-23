@@ -27,6 +27,7 @@ from optim.jvp import DMomSGDJVP, DMomSGDNoScheduler
 from optim.jvp import add_weight_noise, remove_weight_noise
 from optim.sgd import optim_log
 from log_utils import TBXWrapper
+from schedulers import class_loss
 tb_logger = TBXWrapper()
 
 
@@ -171,6 +172,10 @@ def main():
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--pretrained',
                         default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--nodropout',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--num_class',
+                        default=argparse.SUPPRESS, type=int)
     args = parser.parse_args()
 
     yaml_path = os.path.join('options/{}/{}'.format(args.dataset,
@@ -202,19 +207,20 @@ def main():
         torch.cuda.manual_seed(opt.seed)
 
     train_loader, test_loader, train_test_loader = get_loaders(opt)
+    tb_logger.log_obj('classes', train_loader.dataset.ds.classes)
 
     epoch_iters = int(np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
     opt.maxiter = epoch_iters * opt.epochs
 
     if opt.dataset == 'mnist':
         if opt.arch == 'cnn':
-            model = models.mnist.Convnet()
+            model = models.mnist.Convnet(not opt.nodropout)
         elif opt.arch == 'mlp':
-            model = models.mnist.MLP()
+            model = models.mnist.MLP(not opt.nodropout)
         elif opt.arch == 'smlp':
-            model = models.mnist.SmallMLP()
+            model = models.mnist.SmallMLP(not opt.nodropout)
         elif opt.arch == 'ssmlp':
-            model = models.mnist.SuperSmallMLP()
+            model = models.mnist.SuperSmallMLP(not opt.nodropout)
         # else:
         #     model = models.mnist.MNISTNet()
     elif opt.dataset == 'cifar10' or opt.dataset == 'svhn':
@@ -228,6 +234,8 @@ def main():
         model = torch.nn.DataParallel(model)
     elif opt.dataset == 'imagenet':
         model = models.imagenet.Model(opt.arch, opt.pretrained)
+    elif opt.dataset.startswith('imagenet'):
+        model = models.imagenet.Model(opt.arch, opt.pretrained, opt.num_class)
     elif opt.dataset == 'logreg':
         model = models.logreg.Linear(opt.dim, opt.num_class)
     elif opt.dataset == '10class':
@@ -442,6 +450,7 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
             loss = F.nll_loss(output, target, reduce=False)
             optimizer.profiler.toc('forward')
             alpha = loss.data.cpu().numpy()
+            scheduler.target[idx] = target.data.cpu().numpy()
             scheduler.update_alpha(idx, alpha)
             optimizer.profiler.toc('alpha')
             weights = torch.Tensor(scheduler.weights[idx]/len(idx)).cuda()
@@ -530,6 +539,7 @@ def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
     correct = 0
     test_loader.sampler.training = False
     loss_h = np.zeros(len(test_loader.dataset))
+    targets = np.zeros(len(test_loader.dataset))
     with torch.no_grad():
         for data, target, idx in test_loader:
             if opt.cuda:
@@ -543,6 +553,7 @@ def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
             loss = F.nll_loss(output, target, reduce=False)
             test_loss += loss.sum().item()
             loss_h[idx] = loss.cpu().numpy()
+            targets[idx] = target.data.cpu().numpy()
             # get the index of the max log-probability
             pred = output.data.max(1, keepdim=True)[1]
             # measure accuracy and record loss
@@ -571,6 +582,13 @@ def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
         test_loader.sampler.training = True
     tb_logger.log_hist('%sloss_h' % prefix, loss_h, step=niters,
                        log_scale=True)
+    for i in range(min(10, int(targets.max()))):
+        tb_logger.log_hist('%slossC%d_h' % (prefix, i),
+                           loss_h[targets == i], step=niters,
+                           log_scale=True)
+    closs_h = class_loss(loss_h, targets)
+    tb_logger.log_hist('%slossC_h' % prefix, closs_h, step=niters,
+                       log_scale=True, bins=min(len(closs_h), 100))
     return accuracy
 
 

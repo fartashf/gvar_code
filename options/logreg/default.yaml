@@ -57,3 +57,5 @@ tauXstd: False
 tauXstdL: False
 scheduler: False
 pretrained: False
+nodropout: False
+minvar: False

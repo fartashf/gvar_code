@@ -14,7 +14,7 @@ def get_loaders(opt):
         return get_cifar10_loaders(opt)
     elif opt.dataset == 'svhn':
         return get_svhn_loaders(opt)
-    elif opt.dataset == 'imagenet':
+    elif opt.dataset.startswith('imagenet'):
         return get_imagenet_loaders(opt)
     elif opt.dataset == 'logreg':
         return get_logreg_loaders(opt)
@@ -33,7 +33,8 @@ def dataset_to_loaders(train_dataset, test_dataset, opt):
     else:
         train_sampler = None
     train_loader = torch.utils.data.DataLoader(
-        IndexedDataset(train_dataset, opt), batch_size=opt.batch_size,
+        IndexedDataset(train_dataset, opt, train=True),
+        batch_size=opt.batch_size,
         sampler=train_sampler,
         shuffle=(train_sampler is None),
         drop_last=True, **kwargs)
@@ -51,18 +52,21 @@ def dataset_to_loaders(train_dataset, test_dataset, opt):
 
 
 class IndexedDataset(data.Dataset):
-    def __init__(self, dataset, opt):
+    def __init__(self, dataset, opt, train=False):
         self.ds = dataset
         self.opt = opt
         self.cr_labels = np.random.randint(
             self.opt.num_class, size=len(dataset))
         cr_ids = np.arange(len(dataset))
-        self.cr_ids = cr_ids[:int(opt.corrupt_perc * len(dataset) / 100.)]
+        self.cr_ids = []
+        if train:
+            cr_num = int(1. * opt.corrupt_perc * len(dataset) / 100.)
+            self.cr_ids = cr_ids[:cr_num]
 
     def __getitem__(self, index):
         img, target = self.ds[index]
         if index in self.cr_ids:
-            target = self.cr_labels[index]
+            target = torch.tensor(self.cr_labels[index])
         return img, target, index
 
     def __len__(self):

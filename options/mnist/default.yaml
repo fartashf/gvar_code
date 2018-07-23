@@ -51,3 +51,5 @@ min_batches: 1
 tauXstd: False
 scheduler: False
 pretrained: False
+nodropout: False
+minvar: False

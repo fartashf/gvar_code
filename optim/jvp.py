@@ -53,6 +53,7 @@ class DMomSGDJVP(optim.Optimizer):
 
     def step(self, idx, loss, target, **kwargs):
         self.loss[idx] = loss.data.cpu().numpy()
+        self.scheduler.target[idx] = target.data.cpu().numpy()
         target = target.data.cpu().numpy().copy()
         self.visits[idx] += 1
 
@@ -320,6 +321,7 @@ class DMomSGDNoScheduler(optim.Optimizer):
 
     def step(self, idx, loss, target, **kwargs):
         self.scheduler.loss[idx] = loss.data.cpu().numpy()
+        self.scheduler.target[idx] = target.data.cpu().numpy()
         target = target.data.cpu().numpy().copy()
 
         self.profiler.tic()

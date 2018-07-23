@@ -60,14 +60,15 @@ class TBXWrapper(object):
     def add_scalar(self, name, val, step):
         self.log_value(name, val, step)
 
-    def log_hist(self, name, val, step, log_scale=False):
+    def log_hist(self, name, val, step, log_scale=False, bins=100):
         # https://github.com/lanpa/tensorboard-pytorch/issues/42
         # bins = hist_bins(val)
         if log_scale:
             val = np.log(np.maximum(np.exp(-20), val))
             name += '_log'
         self.writer.add_histogram(name, val, step, bins='doane')
-        self.logobj[name] += [(time.time(), step, np.histogram(val, bins=100))]
+        self.logobj[name] += [(time.time(), step,
+                               np.histogram(val, bins=bins))]
 
     def log_img(self, name, val, step):
         self.writer.add_image(name, val, step)
@@ -79,6 +80,9 @@ class TBXWrapper(object):
         except os.error:
             pass
         torch.save(dict(self.logobj), self.opt.logger_name+'/'+filename)
+
+    def log_obj(self, name, val):
+        self.logobj[name] = val
 
     def close(self):
         self.writer.close()
@@ -189,9 +193,10 @@ class PercentileMeter(object):
 class HistogramMeter(object):
     """Computes and stores the average and current value"""
 
-    def __init__(self, log_scale=False):
+    def __init__(self, log_scale=False, bins=100):
         self.reset()
         self.log_scale = log_scale
+        self.bins = bins
 
     def reset(self):
         self.nz = AverageMeter()
@@ -234,12 +239,12 @@ class LogCollector(object):
     def reset(self):
         self.meters = OrderedDict()
 
-    def update(self, k, v, n=0, hist=False, log_scale=False):
+    def update(self, k, v, n=0, hist=False, log_scale=False, bins=100):
         if k not in self.meters:
             if type(v).__module__ == np.__name__:
                 if hist:
                     # self.meters[k] = PercentileMeter()
-                    self.meters[k] = HistogramMeter(log_scale)
+                    self.meters[k] = HistogramMeter(log_scale, bins)
                 else:
                     self.meters[k] = StatisticMeter()
             else:

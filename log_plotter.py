@@ -72,6 +72,8 @@ def get_data_pth(logdir, run_names, tag_names, batch_size=None):
     for run_name in run_names:
         d = {}
         logdata = torch.load(run_name + '/log.pth.tar')
+        if 'classes' in logdata:
+            d['classes'] = logdata['classes']
         for tag_name in tag_names:
             tag_name_orig_nex = None
             if 'Nex' in tag_name and tag_name not in logdata:
@@ -130,28 +132,39 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'Vloss_h': 'Loss',
               'sloss_h': 'Loss',
               'alpha_normed_h': 'Normalized Alpha',
-              'alpha_h': 'Alpha'}
+              'alpha_normed_biased_h': 'Normalized Alpha minus alpha min',
+              'alpha_h': 'Alpha',
+              'TlossC_h': 'Loss', 'VlossC_h': 'Loss', 'slossC_h': 'Loss'}
     ylabel = {'Tacc': 'Training Accuracy (%)',
+              'train/accuracy': 'Training Accuracy (%)',
               'Vacc': 'Test Accuracy (%)',
+              'valid/accuracy': 'Test Accuracy (%)',
               'touch_p': 'Examples Visited (%)',
               'touch': '# Examples Visited',
               'visits_h': '# Examples Visited', 'loss': 'Loss',
               'count_h': '# Examples Waiting', 'epoch': 'Epoch',
               'Tloss': 'Loss', 'Vloss': 'Loss', 'lr': 'Learning rate',
+              'train/xent': 'Loss',
               'bumped_p': 'Examples Bumped (%)', 'tau': 'Tau',
               'Tloss_h': '# Examples', 'Vloss_h': '# Examples',
               'alpha_normed_h': '# Examples', 'sloss_h': '# Examples',
+              'alpha_normed_biased_h': '# Examples',
               'tauloss_mu': 'Loss', 'tauloss_std': 'Loss std',
               'alpha_h': '# Examples', 'grad_var': 'Gradient Variance',
               'grad_var_n': 'Normalized Gradient Variance',
-              'gbar_norm': 'Gradient Norm'}
+              'gbar_norm': 'Gradient Norm',
+              'TlossC_h': '# Classes', 'VlossC_h': '# Classes',
+              'slossC_h': '# Classes'}
     titles = {'Tacc': 'Training Accuracy',
+              'train/accuracy': 'Training Accuracy',
               'Vacc': 'Test Accuracy',
+              'valid/accuracy': 'Test Accuracy',
               'touch_p': 'Percentage of Examples Visited per Round',
               'touch': 'Examples Visited per Round',
               'visits_h': 'Histogram of Visits', 'loss': 'Loss',
               'count_h': 'Histogram of Remaining Wait', 'epoch': 'Epoch',
               'Tloss': 'Loss on full training set', 'lr': 'Learning rate',
+              'train/xent': 'mini-batch training loss',
               'Vloss': 'Loss on validation set',
               'bumped_p': 'Percentage of Examples Bumped per Round',
               'tau': 'Snooze Threshold',
@@ -159,13 +172,17 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'Vloss_h': 'Hostagram of test set loss',
               'sloss_h': 'Hostagram of last loss',
               'alpha_normed_h': 'Histogram of normalized alpha',
+              'alpha_normed_biased_h': 'Histogram of normalized biased alpha',
               'tauloss_mu': 'Mean of Loss',
               'tauloss_std': 'Loss standard deviation',
               'alpha_h': 'Histogram of alpha',
               'grad_var': 'Gradient Variance $|\\bar{g}-g|^2/D(g)$',
               'grad_var_n':
               'Normalized Gradient Variance $|\\bar{g}-g|^2/|\\bar{g}|^2$',
-              'gbar_norm': 'Norm of Velocity Vector'}
+              'gbar_norm': 'Norm of Velocity Vector',
+              'TlossC_h': 'Hostagram of training class loss',
+              'VlossC_h': 'Hostagram of test class loss',
+              'slossC_h': 'Hostagram of last class loss'}
     yscale_log = ['Tloss', 'Vloss', 'tau']
     yscale_base = ['tau']
     plot_fs = {'Tacc': plot_f, 'Vacc': plot_f,
@@ -175,6 +192,16 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
     if 'nolog' in tag_name:
         idx = tag_name.find('_nolog')
         tag_name = tag_name[:idx]+tag_name[idx+6:]
+    for i in range(10):
+        for prefix in ['T', 'V']:
+            xlabel['%slossC%d_h' % (prefix, i)] = xlabel['%sloss_h' % prefix]
+            ylabel['%slossC%d_h' % (prefix, i)] = ylabel['%sloss_h' % prefix]
+            classes = ''
+            for d in data:
+                if 'classes' in d and i < len(d['classes']):
+                    classes = d['classes'][i]
+            titles['%slossC%d_h' % (prefix, i)] = '%s, class %d,%s' % (
+                titles['%sloss_h' % prefix], i, classes)
     for k in list(ylabel.keys()):
         if k not in xlabel:
             xlabel[k] = 'Training Iteration'
