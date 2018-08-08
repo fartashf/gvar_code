@@ -20,6 +20,7 @@ def get_scheduler(train_size, opt):
                   'expsnz_cumsum': ExpSnoozerCumSum,
                   'expsnz_tauXmu': ExpSnoozerThreshMean,
                   'expsnz_tauXstdLB': ExpSnoozerThreshStdLogBiased,
+                  'minvar': MinVarianceSnoozer,
                   }
     return sched_dict[opt.sampler_w2c](train_size, opt)
 
@@ -41,6 +42,7 @@ class DMomScheduler(object):
         self.indices = range(num_samples)
         self.weights = np.ones(num_samples)
         self.visits = np.zeros(num_samples)
+        self.active = np.ones(self.num_samples, dtype=np.bool)
         self.niters = 0
         self.maxiter = 0
         self.epoch_iters = int(np.ceil(1.*self.num_samples/opt.batch_size))
@@ -53,9 +55,9 @@ class DMomScheduler(object):
         if ((self.opt.scheduler or self.opt.sampler)
                 and self.epoch >= self.opt.sampler_start_epoch):
             self.indices = self.schedule()
+            self.active[:] = 0
+            self.active[self.indices] = 1
             print(len(self.indices))
-            # print(np.histogram(self.visits, bins='doane')[0])
-            # print(map(int, np.histogram(self.visits, bins='doane')[1]))
             I = self.indices
         self.epoch += 1
         return I
@@ -129,12 +131,18 @@ class DMomScheduler(object):
         self.logger.update(prefix+'count_h', count, 1, hist=True)
         self.logger.update(prefix+'weights_h', self.weights, 1, hist=True)
         self.logger.update(prefix+'visits_h', self.visits, 1, hist=True)
-        closs_h = class_loss(self.loss, self.target)
+        closs_h = class_sum(self.loss, self.target)
         self.logger.update(prefix+'slossC_h', closs_h, 1, hist=True,
                            log_scale=True, bins=min(len(closs_h), 100))
+        active_h = self.target[self.active]
+        self.logger.update(prefix+'activeC_h', active_h, 1, hist=True,
+                           bins=range(0, int(self.target.max())+1))
+        snoozed_h = self.target[np.logical_not(self.active)]
+        self.logger.update(prefix+'snoozeC_h', snoozed_h, 1, hist=True,
+                           bins=range(0, int(self.target.max())+2))
 
 
-def class_loss(loss, target):
+def class_sum(loss, target):
     nclasses = int(target.max()+1)
     closs_h = np.zeros(nclasses)
     for i in range(nclasses):
@@ -203,7 +211,6 @@ class ExpSnoozer(DMomScheduler):
         super(ExpSnoozer, self).__init__(train_size, opt)
         self.delta = np.zeros(train_size)
         self.wait = np.zeros(train_size)
-        self.active = np.zeros(train_size, dtype=np.bool)
         self.count = np.zeros(train_size)
         self.num_bumped = 0
 
@@ -361,3 +368,32 @@ class ExpSnoozerThreshStdLogBiased(ExpSnoozer):
         tau = mu-tau*std
         tau = self.abias+np.exp(tau)
         return self.schedule_tau(tau)
+
+
+class MinVarianceSnoozer(DMomScheduler):
+    def __init__(self, train_size, opt):
+        super(MinVarianceSnoozer, self).__init__(train_size, opt)
+        self.delta = np.zeros(train_size)
+        self.wait = np.zeros(train_size)
+        self.active = np.ones(train_size, dtype=np.bool)
+        self.count = np.zeros(train_size)
+
+    def schedule(self):
+        # ##### THIS IS NOT USED
+        lmbd = float(self.opt.sampler_params)
+        alpha = np.array(self.alpha_normed, dtype=np.float32)
+        self.delta[self.active] = .5*lmbd/alpha[self.active]
+        self.delta.clip(0, self.opt.sampler_maxw)
+        self.weights[self.active] = self.delta[self.active]
+
+        # shared updates
+        self.active[:] = False
+        while self.active.sum() < self.opt.min_batches * self.opt.batch_size:
+            self.wait[np.logical_not(self.active)] += 1
+            self.active[self.delta <= self.wait] = True
+        self.count[:] = self.delta - self.wait
+        self.wait[self.active] = 0
+        na = (1-self.active).sum()
+        self.logger.update('snooze', float(na), 1)
+        self.logger.update('snooze_p', float(na*100./self.num_samples), 1)
+        return np.where(self.active)[0]

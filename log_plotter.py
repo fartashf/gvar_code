@@ -134,10 +134,11 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'alpha_normed_h': 'Normalized Alpha',
               'alpha_normed_biased_h': 'Normalized Alpha minus alpha min',
               'alpha_h': 'Alpha',
-              'TlossC_h': 'Loss', 'VlossC_h': 'Loss', 'slossC_h': 'Loss'}
-    ylabel = {'Tacc': 'Training Accuracy (%)',
+              'TlossC_h': 'Loss', 'VlossC_h': 'Loss', 'slossC_h': 'Loss',
+              'activeC_h': 'Class #', 'snoozeC_h': 'Class #'}
+    ylabel = {'Tacc': 'Training Accuracy (%)', 'Terror': 'Training Error (%)',
               'train/accuracy': 'Training Accuracy (%)',
-              'Vacc': 'Test Accuracy (%)',
+              'Vacc': 'Test Accuracy (%)', 'Verror': 'Test Error (%)',
               'valid/accuracy': 'Test Accuracy (%)',
               'touch_p': 'Examples Visited (%)',
               'touch': '# Examples Visited',
@@ -152,12 +153,15 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'tauloss_mu': 'Loss', 'tauloss_std': 'Loss std',
               'alpha_h': '# Examples', 'grad_var': 'Gradient Variance',
               'grad_var_n': 'Normalized Gradient Variance',
+              'g_variance_mean': 'Mini-batch Gradient Variance',
+              'g_norm': 'Step Norm',
               'gbar_norm': 'Gradient Norm',
               'TlossC_h': '# Classes', 'VlossC_h': '# Classes',
-              'slossC_h': '# Classes'}
-    titles = {'Tacc': 'Training Accuracy',
+              'slossC_h': '# Classes',
+              'activeC_h': '# of Actives', 'snoozeC_h': '# of Snoozed'}
+    titles = {'Tacc': 'Training Accuracy', 'Terror': 'Training Error',
               'train/accuracy': 'Training Accuracy',
-              'Vacc': 'Test Accuracy',
+              'Vacc': 'Test Accuracy', 'Verror': 'Test Error',
               'valid/accuracy': 'Test Accuracy',
               'touch_p': 'Percentage of Examples Visited per Round',
               'touch': 'Examples Visited per Round',
@@ -180,15 +184,22 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'grad_var_n':
               'Normalized Gradient Variance $|\\bar{g}-g|^2/|\\bar{g}|^2$',
               'gbar_norm': 'Norm of Velocity Vector',
+              'g_variance_mean':
+              'Mini-batch gradient variance \sum_B $(g-\\bar{g})^2$',
+              'g_norm': 'Step Norm',
               'TlossC_h': 'Hostagram of training class loss',
               'VlossC_h': 'Hostagram of test class loss',
-              'slossC_h': 'Hostagram of last class loss'}
+              'slossC_h': 'Hostagram of last class loss',
+              'activeC_h': 'Histogram of # of actives per class',
+              'snoozeC_h': 'Histogram of # of snoozed per class'}
     yscale_log = ['Tloss', 'Vloss', 'tau']
     yscale_base = ['tau']
     plot_fs = {'Tacc': plot_f, 'Vacc': plot_f,
+               'Terror': plot_f, 'Verror': plot_f,
                'Tloss': plot_f, 'Vloss': plot_f,
                'grad_var': plot_smooth_o1, 'grad_var_n': plot_smooth_o1,
-               'gbar_norm': plot_smooth_o1}
+               'gbar_norm': plot_smooth_o1, 'g_variance_mean': plot_smooth_o1,
+               'g_norm': plot_smooth_o1}
     if 'nolog' in tag_name:
         idx = tag_name.find('_nolog')
         tag_name = tag_name[:idx]+tag_name[idx+6:]
@@ -197,7 +208,10 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
             xlabel['%slossC%d_h' % (prefix, i)] = xlabel['%sloss_h' % prefix]
             ylabel['%slossC%d_h' % (prefix, i)] = ylabel['%sloss_h' % prefix]
             classes = ''
-            for d in data:
+            data0 = data
+            if not isinstance(data, list):
+                data0 = [data0]
+            for d in data0:
                 if 'classes' in d and i < len(d['classes']):
                     classes = d['classes'][i]
             titles['%slossC%d_h' % (prefix, i)] = '%s, class %d,%s' % (

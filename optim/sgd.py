@@ -47,3 +47,17 @@ def optim_log(optimizer, logger):
     logger.update('grad_var', gv/(pn + 1e-7), 1)
     logger.update('grad_var_n', gv/(gn + 1e-7), 1)
     logger.update('gbar_norm', gn, 1)
+
+
+def sma_update(optimizer, sma_momentum):
+    for group in optimizer.param_groups:
+        for p in group['params']:
+            if p.data is None:
+                continue
+            param_state = optimizer.state[p]
+            if 'sma_buffer' not in param_state:
+                buf = param_state['sma_buffer'] =\
+                    torch.zeros_like(p.data)
+            else:
+                buf = param_state['sma_buffer']
+            buf.mul_(sma_momentum).add_(p.data)

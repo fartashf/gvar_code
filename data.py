@@ -28,6 +28,8 @@ def dataset_to_loaders(train_dataset, test_dataset, opt):
     if opt.sampler:
         if opt.scheduler:
             train_sampler = DMomSampler(len(train_dataset), opt)
+        elif opt.minvar:
+            train_sampler = MinVarSampler(len(train_dataset), opt)
         else:
             train_sampler = DelayedSampler(len(train_dataset), opt)
     else:
@@ -90,8 +92,10 @@ def get_mnist_loaders(opt, **kwargs):
 
 
 def get_cifar10_loaders(opt):
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
+    # normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+    #                                  std=[0.229, 0.224, 0.225])
+    normalize = transforms.Normalize(mean=(0.4914, 0.4822, 0.4465),
+                                     std=(0.2023, 0.1994, 0.2010))
 
     # valid_size=0.1
     # split = int(np.floor(valid_size * num_train))
@@ -111,8 +115,8 @@ def get_cifar10_loaders(opt):
         ]
     else:
         transform = [
+            transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
-            transforms.RandomCrop(32, 4),
             transforms.ToTensor(),
             normalize,
         ]
@@ -425,7 +429,68 @@ class DelayedSampler(Sampler):
         # print(alpha.min())
         # print(alpha.max())
         # import ipdb; ipdb.set_trace()
+        count_nz = float((count == 0).sum())
+        self.logger.update('touch_p', count_nz*100./len(count), 1)
+        self.logger.update('touch', count_nz, 1)
+        self.logger.update('count_h', count, 1, hist=True)
+        self.logger.update('weights_h', self.weights, 1, hist=True)
+        self.logger.update('visits_h', self.visits, 1, hist=True)
         return weights
+
+    def __len__(self):
+        if self.training:
+            return len(self.indices)
+        return self.num_samples
+
+
+class MinVarSampler(Sampler):
+    def __init__(self, train_size, opt):
+        self.delta = np.zeros(train_size)
+        self.wait = np.zeros(train_size)
+        self.active = np.ones(train_size, dtype=np.bool)
+        self.count = np.zeros(train_size)
+        self.weights = np.ones(train_size)
+        self.indices = range(train_size)
+        self.training = True
+        self.opt = opt
+        self.num_samples = train_size
+        self.visits = np.zeros(train_size)
+
+    def __iter__(self):
+        if self.training:
+            self.indices = np.where(self.count == 0)[0]
+            I = self.indices
+            return (I[i] for i in torch.randperm(len(I)))
+        return iter(torch.randperm(self.num_samples))
+
+    def update(self, optimizer):
+        alpha_val = optimizer.grad_norm
+        lmbd = float(self.opt.sampler_params)
+        alpha = np.array(alpha_val, dtype=np.float32)
+        alpha = alpha.clip(1e-20)
+        self.delta[self.active] = .5*lmbd/alpha[self.active]
+        self.delta.clip(0, self.opt.sampler_maxw-1)
+        self.weights[self.active] = self.delta[self.active]+1
+        # self.weights[self.active] = 1
+
+        # shared updates
+        self.active[:] = False
+        while self.active.sum() < self.opt.min_batches * self.opt.batch_size:
+            self.wait[np.logical_not(self.active)] += 1
+            self.active[self.delta <= self.wait] = True
+        self.count[:] = (self.delta - self.wait).clip(0)
+        self.visits[self.active] += 1
+        self.wait[self.active] = 0
+        na = (1-self.active).sum()
+        count_nz = float((self.count == 0).sum())
+        self.logger.update('snooze', float(na), 1)
+        self.logger.update('snooze_p', float(na*100./self.num_samples), 1)
+        self.logger.update('touch_p', count_nz*100./len(self.count), 1)
+        self.logger.update('touch', count_nz, 1)
+        self.logger.update('count_h', self.count, 1, hist=True)
+        self.logger.update('weights_h', self.weights, 1, hist=True)
+        self.logger.update('visits_h', self.visits, 1, hist=True)
+        return self.weights
 
     def __len__(self):
         if self.training:
@@ -459,6 +524,7 @@ class LinearDataset(data.Dataset):
             Y[i * n:(i + 1) * n] = i
         self.X = X
         self.Y = Y
+        self.classes = range(num_class)
 
     def __getitem__(self, index):
         X = torch.Tensor(self.X[:, index]).float()

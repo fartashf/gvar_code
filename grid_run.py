@@ -1550,7 +1550,8 @@ def imagenet_expsnooze(args):
 
 def mnist_hist(args):
     dataset = 'mnist'
-    log_dir = 'runs_%s_hist' % dataset
+    # log_dir = 'runs_%s_hist' % dataset
+    log_dir = 'runs_%s_bars' % dataset
     shared_args = [('dataset', dataset),
                    # ('lr', [.1, .05, .02, .01]),
                    # ('lr', .02),
@@ -1565,7 +1566,7 @@ def mnist_hist(args):
                               ('adam', OrderedDict([('lr', .05)]))
                               ]),
                    ]
-    # args += [OrderedDict(shared_args)]
+    args += [OrderedDict(shared_args)]
     shared_args += [('scheduler', ''),
                     # ('seed', [1, 2]),
                     # ('alpha_norm', 'none'),  # default none
@@ -1576,12 +1577,12 @@ def mnist_hist(args):
                          OrderedDict([('sampler_params',
                                        ['50,90,2,200']
                                        )])),
-                        # ('expsnz_tauXstdL',
-                        #  OrderedDict([('sampler_params',
-                        #                [1., .1, .01]
-                        #                # [.01]
-                        #                ),
-                        #               ])),
+                        ('expsnz_tauXstdL',
+                         OrderedDict([('sampler_params',
+                                       # [1., .1, .01]
+                                       [.01]
+                                       ),
+                                      ])),
                     ]),
                     ]
     args += [OrderedDict([('dmom', 0.9),
@@ -1817,6 +1818,187 @@ def imagenet10_hist(args):
     return args, log_dir
 
 
+def mnist_minvar(args):
+    dataset = 'mnist'
+    log_dir = 'runs_%s_minvar' % dataset
+    shared_args = [('dataset', dataset),
+                   # ('lr', [.1, .05, .02, .01]),
+                   ('lr', .02),
+                   ('epochs', [
+                       (100, OrderedDict([('lr_decay_epoch', 100)])),
+                   ]),
+                   # ('exp_lr', ''),
+                   # ('wnoise', ''),
+                   # ('arch', 'ssmlp'),
+                   # ('optim', ['sgd', 'adam']),
+                   # ('optim', [('sgd', OrderedDict([('lr', .02)])),
+                   #            # ('adam', OrderedDict([('lr', .05)]))
+                   #            ]),
+                   ]
+    # args += [OrderedDict([('optim', 'sgd')]+shared_args)]
+    # args_1 = [('scheduler', ''),
+    #           ('optim', 'sgd'),
+    #           # ('seed', [1, 2]),
+    #           # ('alpha_norm', 'none'),  # default none
+    #           # ('alpha_norm', ['sum', 'none']),
+    #           # ('sampler', ''),  # True if scheduler
+    #           ('sampler_w2c', [
+    #               ('linrank',
+    #                OrderedDict([('sampler_params',
+    #                              ['50,90,2,200']
+    #                              )])),
+    #               ('expsnz_tauXstdL',
+    #                OrderedDict([('sampler_params',
+    #                              # [1., .1, .01]
+    #                              [.01]
+    #                              ),
+    #                             ])),
+    #           ]),
+    #           ]
+    # args += [OrderedDict([('dmom', 0.9),
+    #                       # ('alpha', 'loss'),  # default for non dmom_ns
+    #                       # ('dmom', [0., 0.9]),
+    #                       ]+shared_args+args_1)]
+    args_2 = [('sampler', ''),
+              ('optim', 'dmom'),
+              ('alpha', 'normg'),
+              ('minvar', ''),
+              ('sampler_maxw', [2, 100]),
+              # ('sampler_maxw', [100]),
+              ('sampler_params', [0, 1., .1])
+              ]
+    args += [OrderedDict([('dmom', 0.0),
+                          ]+shared_args+args_2)]
+    args_2 = [('sampler', ''),
+              ('optim', 'dmom'),
+              ('alpha', 'rand'),
+              ('minvar', ''),
+              # ('sampler_maxw', [2, 100]),
+              # ('sampler_maxw', [100]),
+              ('sampler_params', ['.5,.5'])
+              ]
+    args += [OrderedDict([('dmom', 0.0),
+                          ]+shared_args+args_2)]
+    return args, log_dir
+
+
+def cifar10_wresnet(args):
+    dataset = 'cifar10'
+    log_dir = 'runs_%s_wresnet' % dataset
+    shared_args = [('dataset', dataset),
+                   # ('arch', [
+                   #     # ('resnet32', OrderedDict([
+                   #     #     ('exp_lr', ''),
+                   #     #     ('weight_decay', 1e-4),
+                   #     #     ('lr_decay_epoch', 100)])),
+                   #     ('wrn28-10', OrderedDict([
+                   #         # ('exp_lr', ''),
+                   #         ])),
+                   # ]),
+                   # ('arch', ['resnet32', 'wrn28-10']),
+                   ('arch', ['wrn10-4']),
+                   ('epochs', 200),
+                   ('lr', 0.1),
+                   ('weight_decay', 5e-4),
+                   ('nesterov', ''),
+                   # ('data_aug', ''),
+                   # ('wnoise', [None, '']),
+                   ('wnoise', ''),
+                   ('optim', 'sgd'),
+                   ('exp_lr', [
+                       # (None, OrderedDict([
+                       #     ('lr_decay_epoch', '60,120,160'),
+                       #     ('lr_decay_rate', 0.2),
+                       # ])),
+                       ('', OrderedDict([('lr_decay_epoch', 100)])),
+                   ]),
+                   ]
+    args += [OrderedDict(shared_args)]
+    shared_args += [('scheduler', ''),
+                    ('sampler_w2c', [
+                        ('linrank',
+                         OrderedDict([('sampler_params',
+                                       ['50,90,2,200']
+                                       )])),
+                        ('expsnz_tauXstdL',
+                         OrderedDict([('sampler_params',
+                                       # [.1, .01]
+                                       [.01]
+                                       ),
+                                      ])),
+                    ]),
+                    ]
+    args += [OrderedDict([('alpha', 'loss'),
+                          ('dmom', [0.9]),
+                          ]+shared_args)]
+    return args, log_dir
+
+
+def imagenet_small(args):
+    # from resnet https://arxiv.org/pdf/1512.03385.pdf
+    dataset = 'imagenet'  # 'imagenet'
+    log_dir = 'runs_%s_small' % dataset
+    shared_args = [('dataset', dataset),
+                   ('optim', 'sgd'),  # 'sgd', 'adam'
+                   # ('arch', 'resnet18'),
+                   # ('arch', 'resnet34'),
+                   ('arch', 'alexnet'),
+                   # ('epochs', [120]),
+                   ('batch_size', 128),
+                   # ('lr', [.1]),
+                   ('workers', [12]),
+                   ('weight_decay', 5e-4),
+                   # ('lr_decay_epoch', [60]),
+                   # ('wnoise', [None, '']),
+                   # ('exp_lr', ['']),
+                   #  ### pretrained
+                   ('train_accuracy', ['']),
+                   ('pretrained', ['']),
+                   ('epochs', [20]),
+                   ('lr', [.00001]),
+                   ('lr_decay_epoch', [10]),
+                   ('exp_lr', ['']),
+                   ]
+    args += [OrderedDict(shared_args)]
+    shared_args += [('scheduler', ''),
+                    # ('alpha_norm', 'sum'),
+                    # ('alpha_norm', 'none'),
+                    # ('sampler', ''),
+                    ('sampler_w2c', [
+                        # ('linrank',
+                        #  OrderedDict([('sampler_params',
+                        #                ['50,90,2,200']
+                        #                )])),
+                        # ('expsnz_tau',
+                        #  OrderedDict([('sampler_params',
+                        #                [1e-3, 1e-4]
+                        #                )])),
+                        # ('expsnz_tauXstd',
+                        #  OrderedDict([('sampler_params',
+                        #                # [.5, .1, .01]
+                        #                [.1]
+                        #                ),
+                        #               ])),
+                        ('expsnz_tauXstdL',
+                         OrderedDict([('sampler_params',
+                                       [.1, .05, .01]
+                                       # [.1, 1]
+                                       # [.01]
+                                       ),
+                                      ])),
+                    ]),
+                    # ('seed', [1, 2]),
+                    # ('sampler_maxw', [1, 5]),
+                    ]
+    # args += [OrderedDict([('alpha', 'one'),
+    #                       ]+shared_args)]
+    args += [OrderedDict([('dmom', [0.9]),
+                          ('alpha', 'loss'),
+                          # ('dmom', [0., 0.5, 0.9]),
+                          ]+shared_args)]
+    return args, log_dir
+
+
 if __name__ == '__main__':
     args = []
     # args, log_dir = cifar10_resnet_explr(args)
@@ -1839,31 +2021,34 @@ if __name__ == '__main__':
     # args, log_dir = cifar10_expsnooze(args)
     # args, log_dir = svhn_expsnooze(args)
     # args, log_dir = imagenet_expsnooze(args)
-    args, log_dir = mnist_hist(args)
+    # args, log_dir = mnist_hist(args)
     # args, log_dir = imagenet_hist(args)
     # args, log_dir = mnist_hist_corrupt(args)
     # args, log_dir = mnist_hist_scale(args)
+    # args, log_dir = mnist_minvar(args)
+    # args, log_dir = cifar10_wresnet(args)
+    args, log_dir = imagenet_small(args)
     # jobs_0 = ['bolt0_gpu0,1,2,3', 'bolt1_gpu0,1,2,3']
     # args, log_dir = imagenet10_hist(args)
     # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2',
     #           'bolt1_gpu0,1', 'bolt1_gpu2,3',
     #           ]
     # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2',
-    #           'bolt0_gpu0,1', 'bolt0_gpu2,3',
+    #           'bolt1_gpu0,1', 'bolt1_gpu2,3',
     #           ]
     jobs_0 = ['bolt2_gpu0', 'bolt2_gpu1', 'bolt2_gpu2', 'bolt2_gpu3',
               'bolt1_gpu0', 'bolt1_gpu1', 'bolt1_gpu2', 'bolt1_gpu3',
               # 'bolt0_gpu0', 'bolt0_gpu1', 'bolt0_gpu2', 'bolt0_gpu3'
               ]
     # njobs = [3] * 4 + [2] * 4  # validate start.sh
-    njobs = [1]*4
+    njobs = [1]*8
     jobs = []
     for s, n in zip(jobs_0, njobs):
         jobs += ['%s_job%d' % (s, i) for i in range(n)]
         # jobs += ['%s_job%d' % (s, i) for s in jobs_0]
 
     run_single = RunSingle(log_dir)
-    run_single.num = 20
+    run_single.num = 3
 
     # args = OrderedDict([('lr', [1, 2]), ('batch_size', [10, 20])])
     # args = OrderedDict([('lr', [(1, OrderedDict([('batch_size', [10])])),

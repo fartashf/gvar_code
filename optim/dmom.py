@@ -38,6 +38,9 @@ class DMomSGD(optim.Optimizer):
         gvw_mean = 0
         gv_mean = 0
         gw_g = 0
+        gvv = 0
+        gn = 0
+        pn = 0
         temperature = (self.epoch/self.opt.epochs)**self.opt.dmom_temp
         normg_ratio = np.zeros((len(idx),))
         dmom_ratio = np.zeros((len(idx),))
@@ -89,6 +92,12 @@ class DMomSGD(optim.Optimizer):
                     alpha = torch.dot(gc, gg)
                     # alpha += torch.dot(gc, theta)
                     alpha = abs(alpha)
+                elif self.opt.alpha == 'rand':
+                    prob, aval = map(float, self.opt.sampler_params.split(','))
+                    if np.random.randint(100) < prob*100:
+                        alpha = aval
+                    else:
+                        alpha = 1
 
                 alpha0 = alpha
 
@@ -167,6 +176,8 @@ class DMomSGD(optim.Optimizer):
                     alpha_val[cl_idx] /= alpha_val[cl_idx].sum()
             elif self.opt.alpha_norm == 'none':
                 # TODO: sum to one
+                pass
+            elif self.opt.alpha_norm == 'bs':
                 alpha_val /= len(idx)
             self.profiler.toc('norm')
             self.alpha_normed[idx] = alpha_val
@@ -178,6 +189,10 @@ class DMomSGD(optim.Optimizer):
                     np.percentile(alpha_val, self.opt.sampler_alpha_perc))
             # TODO: divsum
             # ws = self.weights[idx].sum()
+            if self.opt.instantw:
+                lmbd = float(self.opt.sampler_params)
+                self.weights[idx] = .5*lmbd/alpha_val.clip(1e-20)
+                self.weights.clip(0, self.opt.sampler_maxw)
             ws = len(idx)
             for i in range(len(idx)):
                 sa_perc = self.opt.sampler_alpha_perc
@@ -257,6 +272,9 @@ class DMomSGD(optim.Optimizer):
                 else:
                     buf = param_state['momentum_buffer']
                     buf_w = param_state['wmomentum_buffer']
+                    gvv += (buf-(d_p+weight_decay*p.data)).pow(2).sum()
+                    gn += buf.pow(2).sum()
+                    pn += torch.numel(buf)
                 # d_p_w = d_p_w.mul_(momentum).add_(buf)  # TODO: why had this?
                 # if self.opt.wmomentum:
                 #     d_p = d_p_w
@@ -302,6 +320,9 @@ class DMomSGD(optim.Optimizer):
         self.logger.update('gw_diff_g', float(np.sqrt(gw_g)), len(idx))
         self.logger.update('gw_norm', gw_norm, len(idx))
         self.logger.update('g_norm', g_norm, len(idx))
+        self.logger.update('grad_var', gvv/(pn + 1e-7), 1)
+        self.logger.update('grad_var_n', gvv/(gn + 1e-7), 1)
+        self.logger.update('gbar_norm', gn, 1)
 
     def log_perc(self, prefix=''):
         self.logger.update(prefix+'dmom_h', self.data_momentum, 1, hist=True,

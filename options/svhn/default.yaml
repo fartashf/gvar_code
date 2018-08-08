@@ -16,7 +16,7 @@ workers: 12
 weight_decay: 5.e-4
 dmom_interval: 1
 dmom_temp: 0
-alpha: normg
+alpha: loss
 sampler: False
 train_accuracy: True
 alpha_norm: none
@@ -54,3 +54,7 @@ scheduler: False
 pretrained: False
 nodropout: False
 minvar: False
+instantw: False
+lr_decay_rate: 0.1
+sma_momentum: 0.0
+nesterov: False

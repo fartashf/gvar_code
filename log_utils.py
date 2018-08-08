@@ -66,6 +66,7 @@ class TBXWrapper(object):
         if log_scale:
             val = np.log(np.maximum(np.exp(-20), val))
             name += '_log'
+        # disabled because of bad bins using doane
         self.writer.add_histogram(name, val, step, bins='doane')
         self.logobj[name] += [(time.time(), step,
                                np.histogram(val, bins=bins))]
@@ -226,7 +227,8 @@ class HistogramMeter(object):
 
     def tb_log(self, tb_logger, name, step=None):
         self.nz.tb_log(tb_logger, name+'_nz', step=step)
-        tb_logger.log_hist(name, self.val, step=step, log_scale=self.log_scale)
+        tb_logger.log_hist(name, self.val, step=step, log_scale=self.log_scale,
+                           bins=self.bins)
 
 
 class LogCollector(object):

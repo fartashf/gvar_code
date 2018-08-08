@@ -20,14 +20,17 @@ import models.mnist
 import models.cifar10
 import models.logreg
 import models.imagenet
+import models.cifar10_wresnet
+import models.cifar10_wresnet2
 # import nonacc_autograd
 from optim.dmom import DMomSGD
 from optim.add_dmom import AddDMom
 from optim.jvp import DMomSGDJVP, DMomSGDNoScheduler
 from optim.jvp import add_weight_noise, remove_weight_noise
-from optim.sgd import optim_log
+from optim.sgd import optim_log  # , sma_update
 from log_utils import TBXWrapper
-from schedulers import class_loss
+from schedulers import class_sum
+import torch.backends.cudnn as cudnn
 tb_logger = TBXWrapper()
 
 
@@ -176,6 +179,16 @@ def main():
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--num_class',
                         default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--minvar',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--instantw',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--lr_decay_rate',
+                        default=argparse.SUPPRESS, type=float)
+    parser.add_argument('--sma_momentum',
+                        default=argparse.SUPPRESS, type=float)
+    parser.add_argument('--nesterov',
+                        default=argparse.SUPPRESS, action='store_true')
     args = parser.parse_args()
 
     yaml_path = os.path.join('options/{}/{}'.format(args.dataset,
@@ -205,8 +218,12 @@ def main():
     torch.manual_seed(opt.seed)
     if opt.cuda:
         torch.cuda.manual_seed(opt.seed)
+    # helps with wide-resnet by reducing memory and time 2x
+    cudnn.benchmark = True
 
     train_loader, test_loader, train_test_loader = get_loaders(opt)
+    if not hasattr(train_loader.dataset.ds, 'classes'):
+        train_loader.dataset.ds.classes = range(opt.num_class)
     tb_logger.log_obj('classes', train_loader.dataset.ds.classes)
 
     epoch_iters = int(np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
@@ -229,6 +246,11 @@ def main():
         # model.cuda()
         if opt.arch == 'cnn':
             model = models.cifar10.Convnet()
+        elif opt.arch.startswith('wrn'):
+            depth, widen_factor = map(int, opt.arch[3:].split('-'))
+            # model = models.cifar10_wresnet.Wide_ResNet(28, 10, 0.3, 10)
+            model = models.cifar10_wresnet2.WideResNet(
+                depth, opt.num_class, widen_factor, 0.3)
         else:
             model = models.cifar10.__dict__[opt.arch]()
         model = torch.nn.DataParallel(model)
@@ -279,7 +301,8 @@ def main():
     elif opt.optim == 'sgd':
         optimizer = optim.SGD(model.parameters(),
                               lr=opt.lr, momentum=opt.momentum,
-                              weight_decay=opt.weight_decay)
+                              weight_decay=opt.weight_decay,
+                              nesterov=opt.nesterov)
     elif opt.optim == 'adam':
         optimizer = optim.SGD(model.parameters(),
                               lr=opt.lr,
@@ -289,6 +312,8 @@ def main():
     if opt.scheduler:
         optimizer.scheduler = train_loader.sampler.scheduler
         optimizer.scheduler.logger = optimizer.logger
+    if opt.sampler:
+        train_loader.sampler.logger = optimizer.logger
     epoch = 0
     save_checkpoint = SaveCheckpoint()
 
@@ -383,29 +408,7 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
         optimizer.logger.reset()
         logger = optimizer.logger
         niters = optimizer.niters
-        # if opt.scheduler:
-        #     count = train_loader.sampler.scheduler.count
-        # else:
-        if True:
-            optimizer.weights = train_loader.sampler.update(optimizer)
-            count = train_loader.sampler.count
-        count_nz = float((count == 0).sum())
-        logger.update('touch_p', count_nz*100./len(count), 1)
-        logger.update('touch', count_nz, 1)
-        logger.update('count_h', count, 1, hist=True)
-        # if opt.scheduler:
-        #     logger.update('weights_h',
-        #                   train_loader.sampler.scheduler.weights,
-        #                   1, hist=True)
-        #     logger.update('visits_h',
-        #                   train_loader.sampler.scheduler.visits,
-        #                   1, hist=True)
-        # else:
-        if True:
-            logger.update('weights_h',
-                          train_loader.sampler.weights, 1, hist=True)
-            logger.update('visits_h',
-                          train_loader.sampler.visits, 1, hist=True)
+        optimizer.weights = train_loader.sampler.update(optimizer)
         logging.info(str(logger))
         logger.tb_log(tb_logger, step=niters)
     epoch_iters = int(np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
@@ -458,6 +461,7 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
             optimizer.profiler.toc('backward')
             optim_log(optimizer, optimizer.logger)
             optimizer.step()
+            # sma_update(optimizer, opt.sma_momentum)
             optimizer.profiler.toc('step')
         else:
             optimizer.profiler.tic()
@@ -465,11 +469,11 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
             optimizer.profiler.toc('forward')
             # grad = torch.ones_like(loss)
             # nonacc_autograd.backward([loss], [grad])
-            # import ipdb; ipdb.set_trace()
             loss.backward()
             optimizer.profiler.toc('backward')
             optim_log(optimizer, optimizer.logger)
             optimizer.step()
+            # sma_update(optimizer, opt.sma_momentum)
             optimizer.profiler.toc('step')
         if opt.wnoise:
             remove_weight_noise(optimizer, opt)
@@ -535,6 +539,7 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
 
 def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
     model.eval()
+    # TODO: sma_eval needs optimizer
     test_loss = 0
     correct = 0
     test_loader.sampler.training = False
@@ -586,7 +591,7 @@ def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
         tb_logger.log_hist('%slossC%d_h' % (prefix, i),
                            loss_h[targets == i], step=niters,
                            log_scale=True)
-    closs_h = class_loss(loss_h, targets)
+    closs_h = class_sum(loss_h, targets)
     tb_logger.log_hist('%slossC_h' % prefix, closs_h, step=niters,
                        log_scale=True, bins=min(len(closs_h), 100))
     return accuracy
@@ -688,7 +693,9 @@ def adjust_learning_rate_multi(optimizer, epoch, opt):
     ei = np.where(el > 0)[0]
     if len(ei) == 0:
         ei = [0]
-    lr = opt.lr * (0.1 ** el[ei[-1]])
+    print(el)
+    print(ei)
+    lr = opt.lr * (opt.lr_decay_rate ** (ei[-1] + el[ei[-1]]))
     print(lr)
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
