@@ -34,7 +34,7 @@ import torch.backends.cudnn as cudnn
 tb_logger = TBXWrapper()
 
 
-def main():
+def add_args():
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
 
@@ -189,8 +189,20 @@ def main():
                         default=argparse.SUPPRESS, type=float)
     parser.add_argument('--nesterov',
                         default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--log_stats',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--label_smoothing',
+                        default=argparse.SUPPRESS, type=float)
+    parser.add_argument('--duplicate',
+                        default=argparse.SUPPRESS, type=str)
+    parser.add_argument('--alpha_diff',
+                        default=argparse.SUPPRESS, action='store_true')
     args = parser.parse_args()
+    return args
 
+
+def main():
+    args = add_args()
     yaml_path = os.path.join('options/{}/{}'.format(args.dataset,
                                                     args.path_opt))
     opt = {}
@@ -232,6 +244,8 @@ def main():
     if opt.dataset == 'mnist':
         if opt.arch == 'cnn':
             model = models.mnist.Convnet(not opt.nodropout)
+        elif opt.arch == 'bigcnn':
+            model = models.mnist.BigConvnet(not opt.nodropout)
         elif opt.arch == 'mlp':
             model = models.mnist.MLP(not opt.nodropout)
         elif opt.arch == 'smlp':
@@ -267,6 +281,12 @@ def main():
 
     if opt.cuda:
         model.cuda()
+
+    if opt.label_smoothing > 0:
+        smooth_label = LabelSmoothing(opt)
+        model.criterion = smooth_label.criterion
+    else:
+        model.criterion = F.nll_loss
 
     if opt.optim == 'dmom':
         optimizer = DMomSGD(model.parameters(),
@@ -389,10 +409,36 @@ def main():
         logging.info(str(scheduler.logger))
         scheduler.logger.tb_log(tb_logger, step=optimizer.niters)
 
+    if opt.log_stats:
+        stats(model, test_loader, opt, optimizer, 'Test', prefix='V')
+        stats(model, train_test_loader, opt, optimizer, 'Train', prefix='T')
+    tb_logger.save_log()
+
 
 def fix_bn(m):
     if type(m) == torch.nn.BatchNorm2d or type(m) == torch.nn.BatchNorm1d:
         m.eval()
+
+
+class LabelSmoothing:
+    # https://github.com/whr94621/NJUNMT-pytorch/blob/aff968c0da9273dc42eabbb8ac4e459f9195f6e4/src/modules/criterions.py#L131
+    def __init__(self, opt):
+        self.num_class = opt.num_class
+        self.label_smoothing = opt.label_smoothing
+        self.confidence = 1.0 - opt.label_smoothing
+
+    def criterion(self, outputs, target, reduce=True):
+        one_hot = torch.randn(1, self.num_class)
+        one_hot.fill_(self.label_smoothing / (self.num_class - 1))
+
+        tdata = target.detach()
+        if outputs.is_cuda:
+            one_hot = one_hot.cuda()
+        tmp_ = one_hot.repeat(target.size(0), 1)
+        tmp_.scatter_(1, tdata.unsqueeze(1), self.confidence)
+        target = tmp_.detach()
+        loss = F.kl_div(outputs, target, reduce=reduce)
+        return loss
 
 
 def train(epoch, train_loader, model, optimizer, opt, test_loader,
@@ -427,34 +473,35 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
         output = model(data)
         if opt.optim == 'dmom':
             optimizer.profiler.tic()
-            loss = F.nll_loss(output, target, reduce=False)
+            loss = model.criterion(output, target, reduce=False)
             optimizer.profiler.toc('forward')
             grads = nonacc_grad(model, loss)
             optimizer.profiler.toc('backward')
             optimizer.step(idx, grads, loss, target)
         elif opt.optim == 'dmom_jvp' or opt.optim == 'dmom_ns':
             optimizer.profiler.tic()
-            loss = F.nll_loss(output, target, reduce=False)
+            loss = model.criterion(output, target, reduce=False)
             # TODO: /batch_size
             optimizer.profiler.toc('forward')
             optimizer.step(idx, loss, target)
         elif opt.optim == 'ssgd':
-            loss = F.nll_loss(output, target, reduce=False)
+            loss = model.criterion(output, target, reduce=False)
             grads = nonacc_grad(model, loss)
             # grads = nonacc_grad_backward(model, loss)
             acc_grad(model, grads)
             optimizer.step()
         elif opt.optim == 'adddmom':
-            loss_i = F.nll_loss(output, target, reduce=False)
+            loss_i = model.criterion(output, target, reduce=False)
             loss = optimizer.step(idx, loss_i)
         elif opt.scheduler:
             scheduler = optimizer.scheduler
             optimizer.profiler.tic()
-            loss = F.nll_loss(output, target, reduce=False)
+            loss = model.criterion(output, target, reduce=False)
             optimizer.profiler.toc('forward')
             alpha = loss.data.cpu().numpy()
+            idxc = idx.cpu().numpy()
             scheduler.target[idx] = target.data.cpu().numpy()
-            scheduler.update_alpha(idx, alpha)
+            scheduler.update_alpha(idxc, alpha)
             optimizer.profiler.toc('alpha')
             weights = torch.Tensor(scheduler.weights[idx]/len(idx)).cuda()
             loss.backward(weights)
@@ -465,7 +512,7 @@ def train(epoch, train_loader, model, optimizer, opt, test_loader,
             optimizer.profiler.toc('step')
         else:
             optimizer.profiler.tic()
-            loss = F.nll_loss(output, target)
+            loss = model.criterion(output, target)
             optimizer.profiler.toc('forward')
             # grad = torch.ones_like(loss)
             # nonacc_autograd.backward([loss], [grad])
@@ -545,8 +592,10 @@ def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
     test_loader.sampler.training = False
     loss_h = np.zeros(len(test_loader.dataset))
     targets = np.zeros(len(test_loader.dataset))
+    num = 0
     with torch.no_grad():
         for data, target, idx in test_loader:
+            num += len(idx)
             if opt.cuda:
                 data, target = data.cuda(), target.cuda()
             # data, target = Variable(data, volatile=True), Variable(target)
@@ -584,7 +633,8 @@ def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
         tb_logger.log_value('%swrong' % prefix, wrong, step=niters)
         tb_logger.log_value('%sacc' % prefix, accuracy, step=niters)
         tb_logger.log_value('%serror' % prefix, error, step=niters)
-        test_loader.sampler.training = True
+    # logging.info('num: %d' % num)
+    test_loader.sampler.training = True
     tb_logger.log_hist('%sloss_h' % prefix, loss_h, step=niters,
                        log_scale=True)
     for i in range(min(10, int(targets.max()))):
@@ -595,6 +645,42 @@ def test(model, test_loader, opt, niters, set_name='Test', prefix='V'):
     tb_logger.log_hist('%slossC_h' % prefix, closs_h, step=niters,
                        log_scale=True, bins=min(len(closs_h), 100))
     return accuracy
+
+
+def stats(model, test_loader, opt, optimizer, set_name='Test', prefix='V'):
+    model.eval()
+    batch_time = AverageMeter()
+    end = time.time()
+    test_loader.sampler.training = False
+    loss_f = np.zeros(len(test_loader.dataset))
+    normg_f = np.zeros(len(test_loader.dataset))
+    ggbar_f = np.zeros(len(test_loader.dataset))
+    num = 0
+    for batch_idx, (data, target, idx) in enumerate(test_loader):
+        num += len(idx)
+        if opt.cuda:
+            data, target = data.cuda(), target.cuda()
+        data, target = Variable(data), Variable(target)
+        output = model(data)
+        loss = F.nll_loss(output, target, reduce=False)
+        grads = nonacc_grad(model, loss)
+        normg, ggbar = batch_stats(optimizer, grads)
+        loss_f[idx] = loss.detach().cpu().numpy()
+        normg_f[idx] = normg
+        ggbar_f[idx] = ggbar
+        batch_time.update(time.time() - end)
+        end = time.time()
+        if batch_idx % opt.log_interval == 0:
+            logging.info(
+                '{0} set: [{1}/{2}]\t'
+                'Time: {batch_time.val:.3f} ({batch_time.avg:.3f})'
+                .format(set_name, batch_idx, len(test_loader),
+                        batch_time=batch_time))
+    logging.info('num: %d' % num)
+    test_loader.sampler.training = True
+    tb_logger.log_obj('%sloss_f' % prefix, loss_f)
+    tb_logger.log_obj('%snormg_f' % prefix, normg_f)
+    tb_logger.log_obj('%sggbar_f' % prefix, ggbar_f)
 
 
 def nonacc_grad(model, loss):
@@ -646,6 +732,28 @@ def nonacc_grad_fast(model, loss):
 
     torch.autograd.grad(loss, params, grads)
     return grads
+
+
+def batch_stats(optimizer, grads_group):
+    param_groups = optimizer.param_groups
+    state = optimizer.state
+    assert len(grads_group) == 1
+    normg = np.zeros(len(grads_group[0]))
+    ggbar = np.zeros(len(grads_group[0]))
+    for group, grads in zip(param_groups, grads_group):
+        param_state = [state[p] for p in group['params']]
+        if 'momentum_buffer' in param_state[0]:
+            buf = [p['momentum_buffer'].view(-1) for p in param_state]
+        else:
+            buf = [p.data.view(-1) for p in group['params']]
+        gg = torch.cat(buf)
+        for i in range(len(grads)):
+            gf = [g.data.view(-1) for g in grads[i]]
+            gc = torch.cat(gf)
+            normg[i] += gc.pow(2).sum().item()
+            ggbar += abs(torch.dot(gc, gg)).item()
+    normg = np.sqrt(normg)
+    return normg, ggbar
 
 
 class DictWrapper(object):

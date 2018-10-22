@@ -1999,6 +1999,286 @@ def imagenet_small(args):
     return args, log_dir
 
 
+def mnist_genlztn(args):
+    dataset = 'mnist'
+    log_dir = 'runs_%s_genbig' % dataset
+    shared_args = [('dataset', dataset),
+                   # ('lr', [.1, .05, .02, .01]),
+                   ('lr', .02),
+                   ('epochs', [
+                       (100, OrderedDict([('lr_decay_epoch', 100)])),
+                   ]),
+                   # ('exp_lr', ''),
+                   # ('wnoise', ''),
+                   # ('arch', ['cnn', 'mlp', 'ssmlp']),
+                   # ('arch', 'cnn'),
+                   ('arch', 'bigcnn'),
+                   # ('optim', ['sgd', 'adam']),
+                   # ('optim', [('sgd', OrderedDict([('lr', .02)])),
+                   #            # ('adam', OrderedDict([('lr', .05)]))
+                   #            ]),
+                   ('log_stats', ''),
+                   ('test_batch_size', 10),
+                   # ('corrupt_perc', [20, 50, 100]),
+                   ('corrupt_perc', [0, 100]),
+                   # ('label_smoothing', [0.0, 0.1]),
+                   # ('nodropout', [None, '']),
+                   ]
+    # args += [OrderedDict(shared_args)]
+    # args += [OrderedDict(shared_args+[('nodropout', ''), ('wd', 0)])]
+    # args += [OrderedDict(shared_args+[('nodropout', '')])]
+    # args += [OrderedDict(shared_args+[('wd', 0)])]
+    args += [OrderedDict(shared_args+[('nodropout', ''), ('wd', 0),
+                                      ('label_smoothing', 0.1)])]
+    args += [OrderedDict(shared_args+[('wnoise', '')])]
+    args += [OrderedDict(shared_args+[('nodropout', ''), ('wd', 0),
+                                      ('wnoise', '')])]
+    # args_1 = [('scheduler', ''),
+    #           # ('seed', [1, 2]),
+    #           # ('alpha_norm', 'none'),  # default none
+    #           # ('alpha_norm', ['sum', 'none']),
+    #           # ('sampler', ''),  # True if scheduler
+    #           ('sampler_w2c', [
+    #               # ('linrank',
+    #               #  OrderedDict([('sampler_params',
+    #               #                ['50,90,2,200']
+    #               #                )])),
+    #               ('expsnz_tauXstdL',
+    #                OrderedDict([('sampler_params',
+    #                              # [1., .1, .01]
+    #                              [.01]
+    #                              ),
+    #                             ])),
+    #           ]),
+    #           ]
+    # args += [OrderedDict([('dmom', 0.9),
+    #                       # ('alpha', 'loss'),  # default for non dmom_ns
+    #                       # ('dmom', [0., 0.9]),
+    #                       ]+shared_args+args_1)]
+    # args_2 = [('sampler', ''),
+    #           ('optim', 'dmom'),
+    #           ('alpha', 'normg'),
+    #           ('minvar', ''),
+    #           ('sampler_maxw', [2, 100]),
+    #           # ('sampler_maxw', [100]),
+    #           ('sampler_params', [0, 1., .1])
+    #           ]
+    # args += [OrderedDict([('dmom', 0.0),
+    #                       ]+shared_args+args_2)]
+    return args, log_dir
+
+
+def mnist_duplicate(args):
+    dataset = 'mnist'
+    log_dir = 'runs_%s_dups' % dataset
+    shared_args = [('dataset', dataset),
+                   # ('lr', [.1, .05, .02, .01]),
+                   ('lr', .02),
+                   ('epochs', [
+                       # (100, OrderedDict([('lr_decay_epoch', 100)])),
+                       (30, OrderedDict([('lr_decay_epoch', 30)])),
+                   ]),
+                   # ('exp_lr', ''),
+                   # ('wnoise', ''),
+                   # ('arch', ['cnn', 'mlp', 'ssmlp']),
+                   ('arch', 'cnn'),
+                   # ('arch', 'bigcnn'),
+                   # ('optim', ['sgd', 'adam']),
+                   ('optim', ['sgd']),
+                   # ('optim', [('sgd', OrderedDict([('lr', .02)])),
+                   #            # ('adam', OrderedDict([('lr', .05)]))
+                   #            ]),
+                   ('log_stats', ''),
+                   ('test_batch_size', 10),
+                   # ('corrupt_perc', [20, 50, 100]),
+                   # ('corrupt_perc', [0, 100]),
+                   # ('label_smoothing', [0.0, 0.1]),
+                   # ('nodropout', [None, '']),
+                   ('duplicate', [None, '10,10000']),
+                   ]
+    args += [OrderedDict(shared_args)]
+    # args += [OrderedDict(shared_args+[('nodropout', ''), ('wd', 0)])]
+    # args += [OrderedDict(shared_args+[('nodropout', '')])]
+    # args += [OrderedDict(shared_args+[('wd', 0)])]
+    # args += [OrderedDict(shared_args+[('nodropout', ''), ('wd', 0),
+    #                                   ('label_smoothing', 0.1)])]
+    args += [OrderedDict(shared_args+[('wnoise', '')])]
+    # args += [OrderedDict(shared_args+[('nodropout', ''), ('wd', 0),
+    #                                   ('wnoise', '')])]
+    args_1 = [('scheduler', ''),
+              # ('seed', [1, 2]),
+              # ('alpha_norm', 'none'),  # default none
+              # ('alpha_norm', ['sum', 'none']),
+              # ('sampler', ''),  # True if scheduler
+              ('sampler_w2c', [
+                  # ('linrank',
+                  #  OrderedDict([('sampler_params',
+                  #                ['50,90,2,200']
+                  #                )])),
+                  ('expsnz_tauXstdL',
+                   OrderedDict([('sampler_params',
+                                 # [1., .1, .01]
+                                 [.01]
+                                 ),
+                                ])),
+              ]),
+              ]
+    args += [OrderedDict([('dmom', 0.9),
+                          # ('alpha', 'loss'),  # default for non dmom_ns
+                          # ('dmom', [0., 0.9]),
+                          ]+shared_args+args_1)]
+    # args_2 = [('sampler', ''),
+    #           ('optim', 'dmom'),
+    #           ('alpha', 'normg'),
+    #           ('minvar', ''),
+    #           ('sampler_maxw', [2, 100]),
+    #           # ('sampler_maxw', [100]),
+    #           ('sampler_params', [0, 1., .1])
+    #           ]
+    # args += [OrderedDict([('dmom', 0.0),
+    #                       ]+shared_args+args_2)]
+    return args, log_dir
+
+
+def mnist_diff(args):
+    dataset = 'mnist'
+    log_dir = 'runs_%s_diff' % dataset
+    shared_args = [('dataset', dataset),
+                   # ('lr', [.1, .05, .02, .01]),
+                   ('lr', .02),
+                   ('epochs', [
+                       # (100, OrderedDict([('lr_decay_epoch', 100)])),
+                       (30, OrderedDict([('lr_decay_epoch', 30)])),
+                   ]),
+                   # ('exp_lr', ''),
+                   # ('wnoise', ''),
+                   # ('arch', ['cnn', 'mlp', 'ssmlp']),
+                   ('arch', 'cnn'),
+                   # ('arch', 'bigcnn'),
+                   # ('optim', ['sgd', 'adam']),
+                   ('optim', ['sgd']),
+                   # ('optim', [('sgd', OrderedDict([('lr', .02)])),
+                   #            # ('adam', OrderedDict([('lr', .05)]))
+                   #            ]),
+                   ('log_stats', ''),
+                   ('test_batch_size', 10),
+                   # ('corrupt_perc', [20, 50, 100]),
+                   # ('corrupt_perc', [0, 100]),
+                   # ('label_smoothing', [0.0, 0.1]),
+                   # ('nodropout', [None, '']),
+                   # ('duplicate', [None, '10,10000']),
+                   ]
+    args += [OrderedDict(shared_args)]
+    # args += [OrderedDict(shared_args+[('nodropout', ''), ('wd', 0)])]
+    # args += [OrderedDict(shared_args+[('nodropout', '')])]
+    # args += [OrderedDict(shared_args+[('wd', 0)])]
+    # args += [OrderedDict(shared_args+[('nodropout', ''), ('wd', 0),
+    #                                   ('label_smoothing', 0.1)])]
+    # args += [OrderedDict(shared_args+[('wnoise', '')])]
+    # args += [OrderedDict(shared_args+[('nodropout', ''), ('wd', 0),
+    #                                   ('wnoise', '')])]
+    args_1 = [('scheduler', ''),
+              ('alpha_diff', ''),
+              # ('seed', [1, 2]),
+              # ('alpha_norm', 'none'),  # default none
+              # ('alpha_norm', ['sum', 'none']),
+              # ('sampler', ''),  # True if scheduler
+              ('sampler_w2c', [
+                  # ('linrank',
+                  #  OrderedDict([('sampler_params',
+                  #                ['50,90,2,200']
+                  #                )])),
+                  ('expsnz_tauXstdL',
+                   OrderedDict([('sampler_params',
+                                 [1., .1, .01]
+                                 # [.01]
+                                 ),
+                                ])),
+              ]),
+              ]
+    args += [OrderedDict([('dmom', [0.0, 0.5, 0.9]),
+                          # ('alpha', 'loss'),  # default for non dmom_ns
+                          # ('dmom', [0., 0.9]),
+                          ]+shared_args+args_1)]
+    # args_2 = [('sampler', ''),
+    #           ('optim', 'dmom'),
+    #           ('alpha', 'normg'),
+    #           ('minvar', ''),
+    #           ('sampler_maxw', [2, 100]),
+    #           # ('sampler_maxw', [100]),
+    #           ('sampler_params', [0, 1., .1])
+    #           ]
+    # args += [OrderedDict([('dmom', 0.0),
+    #                       ]+shared_args+args_2)]
+    return args, log_dir
+
+
+def imagenet_diff(args):
+    # from resnet https://arxiv.org/pdf/1512.03385.pdf
+    dataset = 'imagenet'  # 'imagenet'
+    log_dir = 'runs_%s_diff' % dataset
+    shared_args = [('dataset', dataset),
+                   ('optim', 'sgd'),  # 'sgd', 'adam'
+                   ('arch', 'resnet18'),
+                   # ('arch', 'resnet34'),
+                   # ('arch', 'alexnet'),
+                   # ('epochs', [120]),
+                   ('batch_size', 256),
+                   # ('lr', [.1]),
+                   ('workers', [12]),
+                   ('weight_decay', 1e-4),
+                   # ('lr_decay_epoch', [60]),
+                   # ('wnoise', [None, '']),
+                   # ('exp_lr', ['']),
+                   #  ### pretrained
+                   ('train_accuracy', ['']),
+                   ('pretrained', ['']),
+                   ('epochs', [20]),
+                   ('lr', [1e-3]),
+                   ('lr_decay_epoch', [10]),
+                   ('exp_lr', ['']),
+                   ]
+    # args += [OrderedDict(shared_args)]
+    shared_args += [('scheduler', ''),
+                    ('alpha_diff', ''),
+                    # ('alpha_norm', 'sum'),
+                    # ('alpha_norm', 'none'),
+                    # ('sampler', ''),
+                    ('sampler_w2c', [
+                        # ('linrank',
+                        #  OrderedDict([('sampler_params',
+                        #                ['50,90,2,200']
+                        #                )])),
+                        # ('expsnz_tau',
+                        #  OrderedDict([('sampler_params',
+                        #                [1e-3, 1e-4]
+                        #                )])),
+                        # ('expsnz_tauXstd',
+                        #  OrderedDict([('sampler_params',
+                        #                # [.5, .1, .01]
+                        #                [.1]
+                        #                ),
+                        #               ])),
+                        ('expsnz_tauXstdL',
+                         OrderedDict([('sampler_params',
+                                       # [.1, .05, .01]
+                                       # [.1, 1]
+                                       [.01]
+                                       ),
+                                      ])),
+                    ]),
+                    # ('seed', [1, 2]),
+                    # ('sampler_maxw', [1, 5]),
+                    ]
+    # args += [OrderedDict([('alpha', 'one'),
+    #                       ]+shared_args)]
+    args += [OrderedDict([('dmom', [0.0, 0.5, 0.9]),
+                          # ('alpha', 'loss'),
+                          # ('dmom', [0., 0.5, 0.9]),
+                          ]+shared_args)]
+    return args, log_dir
+
+
 if __name__ == '__main__':
     args = []
     # args, log_dir = cifar10_resnet_explr(args)
@@ -2023,13 +2303,17 @@ if __name__ == '__main__':
     # args, log_dir = imagenet_expsnooze(args)
     # args, log_dir = mnist_hist(args)
     # args, log_dir = imagenet_hist(args)
+    # args, log_dir = imagenet10_hist(args)
     # args, log_dir = mnist_hist_corrupt(args)
     # args, log_dir = mnist_hist_scale(args)
     # args, log_dir = mnist_minvar(args)
     # args, log_dir = cifar10_wresnet(args)
-    args, log_dir = imagenet_small(args)
+    # args, log_dir = imagenet_small(args)
+    # args, log_dir = mnist_genlztn(args)
+    # args, log_dir = mnist_duplicate(args)
+    # args, log_dir = mnist_diff(args)
+    args, log_dir = imagenet_diff(args)
     # jobs_0 = ['bolt0_gpu0,1,2,3', 'bolt1_gpu0,1,2,3']
-    # args, log_dir = imagenet10_hist(args)
     # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2',
     #           'bolt1_gpu0,1', 'bolt1_gpu2,3',
     #           ]
@@ -2048,7 +2332,7 @@ if __name__ == '__main__':
         # jobs += ['%s_job%d' % (s, i) for s in jobs_0]
 
     run_single = RunSingle(log_dir)
-    run_single.num = 3
+    run_single.num = 1
 
     # args = OrderedDict([('lr', [1, 2]), ('batch_size', [10, 20])])
     # args = OrderedDict([('lr', [(1, OrderedDict([('batch_size', [10])])),

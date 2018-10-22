@@ -32,6 +32,7 @@ class DMomScheduler(object):
         self.alpha_mom_bc = np.zeros(train_size)
         self.alpha = np.ones((train_size,))
         self.alpha_normed = np.ones((train_size,))
+        self.alpha_diff = np.ones((train_size,))
         self.alpha_normed_pre = None
         self.loss = np.ones((train_size,))
         self.epoch = 0
@@ -68,12 +69,18 @@ class DMomScheduler(object):
     def update_alpha(self, idx, alpha):
         self.visits[idx] += 1
 
+        sec_visit = self.visits[idx] >= 2
+        self.alpha_diff[idx[sec_visit]] = np.abs(
+            self.alpha[idx[sec_visit]] - alpha[sec_visit])
+        # self.alpha_diff[idx] = np.abs(self.alpha[idx] - alpha)
         self.alpha[idx] = alpha
         self.logger.update('alpha', alpha, len(idx))
         self.logger.update('alpha_sum', float(alpha.sum()), len(idx))
         self.logger.update('alpha_sq_sum',
                            float((alpha*alpha).sum()), len(idx))
 
+        if self.opt.alpha_diff:
+            alpha = self.alpha_diff[idx]
         alpha_mom, alpha_bc = self.compute_dmom(alpha, idx)
         self.alpha_mom[idx] = alpha_mom
         self.alpha_mom_bc[idx] = alpha_bc

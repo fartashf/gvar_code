@@ -94,6 +94,11 @@ def get_data_pth(logdir, run_names, tag_names, batch_size=None):
                 h_iters = int(1. * h_index * niters[-1] / 100.)
                 h_index = np.abs(niters-h_iters).argmin()
                 logdata[tag_name] = [logdata[tg][h_index]]
+            if '_log' in tag_name and tag_name not in logdata:
+                tg = tag_name[:tag_name.find('_log')]
+                if tg in logdata:
+                    val = np.log(np.maximum(np.exp(-20), logdata[tg]))
+                    logdata[tag_name] = val
             if tag_name not in logdata:
                 continue
             js = logdata[tag_name]
@@ -102,6 +107,10 @@ def get_data_pth(logdir, run_names, tag_names, batch_size=None):
                 if tag_name_orig_log is not None:
                     d[tag_name_orig_log] = (d[tag_name][0],
                                             np.exp(d[tag_name][1]))
+            elif '_f' in tag_name:
+                js[np.isnan(js)] = 100
+                js[np.isinf(js)] = 100
+                d[tag_name] = np.histogram(js, bins=100)
             else:
                 d[tag_name] = np.array([[x[j] for x in js]
                                         for j in range(1, 3)])
@@ -124,6 +133,16 @@ def plot_smooth_o1(x, y, *args, **kwargs):
     plot_smooth(x, y, 100, 1, *args, **kwargs)
 
 
+def get_legend(lg_tags, run_name):
+    lg = ""
+    for lgt in lg_tags:
+        res = ".*?($|,)" if ',' not in lgt and '$' not in lgt else ''
+        mg = re.search(lgt + res, run_name)
+        if mg:
+            lg += mg.group(0)
+    return lg
+
+
 def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
              ncolor=None):
     xlabel = {'visits_h': '# Visits',
@@ -135,7 +154,9 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'alpha_normed_biased_h': 'Normalized Alpha minus alpha min',
               'alpha_h': 'Alpha',
               'TlossC_h': 'Loss', 'VlossC_h': 'Loss', 'slossC_h': 'Loss',
-              'activeC_h': 'Class #', 'snoozeC_h': 'Class #'}
+              'activeC_h': 'Class #', 'snoozeC_h': 'Class #',
+              'Tloss_f': 'Loss', 'Vloss_f': 'Loss',
+              'Tnormg_f': 'Norm of gradients', 'Vnormg_f': 'Norm of gradients'}
     ylabel = {'Tacc': 'Training Accuracy (%)', 'Terror': 'Training Error (%)',
               'train/accuracy': 'Training Accuracy (%)',
               'Vacc': 'Test Accuracy (%)', 'Verror': 'Test Error (%)',
@@ -158,7 +179,9 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'gbar_norm': 'Gradient Norm',
               'TlossC_h': '# Classes', 'VlossC_h': '# Classes',
               'slossC_h': '# Classes',
-              'activeC_h': '# of Actives', 'snoozeC_h': '# of Snoozed'}
+              'activeC_h': '# of Actives', 'snoozeC_h': '# of Snoozed',
+              'Tloss_f': '# Examples', 'Vloss_f': '# Examples',
+              'Tnormg_f': '# Examples', 'Vnormg_f': '# Examples'}
     titles = {'Tacc': 'Training Accuracy', 'Terror': 'Training Error',
               'train/accuracy': 'Training Accuracy',
               'Vacc': 'Test Accuracy', 'Verror': 'Test Error',
@@ -191,7 +214,11 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'VlossC_h': 'Hostagram of test class loss',
               'slossC_h': 'Hostagram of last class loss',
               'activeC_h': 'Histogram of # of actives per class',
-              'snoozeC_h': 'Histogram of # of snoozed per class'}
+              'snoozeC_h': 'Histogram of # of snoozed per class',
+              'Tloss_f': 'Histogram of loss (train set, postcomp)',
+              'Vloss_f': 'Histogram of loss (val set, postcomp)',
+              'Tnormg_f': 'Histogram of $\|g\|$ (train set, postcomp)',
+              'Vnormg_f': 'Histogram of $\|g\|$ (val set, postcomp)'}
     yscale_log = ['Tloss', 'Vloss', 'tau']
     yscale_base = ['tau']
     plot_fs = {'Tacc': plot_f, 'Vacc': plot_f,
@@ -247,19 +274,13 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
     color = ['blue', 'orangered', 'limegreen', 'darkkhaki', 'cyan', 'grey']
     color = color[:ncolor]
     style = ['-', '--', ':', '-.']
-    plt.rcParams.update({'font.size': 12})
+    # plt.rcParams.update({'font.size': 12})
     plt.grid(linewidth=1)
     legends = []
     for i in range(len(data)):
         if tag_name not in data[i]:
             continue
-        lg = ""
-        for lgt in lg_tags:
-            res = ".*?($|,)" if ',' not in lgt and '$' not in lgt else ''
-            mg = re.search(lgt + res, run_names[i])
-            if mg:
-                lg += mg.group(0)
-        legends += [lg]
+        legends += [get_legend(lg_tags, run_names[i])]
         if isinstance(data[i][tag_name], tuple):
             # plt.hist(data[i][tag_name][0], data[i][tag_name][1],
             #          color=color[i])
@@ -295,7 +316,7 @@ def ticks(y, pos):
 
 def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
                        fig_name, lg_tags, ylim, batch_size=None, sep_h=True,
-                       ncolor=None):
+                       ncolor=None, save_single=False):
     run_names = get_run_names(logdir, patterns)
     data = get_data_f(logdir, run_names, tag_names, batch_size)
     if len(data) == 0:
@@ -307,7 +328,7 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
     num = 0
     # dm = []
     for tg in tag_names:
-        if '_h' in tg and sep_h:
+        if ('_h' in tg or '_f' in tg) and sep_h:
             for i in range(len(data)):
                 if tg in data[i]:
                     num += 1
@@ -315,26 +336,45 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
             num += 1
     height = (num + 1) // 2
     width = 2 if num > 1 else 1
-    fig = plt.figure(figsize=(7 * width, 4 * height))
-    fig.subplots(height, width)
+    if not save_single:
+        fig = plt.figure(figsize=(7 * width, 4 * height))
+        fig.subplots(height, width)
+    else:
+        plt.figure(figsize=(9, 4))
     plt.tight_layout(pad=1., w_pad=3., h_pad=3.0)
     fi = 1
+    if save_single:
+        fig_dir = fig_name[:fig_name.rfind('.')]
+        try:
+            os.makedirs(fig_dir)
+        except os.error:
+            pass
     for i in range(len(tag_names)):
         yl = ylim[i]
-        if '_h' in tag_names[i] and sep_h:
+        if ('_h' in tag_names[i] or '_f' in tag_names[i]) and sep_h:
             for j in range(len(data)):
                 if tag_names[i] not in data[j]:
                     continue
-                plt.subplot(height, width, fi)
+                if not save_single:
+                    plt.subplot(height, width, fi)
                 plot_tag(data[j], plot_f, run_names[j],
                          tag_names[i], lg_tags, yl, color0=j, ncolor=ncolor)
+                if save_single:
+                    plt.savefig('%s/%d.png' % (fig_dir, fi),
+                                dpi=100, bbox_inches='tight')
+                    plt.figure(figsize=(9, 4))
                 fi += 1
         else:
             if not isinstance(yl, list) and yl is not None:
                 yl = ylim
-            plt.subplot(height, width, fi)
+            if not save_single:
+                plt.subplot(height, width, fi)
             plot_tag(data, plot_f, run_names, tag_names[i], lg_tags, yl,
                      ncolor=ncolor)
+            if save_single:
+                plt.savefig('%s/%d.png' % (fig_dir, fi),
+                            dpi=100, bbox_inches='tight')
+                plt.figure(figsize=(9, 4))
             fi += 1
     plt.savefig(fig_name, dpi=100, bbox_inches='tight')
     return data, run_names

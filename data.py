@@ -25,17 +25,18 @@ def get_loaders(opt):
 def dataset_to_loaders(train_dataset, test_dataset, opt):
     kwargs = {'num_workers': opt.workers,
               'pin_memory': True} if opt.cuda else {}
+    idxdataset = IndexedDataset(train_dataset, opt, train=True)
     if opt.sampler:
         if opt.scheduler:
-            train_sampler = DMomSampler(len(train_dataset), opt)
+            train_sampler = DMomSampler(len(idxdataset), opt)
         elif opt.minvar:
-            train_sampler = MinVarSampler(len(train_dataset), opt)
+            train_sampler = MinVarSampler(len(idxdataset), opt)
         else:
-            train_sampler = DelayedSampler(len(train_dataset), opt)
+            train_sampler = DelayedSampler(len(idxdataset), opt)
     else:
         train_sampler = None
     train_loader = torch.utils.data.DataLoader(
-        IndexedDataset(train_dataset, opt, train=True),
+        idxdataset,
         batch_size=opt.batch_size,
         sampler=train_sampler,
         shuffle=(train_sampler is None),
@@ -47,32 +48,51 @@ def dataset_to_loaders(train_dataset, test_dataset, opt):
         **kwargs)
 
     train_test_loader = torch.utils.data.DataLoader(
-        IndexedDataset(train_dataset, opt),
+        IndexedDataset(train_dataset, opt, train=True,
+                       cr_labels=idxdataset.cr_labels),
         batch_size=opt.test_batch_size, shuffle=False,
         **kwargs)
     return train_loader, test_loader, train_test_loader
 
 
 class IndexedDataset(data.Dataset):
-    def __init__(self, dataset, opt, train=False):
+    def __init__(self, dataset, opt, train=False, cr_labels=None):
+        np.random.seed(2222)
         self.ds = dataset
         self.opt = opt
-        self.cr_labels = np.random.randint(
-            self.opt.num_class, size=len(dataset))
-        cr_ids = np.arange(len(dataset))
+
+        # duplicates
+        self.dup_num = 0
+        self.dup_cnt = 0
+        self.dup_ids = []
+        if opt.duplicate != '' and train:
+            params = map(int, self.opt.duplicate.split(','))
+            self.dup_num, self.dup_cnt = params
+            self.dup_ids = np.random.permutation(len(dataset))[:self.dup_num]
+
+        # corrupt labels
+        if cr_labels is not None:
+            self.cr_labels = cr_labels
+        else:
+            self.cr_labels = np.random.randint(
+                self.opt.num_class, size=len(self))
+        cr_ids = np.arange(len(self))
         self.cr_ids = []
         if train:
             cr_num = int(1. * opt.corrupt_perc * len(dataset) / 100.)
             self.cr_ids = cr_ids[:cr_num]
 
     def __getitem__(self, index):
-        img, target = self.ds[index]
+        subindex = index
+        if index >= len(self.ds):
+            subindex = self.dup_ids[(index-len(self.ds))/self.dup_cnt]
+        img, target = self.ds[subindex]
         if index in self.cr_ids:
             target = torch.tensor(self.cr_labels[index])
         return img, target, index
 
     def __len__(self):
-        return len(self.ds)
+        return len(self.ds)+self.dup_num*self.dup_cnt
 
 
 def get_mnist_loaders(opt, **kwargs):
