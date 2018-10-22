@@ -42,7 +42,7 @@ def print_stats(model, gluster, X, T, batch_size):
         dist[i] = np.sum(L, 0)
         normG[i] = np.sum([g.pow(2).sum().item() for g in grad_params])
     L = [c.pow(2).view(nclusters, -1).sum(1).cpu().numpy()
-         for g in centers]
+         for c in centers]
     normC = np.sum(L, 0)
     print('Dist:')
     print(dist)
@@ -50,8 +50,8 @@ def print_stats(model, gluster, X, T, batch_size):
     print(normG)
     print('normC:')
     print(normC)
-    print('Reinit count: %s' % str(gluster.reinits))
-    print('Cluster size: %s' % str(gluster.cluster_size))
+    print('Reinit count: %s' % str(gluster.reinits.cpu().numpy()))
+    print('Cluster size: %s' % str(gluster.cluster_size.cpu().numpy()))
 
 
 def test_gluster(batch_size, train_size, nclusters, nunique, beta, seed,
@@ -59,7 +59,7 @@ def test_gluster(batch_size, train_size, nclusters, nunique, beta, seed,
     print('batch_size: %d' % batch_size)
     print('train_size: %d' % train_size)
     print('nclusters : %d' % nclusters)
-    print('nunique   : %d' % nunique)
+    print('nunique   : %s' % str(nunique))
     print('beta      : %d' % beta)
     print('seed      : %d' % seed)
     print('niters    : %d' % niters)
@@ -72,8 +72,17 @@ def test_gluster(batch_size, train_size, nclusters, nunique, beta, seed,
     X = torch.rand(train_size, 1, 28, 28)
     T = torch.ones(train_size).long()
 
-    for i in range(nunique, train_size, nunique):
-        X[i:i+nunique].copy_(X[:nunique])
+    if isinstance(nunique, list):
+        num = len(nunique)
+        sz = np.array(nunique)*train_size - 1
+        cur = num
+        for i in range(num):
+            X[cur:cur+int(sz[i])].copy_(X[i:i+1])
+            cur += int(sz[i])
+        nunique = len(nunique)
+    else:
+        for i in range(nunique, train_size, nunique):
+            X[i:i+nunique].copy_(X[:nunique])
 
     model = MLP(dropout=False)
     model.cuda()
@@ -97,13 +106,26 @@ def test_gluster(batch_size, train_size, nclusters, nunique, beta, seed,
     print(assign_i)
     # use model to prevent C update
     print_stats(model, gluster,
-                X[:2*nunique], T[:2*nunique],
+                X[:nunique], T[:nunique],
                 batch_size)
     # import ipdb; ipdb.set_trace()
 
 
 if __name__ == '__main__':
-    test_gluster(10, 100, 5, 5, .9, 1234, 10)
+    # Few iterations
+    # test_gluster(10, 100, 5, 5, .9, 1234, 10)
+
+    # More iterations, centers should match input
     # test_gluster(10, 100, 5, 5, .9, 1234, 100)
+
+    # More unique data than centers
     # test_gluster(10, 100, 5, 10, .9, 1234, 100)
+
+    # More centers than data
     # test_gluster(10, 100, 10, 5, .9, 1234, 100)
+
+    # Imbalance data
+    # test_gluster(10, 100, 2, [.9, .1], .9, 1234, 10)
+
+    # More iterations
+    test_gluster(10, 100, 2, [.9, .1], .9, 1234, 100)
