@@ -156,6 +156,7 @@ class GradientCluster(object):
             Ci, Co = self.centers[module.weight]
             Ci_new = torch.zeros_like(Ci)
             Co_new = torch.zeros_like(Co)
+            # TODO: SVD
             Ci_new.scatter_add_(0, assign_i.expand_as(Ai), Ai)
             Co_new.scatter_add_(0, assign_i.expand_as(Go), Go)
             # Update clusters using the size
@@ -174,3 +175,17 @@ class GradientCluster(object):
                 Cb.masked_scatter_(reinits, Go[perm])
                 self.cluster_size[reinits] = 1
         return assign_i
+
+    def get_centers(self):
+        centers = []
+        for param, value in self.centers.iteritems():
+            if param.dim() == 1:
+                Cb = value
+                centers += [Cb]
+            elif param.dim() == 2:
+                (Ci, Co) = value
+                Cf = torch.matmul(Co.unsqueeze(-1), Ci.unsqueeze(1))
+                centers += [Cf]
+                assert Cf.shape == (Ci.shape[0], Co.shape[1], Ci.shape[1]),\
+                    'Cf: C x d_out x d_in'
+        return centers
