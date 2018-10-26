@@ -100,6 +100,8 @@ def test_gluster(batch_size, data, nclusters, beta, seed, niters):
 
     modelg = copy.deepcopy(model)
     gluster = GradientCluster(modelg, nclusters, beta)
+    # Test if Gluster can be disabled
+    # gluster.deactivate()
 
     gluster_tc = np.zeros(niters)
     for i in range(niters):

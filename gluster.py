@@ -13,6 +13,8 @@ class GradientCluster(object):
                               'Conv2d': self._conv2d_cluster}
         self.known_modules = self.layer_cluster.keys()
 
+        self.is_active = True
+        self.is_eval = False
         self.nclusters = nclusters
         self.cluster_size = torch.ones(nclusters, 1).cuda()
         self.reinits = torch.ones(nclusters, 1).long().cuda()
@@ -25,6 +27,20 @@ class GradientCluster(object):
         # self.assignments = torch.zeros(train_size).long().cuda()
 
         self._register_hooks()
+
+    def activate(self):
+        # Both EM steps
+        self.is_active = True
+        self.is_eval = False
+
+    def eval(self):
+        # Only M step
+        self.is_active = True
+        self.is_eval = True
+
+    def deactivate(self):
+        # No EM step
+        self.is_active = False
 
     def _init_centers(self):
         C = OrderedDict()
@@ -63,9 +79,13 @@ class GradientCluster(object):
                 module.register_backward_hook(self._em_step)
 
     def _save_input(self, module, input):
+        if not self.is_active:
+            return
         self.inputs[module] = input[0].clone().detach()
 
     def _em_step(self, module, grad_input, grad_output):
+        if not self.is_active:
+            return
         Ai = self.inputs[module]
         Gi = grad_input[0].clone().detach()
         Go = grad_output[0].clone().detach()
@@ -74,6 +94,8 @@ class GradientCluster(object):
         self.layer_cluster[module.__class__.__name__](module, Ai, Gi, Go)
 
     def _linear_cluster(self, module, Ai, Gi, Go):
+        if not self.is_active:
+            return
         # Bias
         Cb = self.centers[module.bias]
         # W^Ta_i + b = a_{i+1}
@@ -108,21 +130,30 @@ class GradientCluster(object):
         self.batch_dist += [O]
 
     def _conv2d_cluster(self, module, a_in, d_in, d_out):
+        if not self.is_active:
+            return
         # TODO: conv
         pass
 
     def zero(self):
+        if not self.is_active:
+            return
         self.batch_dist = []
         self.inputs = {}
         self.ograds = {}
 
     def em_update(self):
+        if not self.is_active:
+            return
         # M: assign input
         # M: a_i = argmin_c(|g_i-C_c|^2)
         #        = argmin_c gg+CC-2*gC
         #        = argmin_c CC-2gC
         total_dist = torch.stack(self.batch_dist).sum(0)
         _, assign_i = total_dist.min(0)
+
+        if self.is_eval:
+            return assign_i
 
         # E: update C
         # E: C_c = mean_i(g_i * I(c==a_i))

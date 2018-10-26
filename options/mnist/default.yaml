@@ -61,3 +61,6 @@ log_stats: False
 label_smoothing: 0
 duplicate: 0,0
 alpha_diff: False
+gluster: False
+gluster_num: 10
+gluster_beta: 0.9
