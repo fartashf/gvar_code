@@ -110,11 +110,11 @@ def test_gluster(batch_size, data, nclusters, beta, seed, niters):
         x = Variable(X[ids[:batch_size]]).cuda()
         t = Variable(T[ids[:batch_size]]).cuda()
         modelg.zero_grad()
-        gluster.zero()
+        gluster.zero_data()
         y = modelg(x)
         loss = F.nll_loss(y, t)
         loss.backward()
-        assign_i = gluster.em_update()
+        assign_i = gluster.em_step()
         toc = time.time()
         gluster_tc[i] = (toc-tic)
         # TODO: optim step
