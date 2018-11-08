@@ -5,6 +5,8 @@ from torch.autograd import Variable
 import copy
 import sys
 import time
+import torch.optim as optim
+from torchvision import datasets, transforms
 sys.path.append('../')
 from models.mnist import MLP, MNISTNet  # NOQA
 from gluster import GradientClusterOnline  # NOQA
@@ -81,6 +83,18 @@ def purturb_data(data, eps):
     return X, T, Xte, Yte
 
 
+class IndexedDataset():
+    def __init__(self, dataset):
+        self.ds = dataset
+
+    def __getitem__(self, index):
+        img, target = self.ds[index]
+        return img, target, index
+
+    def __len__(self):
+        return len(self.ds)
+
+
 def model_time(model, X, T, batch_size, niters):
     train_size = X.shape[0]
     model_tc = np.zeros(niters)
@@ -151,8 +165,6 @@ def test_gluster_online(batch_size, data, nclusters, beta, seed, niters):
 
 
 class DataLoader(object):
-    """
-    """
     def __init__(self, X, T, batch_size):
         self.X = X
         self.T = T
@@ -198,7 +210,7 @@ def test_gluster_batch(batch_size, data, nclusters, min_size, seed, citers):
     data_loader = DataLoader(X, T, batch_size)
     for i in range(citers):
         tic = time.time()
-        gluster.update_batch(data_loader)
+        gluster.update_batch(data_loader, train_size)
         toc = time.time()
         gluster_tc[i] = (toc-tic)
         # TODO: optim step
@@ -228,6 +240,75 @@ def test_gluster_batch(batch_size, data, nclusters, min_size, seed, citers):
     print('%.4f +/- %.4f' % (model_tc.mean(), model_tc.std()))
     print('%.4f' % (toc-tic))
     # import ipdb; ipdb.set_trace()
+
+
+def train(epoch, train_loader, model, optimizer):
+    for batch_idx, (data, target, idx) in enumerate(train_loader):
+        model.train()
+        data, target = data.cuda(), target.cuda()
+        optimizer.zero_grad()
+        # gluster.zero()
+        output = model(data)
+        loss = F.nll_loss(output, target)
+        loss.backward()
+        optimizer.step()
+        if batch_idx % 10 == 0:
+            print('Epoch: [{0}][{1}/{2}]\t Loss: {loss:.6f}\t'.format(
+                epoch, batch_idx, len(train_loader),
+                loss=loss.item()))
+
+
+def test_mnist(batch_size, epochs, nclusters, min_size, seed, citers):
+    print('batch_size: %d' % batch_size)
+    print('epochs    : %d' % epochs)
+    print('nclusters : %d' % nclusters)
+    print('min_size  : %d' % min_size)
+    print('seed      : %d' % seed)
+    print('citers    : %d' % citers)
+
+    torch.backends.cudnn.deterministic = True
+    torch.manual_seed(seed)
+    np.set_printoptions(suppress=True)
+    np.random.seed(seed)
+
+    train_dataset = datasets.MNIST(
+            './data/mnist', train=True, download=True,
+            transform=transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.1307,), (0.3081,))
+            ]))
+    idxdataset = IndexedDataset(train_dataset)
+    train_loader = torch.utils.data.DataLoader(
+        idxdataset,
+        batch_size=batch_size,
+        shuffle=True)
+
+    model = MLP(dropout=False)
+    model.cuda()
+
+    modelg = copy.deepcopy(model)
+
+    optimizer = optim.SGD(model.parameters(),
+                          lr=.01, momentum=0.9,
+                          weight_decay=.0005)
+
+    for e in range(epochs):
+        train(e, train_loader, model, optimizer)
+
+    gluster = GradientClusterBatch(modelg, min_size, nclusters)
+    # Test if Gluster can be disabled
+    # gluster.deactivate()
+
+    gluster_tc = np.zeros(citers)
+    for i in range(citers):
+        tic = time.time()
+        gluster.update_batch(train_loader, len(train_dataset))
+        toc = time.time()
+        gluster_tc[i] = (toc-tic)
+        gluster.print_stats()
+
+    print('%.4f +/- %.4f' % (gluster_tc.mean(), gluster_tc.std()))
+    import ipdb; ipdb.set_trace()
 
 
 if __name__ == '__main__':
@@ -270,6 +351,8 @@ if __name__ == '__main__':
     # test_gluster_batch(10, data, 5, 1, 1234, 10)
 
     # gluster batch noise
-    data = data_unique_perc(100, [.9, .1])
-    data = purturb_data(data, .01)
-    test_gluster_batch(10, data, 2, 1, 12345, 10)
+    # data = data_unique_perc(100, [.9, .1])
+    # data = purturb_data(data, .01)
+    # test_gluster_batch(10, data, 2, 1, 12345, 10)
+
+    test_mnist(128, 1, 2, 10, 1234, 5)

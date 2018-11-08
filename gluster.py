@@ -3,6 +3,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import sys
 from collections import OrderedDict
+import numpy as np
 sys.path.append('../')
 from models.mnist import MLP, MNISTNet  # NOQA
 
@@ -31,6 +32,8 @@ class GradientCluster(object):
         self.modules = []
         self.zero_data()
         self._init_centers()
+        self.reinits = torch.zeros(nclusters, 1).long().cuda()
+        self.cluster_size = torch.zeros(nclusters, 1).cuda()
         # self.assignments = torch.zeros(train_size).long().cuda()
 
         self._register_hooks()
@@ -54,9 +57,6 @@ class GradientCluster(object):
         for param in self.model.parameters():
             C[param] = self._init_centers_layer(param, self.nclusters, eps)
         self.centers = C
-        nclusters = self.nclusters
-        self.cluster_size = torch.zeros(nclusters, 1).cuda()
-        self.reinits = torch.zeros(nclusters, 1).long().cuda()
 
     def _init_centers_layer(self, param, nclusters, eps):
         centers = []
@@ -172,6 +172,19 @@ class GradientCluster(object):
                     'Cf: C x d_out x d_in'
         return centers
 
+    def print_stats(self):
+        centers = self.get_centers()
+        nclusters = centers[0].shape[0]
+
+        normC = np.zeros((nclusters,))
+        L = [c.pow(2).view(nclusters, -1).sum(1).cpu().numpy()
+             for c in centers]
+        normC = np.sum(L, 0)
+        print('normC:')
+        print(normC)
+        print('Reinit count: %s' % str(self.reinits.cpu().numpy()))
+        print('Cluster size: %s' % str(self.cluster_size.cpu().numpy()))
+
 
 class GradientClusterBatch(GradientCluster):
     def __init__(self, model, min_size, nclusters=1):
@@ -195,15 +208,14 @@ class GradientClusterBatch(GradientCluster):
             self.cluster_size.add_(counts)
         return assign_i, batch_dist
 
-    def update_batch(self, data_loader, device='cuda'):
+    def update_batch(self, data_loader, train_size, device='cuda'):
         # TODO: read through and write a simple test
         model = self.model
-        assign_i = torch.zeros(len(data_loader), 1).long().to(device)
+        assign_i = torch.zeros(train_size, 1).long().to(device)
         total_dist = torch.zeros(self.nclusters, 1).to(device)
         self.cluster_size = torch.zeros(self.nclusters, 1).cuda()
 
-        # for all data save dists
-        # for all data assign
+        print('> Gluster batch: Save distortions and assign data to clusters.')
         for data, target, idx in data_loader:
             data, target = Variable(data), Variable(target)
             data, target = data.to(device), target.to(device)
@@ -216,6 +228,8 @@ class GradientClusterBatch(GradientCluster):
             assign_i[idx] = ai
             total_dist.scatter_add_(0, ai, batch_dist)
         total_dist.div_(self.cluster_size.clamp(1))
+        print('> Gluster batch: total distortions: %f'
+              % total_dist.sum().item())
 
         # split the scattered cluster if the smallest cluster is small
         # TODO: more than one split, challenge: don't know the new dist
@@ -227,9 +241,10 @@ class GradientClusterBatch(GradientCluster):
                 self.cluster_size == 0, float('-inf')).max(0)
             idx = torch.arange(assign_i.shape[0])[assign_i[:, 0] == j]
             assign_i[idx[torch.randperm(len(idx))[:len(idx)/2]]] = i
+            self.reinits[i] += 1
 
-        self._init_centers(0)  # cluster_size is also reset to 0
-        # for all data update centers
+        print('> Gluster batch: Update cluster centers given the assignments')
+        self._init_centers(0)
         for data, target, idx in data_loader:
             data, target = Variable(data), Variable(target)
             data, target = data.to(device), target.to(device)
@@ -241,6 +256,7 @@ class GradientClusterBatch(GradientCluster):
             # recompute A, G but don't do reassign as clusters change
             self.assign()
             # assign_i[idx], _ = self.assign()  # recompute A, G
+            total_dist.scatter_add_(0, ai, batch_dist)
             self.update(assign_i[idx])
 
         self.cluster_size.fill_(0)
