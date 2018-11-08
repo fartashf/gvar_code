@@ -16,7 +16,7 @@ def get_gluster(model, opt):
 
 
 class GradientCluster(object):
-    def __init__(self, model, nclusters=1, **kwargs):
+    def __init__(self, model, nclusters=1):
         # Q: duplicates
         # TODO: challenge: how many C? memory? time?
         self.layer_dist = {'Linear': self._linear_dist,
@@ -26,11 +26,10 @@ class GradientCluster(object):
         self.is_active = True
         self.is_eval = False
         self.nclusters = nclusters
-        self.zero_centers()
         # self.train_size = train_size
         self.model = model
         self.modules = []
-        self.zero()
+        self.zero_data()
         self._init_centers()
         # self.assignments = torch.zeros(train_size).long().cuda()
 
@@ -55,6 +54,9 @@ class GradientCluster(object):
         for param in self.model.parameters():
             C[param] = self._init_centers_layer(param, self.nclusters, eps)
         self.centers = C
+        nclusters = self.nclusters
+        self.cluster_size = torch.zeros(nclusters, 1).cuda()
+        self.reinits = torch.zeros(nclusters, 1).long().cuda()
 
     def _init_centers_layer(self, param, nclusters, eps):
         centers = []
@@ -151,23 +153,10 @@ class GradientCluster(object):
         self.ograds = {}
 
     def assign(self):
-        # M: assign input
-        # M: a_i = argmin_c(|g_i-C_c|^2)
-        #        = argmin_c gg+CC-2*gC
-        #        = argmin_c CC-2gC
-        total_dist = torch.stack(self.batch_dist).sum(0)
-        _, assign_i = total_dist.min(0)
-        return assign_i, total_dist
+        raise NotImplemented('assign not implemented')
 
     def update(self, assign_i):
         raise NotImplemented('update not implemented')
-
-    def em_step(self):
-        if self.is_active:
-            assign_i = self.assign()
-            if not self.is_eval:
-                self.update(assign_i)
-            return assign_i
 
     def get_centers(self):
         centers = []
@@ -185,38 +174,38 @@ class GradientCluster(object):
 
 
 class GradientClusterBatch(GradientCluster):
-    def __init__(self, model, min_size, **kwargs):
-        super(GradientClusterBatch, self).__init__(self, model, **kwargs)
+    def __init__(self, model, min_size, nclusters=1):
+        super(GradientClusterBatch, self).__init__(model, nclusters)
         self.min_size = min_size
 
     def assign(self):
-        """
+        """Assign inputs to clusters
         M: assign input
         M: a_i = argmin_c(|g_i-C_c|^2)
         = argmin_c gg+CC-2*gC
         = argmin_c CC-2gC
         """
         total_dist = torch.stack(self.batch_dist).sum(0)
-        _, assign_i = total_dist.min(0)
+        batch_dist, assign_i = total_dist.min(0)
         assign_i = assign_i.unsqueeze(1)
+        batch_dist = batch_dist.unsqueeze(1)
         counts = torch.zeros(self.nclusters, 1).cuda()
         counts.scatter_add_(0, assign_i, torch.ones(assign_i.shape).cuda())
         self.cluster_size.add_(counts)
-        return assign_i, total_dist
+        return assign_i, batch_dist
 
-    def update_batch(self, data_loader, cuda):
+    def update_batch(self, data_loader, device='cuda'):
         # TODO: read through and write a simple test
         model = self.model
-        assign_i = torch.zeros(len(data_loader))
-        total_dist = torch.zeros(self.nclusters)
+        assign_i = torch.zeros(len(data_loader), 1).long().to(device)
+        total_dist = torch.zeros(self.nclusters, 1).to(device)
         self.cluster_size = torch.zeros(self.nclusters, 1).cuda()
 
         # for all data save dists
         # for all data assign
         for data, target, idx in data_loader:
-            if cuda:
-                data, target = data.cuda(), target.cuda()
             data, target = Variable(data), Variable(target)
+            data, target = data.to(device), target.to(device)
             model.zero_grad()
             self.zero_data()
             output = self.model(data)
@@ -232,29 +221,29 @@ class GradientClusterBatch(GradientCluster):
         # split the scattered cluster if the smallest cluster is small
         # TODO: more than one split, challenge: don't know the new dist
         # after one split
-        s, i = self.cluster_size.min()
+        s, i = self.cluster_size.min(0)
         if s < self.min_size:
-            _, j = total_dist.max()
-            idx = torch.find(assign_i == j)
-            assign_i[idx[torch.random.permutation(len(idx))[:len(idx)/2]]] = i
+            _, j = total_dist.max(0)
+            idx = torch.arange(assign_i.shape[0])[assign_i[:, 0] == j]
+            assign_i[idx[torch.randperm(len(idx))[:len(idx)/2]]] = i
 
         # for all data update centers
-        for data, targets, idx in data_loader:
-            if cuda:
-                data, target = data.cuda(), target.cuda()
+        for data, target, idx in data_loader:
             data, target = Variable(data), Variable(target)
+            data, target = data.to(device), target.to(device)
             model.zero_grad()
             self.zero_data()
             output = self.model(data)
-            loss = F.nll_loss(output, targets)
+            loss = F.nll_loss(output, target)
             loss.backward()
-            assign_i[idx] = self.assign()
+            assign_i[idx], _ = self.assign()  # recompute A, G
             self.update(assign_i[idx])
 
         self.normalize()
+        return assign_i
 
     def update(self, assign_i):
-        """
+        """Update Clusters
         E: update C
         E: C_c = mean_i(g_i * I(c==a_i))
         """
@@ -291,14 +280,25 @@ class GradientClusterBatch(GradientCluster):
 
 
 class GradientClusterOnline(GradientCluster):
-    def __init__(self, model, beta=0.9, **kwargs):
-        super(GradientClusterOnline, self).__init__(model, **kwargs)
+    def __init__(self, model, beta=0.9, nclusters=1):
+        super(GradientClusterOnline, self).__init__(model, nclusters)
         self.beta = beta  # cluster size decay factor
 
-    def zero_centers(self):
-        nclusters = self.nclusters
-        self.cluster_size = torch.zeros(nclusters, 1).cuda()
-        self.reinits = torch.zeros(nclusters, 1).long().cuda()
+    def em_step(self):
+        if self.is_active:
+            assign_i = self.assign()
+            if not self.is_eval:
+                self.update(assign_i)
+            return assign_i
+
+    def assign(self):
+        # M: assign input
+        # M: a_i = argmin_c(|g_i-C_c|^2)
+        #        = argmin_c gg+CC-2*gC
+        #        = argmin_c CC-2gC
+        total_dist = torch.stack(self.batch_dist).sum(0)
+        _, assign_i = total_dist.min(0)
+        return assign_i
 
     def update(self, assign_i):
         # E: update C

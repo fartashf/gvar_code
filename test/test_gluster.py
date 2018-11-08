@@ -7,7 +7,8 @@ import sys
 import time
 sys.path.append('../')
 from models.mnist import MLP, MNISTNet  # NOQA
-from gluster import GradientCluster  # NOQA
+from gluster import GradientClusterOnline  # NOQA
+from gluster import GradientClusterBatch  # NOQA
 
 
 def print_stats(model, gluster, X, T, batch_size):
@@ -80,7 +81,24 @@ def purturb_data(data, eps):
     return X, T, Xte, Yte
 
 
-def test_gluster(batch_size, data, nclusters, beta, seed, niters):
+def model_time(model, X, T, batch_size, niters):
+    train_size = X.shape[0]
+    model_tc = np.zeros(niters)
+    for i in range(niters):
+        tic = time.time()
+        ids = np.random.permutation(train_size)[:batch_size]
+        x = Variable(X[ids[:batch_size]]).cuda()
+        t = Variable(T[ids[:batch_size]]).cuda()
+        model.zero_grad()
+        y = model(x)
+        loss = F.nll_loss(y, t)
+        loss.backward()
+        toc = time.time()
+        model_tc[i] = (toc-tic)
+    return model_tc
+
+
+def test_gluster_online(batch_size, data, nclusters, beta, seed, niters):
     X, T, Xte, Yte = data
     train_size = X.shape[0]
     print('batch_size: %d' % batch_size)
@@ -99,7 +117,7 @@ def test_gluster(batch_size, data, nclusters, beta, seed, niters):
     model.cuda()
 
     modelg = copy.deepcopy(model)
-    gluster = GradientCluster(modelg, nclusters, beta)
+    gluster = GradientClusterOnline(modelg, beta, nclusters)
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
@@ -124,18 +142,7 @@ def test_gluster(batch_size, data, nclusters, beta, seed, niters):
     # use model to prevent C update
     print_stats(model, gluster, Xte, Yte, batch_size)
 
-    model_tc = np.zeros(niters)
-    for i in range(niters):
-        tic = time.time()
-        ids = np.random.permutation(train_size)[:batch_size]
-        x = Variable(X[ids[:batch_size]]).cuda()
-        t = Variable(T[ids[:batch_size]]).cuda()
-        model.zero_grad()
-        y = model(x)
-        loss = F.nll_loss(y, t)
-        loss.backward()
-        toc = time.time()
-        model_tc[i] = (toc-tic)
+    model_tc = model_time(model, X, T, batch_size, niters)
 
     print('Time:')
     print('%.4f +/- %.4f' % (gluster_tc.mean(), gluster_tc.std()))
@@ -143,37 +150,123 @@ def test_gluster(batch_size, data, nclusters, beta, seed, niters):
     # import ipdb; ipdb.set_trace()
 
 
+class DataLoader(object):
+    """
+    """
+    def __init__(self, X, T, batch_size):
+        self.X = X
+        self.T = T
+        self.batch_size = batch_size
+
+    def __iter__(self):
+        X = self.X
+        T = self.T
+        batch_size = self.batch_size
+        for i in range(0, X.shape[0], batch_size):
+            a = i
+            b = min(i+batch_size, X.shape)
+            yield X[a:b], T[a:b], np.arange(a, b)
+
+    def __len__(self):
+        return self.X.shape[0]
+
+
+def test_gluster_batch(batch_size, data, nclusters, min_size, seed, citers):
+    X, T, Xte, Yte = data
+    train_size = X.shape[0]
+    print('batch_size: %d' % batch_size)
+    print('nclusters : %d' % nclusters)
+    print('min_size  : %d' % min_size)
+    print('seed      : %d' % seed)
+    print('citers    : %d' % citers)
+    print('train_size: %d' % train_size)
+
+    torch.backends.cudnn.deterministic = True
+    torch.manual_seed(seed)
+    np.set_printoptions(suppress=True)
+    np.random.seed(seed)
+
+    model = MLP(dropout=False)
+    model.cuda()
+
+    modelg = copy.deepcopy(model)
+    gluster = GradientClusterBatch(modelg, min_size, nclusters)
+    # Test if Gluster can be disabled
+    # gluster.deactivate()
+
+    gluster_tc = np.zeros(citers)
+    data_loader = DataLoader(X, T, batch_size)
+    for i in range(citers):
+        tic = time.time()
+        gluster.update_batch(data_loader)
+        toc = time.time()
+        gluster_tc[i] = (toc-tic)
+        # TODO: optim step
+
+    # get test data assignments
+    x = Variable(Xte).cuda()
+    t = Variable(Yte).cuda()
+    modelg.zero_grad()
+    gluster.zero_data()
+    y = modelg(x)
+    loss = F.nll_loss(y, t)
+    loss.backward()
+    assign_i = gluster.assign()
+
+    print('assign:')
+    print(assign_i)
+    # use model to prevent C update
+    print_stats(model, gluster, Xte, Yte, batch_size)
+
+    tic = time.time()
+    model_tc = model_time(model, X, T, batch_size, citers)
+    toc = time.time()
+
+    print('Time:')
+    print('%.4f +/- %.4f' % (gluster_tc.mean(), gluster_tc.std()))
+    print('%.4f +/- %.4f' % (model_tc.mean(), model_tc.std()))
+    print('%.4f' % (toc-tic))
+    # import ipdb; ipdb.set_trace()
+
+
 if __name__ == '__main__':
     # Few iterations
     # data = data_unique_n(100, 5)
-    # test_gluster(10, data, 5, .9, 1234, 10)
+    # test_gluster_online(10, data, 5, .9, 1234, 10)
 
     # More iterations, centers should match input
     # data = data_unique_n(100, 5)
-    # test_gluster(10, data, 5, .9, 1234, 100)
+    # test_gluster_online(10, data, 5, .9, 1234, 100)
 
     # More unique data than centers
     # data = data_unique_n(100, 10)
-    # test_gluster(10, data, 5, .9, 1234, 100)
+    # test_gluster_online(10, data, 5, .9, 1234, 100)
 
     # More centers than data
     # data = data_unique_n(100, 5)
-    # test_gluster(10, data, 10, .9, 1234, 100)
+    # test_gluster_online(10, data, 10, .9, 1234, 100)
 
     # Imbalance data
     # data = data_unique_perc(100, [.9, .1])
-    # test_gluster(10, data, 2, .9, 1234, 10)
+    # test_gluster_online(10, data, 2, .9, 1234, 10)
 
     # More iterations
     # data = data_unique_perc(100, [.9, .1])
-    # test_gluster(10, data, 2, .9, 1234, 100)
+    # test_gluster_online(10, data, 2, .9, 1234, 100)
 
     # Time test
     # data = data_unique_perc(1000, [.9, .1])
-    # test_gluster(128, data, 2, .9, 1234, 100)
+    # test_gluster_online(128, data, 2, .9, 1234, 100)
     # 2-3x solwer
 
     # noise
-    data = data_unique_perc(100, [.9, .1])
-    data = purturb_data(data, .01)
-    test_gluster(10, data, 2, .9, 1234, 100)
+    # data = data_unique_perc(100, [.9, .1])
+    # data = purturb_data(data, .01)
+    # test_gluster_online(10, data, 2, .9, 1234, 100)
+
+    # gluster batch
+    # data = data_unique_perc(100, [.9, .1])
+    data = data_unique_n(100, 5)
+    # data = purturb_data(data, .01)
+    # test_gluster_batch(10, data, 2, 1, 1234, 10)
+    test_gluster_batch(10, data, 5, 1, 1234, 10)
