@@ -204,6 +204,7 @@ def test_gluster_batch(batch_size, data, nclusters, min_size, seed, citers):
         # TODO: optim step
 
     # get test data assignments
+    gluster.eval()  # gluster test mode
     x = Variable(Xte).cuda()
     t = Variable(Yte).cuda()
     modelg.zero_grad()
@@ -265,8 +266,10 @@ if __name__ == '__main__':
     # test_gluster_online(10, data, 2, .9, 1234, 100)
 
     # gluster batch
-    # data = data_unique_perc(100, [.9, .1])
-    data = data_unique_n(100, 5)
-    # data = purturb_data(data, .01)
-    # test_gluster_batch(10, data, 2, 1, 1234, 10)
-    test_gluster_batch(10, data, 5, 1, 1234, 10)
+    # data = data_unique_n(100, 5)
+    # test_gluster_batch(10, data, 5, 1, 1234, 10)
+
+    # gluster batch noise
+    data = data_unique_perc(100, [.9, .1])
+    data = purturb_data(data, .01)
+    test_gluster_batch(10, data, 2, 1, 12345, 10)
