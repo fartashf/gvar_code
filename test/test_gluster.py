@@ -286,8 +286,6 @@ def test_mnist(batch_size, epochs, nclusters, min_size, seed, citers):
     model = MLP(dropout=False)
     model.cuda()
 
-    modelg = copy.deepcopy(model)
-
     optimizer = optim.SGD(model.parameters(),
                           lr=.01, momentum=0.9,
                           weight_decay=.0005)
@@ -295,6 +293,7 @@ def test_mnist(batch_size, epochs, nclusters, min_size, seed, citers):
     for e in range(epochs):
         train(e, train_loader, model, optimizer)
 
+    modelg = copy.deepcopy(model)
     gluster = GradientClusterBatch(modelg, min_size, nclusters)
     # Test if Gluster can be disabled
     # gluster.deactivate()
@@ -355,4 +354,8 @@ if __name__ == '__main__':
     # data = purturb_data(data, .01)
     # test_gluster_batch(10, data, 2, 1, 12345, 10)
 
-    test_mnist(128, 1, 2, 10, 1234, 5)
+    # 2 clusters
+    # test_mnist(128, 2, 2, 10, 1234, 10)
+
+    # 10 clusters
+    test_mnist(128, 2, 10, 10, 1234, 10)
