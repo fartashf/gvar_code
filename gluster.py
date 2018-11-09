@@ -179,11 +179,12 @@ class GradientCluster(object):
         normC = np.zeros((nclusters,))
         L = [c.pow(2).view(nclusters, -1).sum(1).cpu().numpy()
              for c in centers]
-        normC = np.sum(L, 0)
+        normC = np.sqrt(np.sum(L, 0))
         print('normC:')
         print(normC)
         print('Reinit count: %s' % str(self.reinits.cpu().numpy()))
         print('Cluster size: %s' % str(self.cluster_size.cpu().numpy()))
+        return normC
 
 
 class GradientClusterBatch(GradientCluster):
@@ -212,6 +213,9 @@ class GradientClusterBatch(GradientCluster):
         # TODO: read through and write a simple test
         model = self.model
         assign_i = torch.zeros(train_size, 1).long().to(device)
+        pred_i = np.zeros(train_size)
+        loss_i = np.zeros(train_size)
+        target_i = np.zeros(train_size)
         total_dist = torch.zeros(self.nclusters, 1).to(device)
         self.cluster_size = torch.zeros(self.nclusters, 1).cuda()
 
@@ -222,14 +226,18 @@ class GradientClusterBatch(GradientCluster):
             model.zero_grad()
             self.zero_data()
             output = self.model(data)
-            loss = F.nll_loss(output, target)
+            pred_i[idx] = output.max(1, keepdim=True)[1].cpu().numpy()[:, 0]
+            target_i[idx] = target.cpu().numpy()
+            loss = F.nll_loss(output, target, reduction='none')
+            loss_i[idx] = loss.detach().cpu().numpy()
+            loss = loss.mean()
             loss.backward()
             ai, batch_dist = self.assign()
             assign_i[idx] = ai
             total_dist.scatter_add_(0, ai, batch_dist)
         total_dist.div_(self.cluster_size.clamp(1))
-        print('> Gluster batch: total distortions: %f'
-              % total_dist.sum().item())
+        td = total_dist.sum().item()
+        print('> Gluster batch: total distortions: %f (negative is fine)' % td)
 
         # split the scattered cluster if the smallest cluster is small
         # TODO: more than one split, challenge: don't know the new dist
@@ -256,14 +264,14 @@ class GradientClusterBatch(GradientCluster):
             # recompute A, G but don't do reassign as clusters change
             self.assign()
             # assign_i[idx], _ = self.assign()  # recompute A, G
-            total_dist.scatter_add_(0, ai, batch_dist)
             self.update(assign_i[idx])
 
         self.cluster_size.fill_(0)
         self.cluster_size.scatter_add_(0, assign_i,
                                        torch.ones_like(assign_i).float())
         self.normalize()
-        return assign_i
+        # td before E step, we have to do another loop for td after E step
+        return td, assign_i.cpu().numpy(), target_i, pred_i, loss_i
 
     def update(self, assign_i):
         """Update Clusters

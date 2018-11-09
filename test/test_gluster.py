@@ -37,7 +37,9 @@ def print_stats(model, gluster, X, T, batch_size):
         normG[i] = np.sum([g.pow(2).sum().item() for g in grad_params])
     L = [c.pow(2).view(nclusters, -1).sum(1).cpu().numpy()
          for c in centers]
-    normC = np.sum(L, 0)
+    normC = np.sqrt(np.sum(L, 0))
+    normG = np.sqrt(normG)
+    dist = np.sqrt(dist)
     print('Dist:')
     print(dist)
     print('normG:')
@@ -258,7 +260,7 @@ def train(epoch, train_loader, model, optimizer):
                 loss=loss.item()))
 
 
-def test_mnist(batch_size, epochs, nclusters, min_size, seed, citers):
+def test_mnist(batch_size, epochs, nclusters, min_size, seed, citers, figname):
     print('batch_size: %d' % batch_size)
     print('epochs    : %d' % epochs)
     print('nclusters : %d' % nclusters)
@@ -282,6 +284,7 @@ def test_mnist(batch_size, epochs, nclusters, min_size, seed, citers):
         idxdataset,
         batch_size=batch_size,
         shuffle=True)
+    # shuffle doesn't matter to gluster as long as dataset is returning index
 
     model = MLP(dropout=False)
     model.cuda()
@@ -294,20 +297,33 @@ def test_mnist(batch_size, epochs, nclusters, min_size, seed, citers):
         train(e, train_loader, model, optimizer)
 
     modelg = copy.deepcopy(model)
+    # model's weight are not going to change, opt.step() is not called
     gluster = GradientClusterBatch(modelg, min_size, nclusters)
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
     gluster_tc = np.zeros(citers)
+    total_dist = float('inf')
+    pred_i = 0
+    loss_i = 0
     for i in range(citers):
         tic = time.time()
-        gluster.update_batch(train_loader, len(train_dataset))
+        stat = gluster.update_batch(train_loader, len(train_dataset))
+        if i > 0:
+            assert pred_i.sum() == stat[3].sum(), 'predictions changed'
+            assert loss_i.sum() == stat[4].sum(), 'loss changed'
+            assert stat[0] <= total_dist, 'Total distortions went up'
+        total_dist, assign_i, target_i, pred_i, loss_i = stat
         toc = time.time()
         gluster_tc[i] = (toc-tic)
-        gluster.print_stats()
+        normC = gluster.print_stats()
 
     print('%.4f +/- %.4f' % (gluster_tc.mean(), gluster_tc.std()))
-    import ipdb; ipdb.set_trace()
+    torch.save({'assign': assign_i, 'target': target_i,
+                'pred': pred_i, 'loss': loss_i,
+                'normC': normC},
+               figname)
+    # import ipdb; ipdb.set_trace()
 
 
 if __name__ == '__main__':
@@ -354,8 +370,16 @@ if __name__ == '__main__':
     # data = purturb_data(data, .01)
     # test_gluster_batch(10, data, 2, 1, 12345, 10)
 
-    # 2 clusters
-    # test_mnist(128, 2, 2, 10, 1234, 10)
+    # MNIST
+    citers = 2
+    figname = 'notebooks/figs_gluster/mlp,nclusters_2,citers_2.pth.tar'
+    test_mnist(128, 2, 2, 10, 1234, citers, figname)
 
-    # 10 clusters
-    test_mnist(128, 2, 10, 10, 1234, 10)
+    citers = 10
+    figname = 'notebooks/figs_gluster/mlp,nclusters_2,citers_10.pth.tar'
+    test_mnist(128, 2, 2, 10, 1234, citers, figname)
+
+    nclusters = 10
+    citers = 10
+    figname = 'notebooks/figs_gluster/mlp,nclusters_10,citers_10.pth.tar'
+    test_mnist(128, 2, nclusters, 10, 1234, citers, figname)
