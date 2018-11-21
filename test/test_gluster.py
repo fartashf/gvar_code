@@ -114,7 +114,8 @@ def model_time(model, X, T, batch_size, niters):
     return model_tc
 
 
-def test_gluster_online(batch_size, data, nclusters, beta, seed, niters):
+def test_gluster_online(batch_size, data, nclusters, beta, min_size,
+                        reinit_method, seed, niters):
     X, T, Xte, Yte = data
     train_size = X.shape[0]
     print('batch_size: %d' % batch_size)
@@ -123,6 +124,8 @@ def test_gluster_online(batch_size, data, nclusters, beta, seed, niters):
     print('seed      : %d' % seed)
     print('niters    : %d' % niters)
     print('train_size: %d' % train_size)
+    print('min size  : %d' % min_size)
+    print('reinit    : %s' % reinit_method)
 
     torch.backends.cudnn.deterministic = True
     torch.manual_seed(seed)
@@ -133,7 +136,8 @@ def test_gluster_online(batch_size, data, nclusters, beta, seed, niters):
     model.cuda()
 
     modelg = copy.deepcopy(model)
-    gluster = GradientClusterOnline(modelg, beta, nclusters)
+    gluster = GradientClusterOnline(modelg, beta,
+                                    min_size, reinit_method, nclusters)
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
@@ -148,7 +152,7 @@ def test_gluster_online(batch_size, data, nclusters, beta, seed, niters):
         y = modelg(x)
         loss = F.nll_loss(y, t)
         loss.backward()
-        assign_i = gluster.em_step()
+        assign_i, batch_dist, _ = gluster.em_step()
         toc = time.time()
         gluster_tc[i] = (toc-tic)
         # TODO: optim step
@@ -326,30 +330,129 @@ def test_mnist(batch_size, epochs, nclusters, min_size, seed, citers, figname):
     # import ipdb; ipdb.set_trace()
 
 
+def test_mnist_online(batch_size, epochs, nclusters, beta, min_size,
+                      reinit_method, seed, figname):
+    print('batch_size: %d' % batch_size)
+    print('epochs    : %d' % epochs)
+    print('nclusters : %d' % nclusters)
+    print('beta      : %d' % beta)
+    print('min_size  : %d' % min_size)
+    print('seed      : %d' % seed)
+    print('reinit    : %s' % reinit_method)
+
+    torch.backends.cudnn.deterministic = True
+    torch.manual_seed(seed)
+    np.set_printoptions(suppress=True)
+    np.random.seed(seed)
+
+    train_dataset = datasets.MNIST(
+            './data/mnist', train=True, download=True,
+            transform=transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.1307,), (0.3081,))
+            ]))
+    idxdataset = IndexedDataset(train_dataset)
+    train_loader = torch.utils.data.DataLoader(
+        idxdataset,
+        batch_size=batch_size,
+        shuffle=True)
+    # shuffle doesn't matter to gluster as long as dataset is returning index
+
+    model = MLP(dropout=False)
+    model.cuda()
+    modelg = copy.deepcopy(model)
+    gluster = GradientClusterOnline(modelg, beta, min_size,
+                                    reinit_method, nclusters)
+    # Test if Gluster can be disabled
+    # gluster.deactivate()
+
+    optimizer = optim.SGD(model.parameters(),
+                          lr=.01, momentum=0.9,
+                          weight_decay=.0005)
+
+    train_size = len(train_dataset)
+    gluster_tc = []
+    assign_i = torch.zeros(train_size, 1).long().cuda()
+    pred_i = np.zeros(train_size)
+    loss_i = np.zeros(train_size)
+    target_i = np.zeros(train_size)
+    for e in range(epochs):
+        for batch_idx, (data, target, idx) in enumerate(train_loader):
+            tic = time.time()
+            model.train()
+            data, target = data.cuda(), target.cuda()
+            optimizer.zero_grad()
+            gluster.zero_data()
+            output = model(data)
+            loss = F.nll_loss(output, target, reduction='none')
+            # store stats
+            pred_i[idx] = output.max(1, keepdim=True)[1].cpu().numpy()[:, 0]
+            target_i[idx] = target.cpu().numpy()
+            loss_i[idx] = loss.cpu().numpy()
+            loss = loss.mean()
+            loss.backward()
+            ai, batch_dist, iv = gluster.em_step()
+            assign_i[idx] = ai
+            assign_i[assign_i == iv] = -1
+            ai[ai == iv] = -1
+            # optim
+            optimizer.step()
+            toc = time.time()
+            gluster_tc += [toc-tic]
+            if batch_idx % 10 == 0:
+                print('Epoch: [{0}][{1}/{2}]\t Loss: {loss:.6f}\t'.format(
+                    e, batch_idx, len(train_loader),
+                    loss=loss.item()))
+                print('assign:')
+                print(ai)
+                print(batch_dist)
+                normC = gluster.print_stats()
+                print('%.4f +/- %.4f' % (np.mean(gluster_tc),
+                                         np.std(gluster_tc)))
+                # import ipdb; ipdb.set_trace()
+
+    torch.save({'assign': assign_i, 'target': target_i,
+                'pred': pred_i, 'loss': loss_i,
+                'normC': normC},
+               figname)
+
+
 if __name__ == '__main__':
-    # Few iterations
+    # # Few iterations
+    # # One cluster still hasn't converged?
     # data = data_unique_n(100, 5)
-    # test_gluster_online(10, data, 5, .9, 1234, 10)
+    # test_gluster_online(10, data, 5, .9, 1, 'data', 1234, 10)
+    # # But the init with largest takes longer
+    # test_gluster_online(10, data, 5, .9, 1, 'largest', 1234, 10)
 
-    # More iterations, centers should match input
+    # # More iterations
+    # # centers should match input based on Dist
     # data = data_unique_n(100, 5)
-    # test_gluster_online(10, data, 5, .9, 1234, 100)
+    # test_gluster_online(10, data, 5, .9, 1, 'data', 1234, 100)
+    # test_gluster_online(10, data, 5, .9, 1, 'largest', 1234, 100)
 
-    # More unique data than centers
+    # # More unique data than centers
+    # # Clusters should get about the same number of data points they don't
     # data = data_unique_n(100, 10)
-    # test_gluster_online(10, data, 5, .9, 1234, 100)
+    # test_gluster_online(10, data, 5, .9, 1, 'data', 1234, 100)
+    # test_gluster_online(10, data, 5, .9, 1, 'largest', 1234, 100)
 
     # More centers than data
+    # # TODO: stop reinit if more centers
     # data = data_unique_n(100, 5)
-    # test_gluster_online(10, data, 10, .9, 1234, 100)
+    # test_gluster_online(10, data, 10, .9, 1, 'data', 1234, 100)
+    # # 5 centers are reinited > 30 times but first 5 are stable
+    # test_gluster_online(10, data, 10, .9, 1, 'largest', 1234, 100)
 
-    # Imbalance data
+    # # Imbalance data finds 2 clusters in 1 reinit but hasn't converged in 10
     # data = data_unique_perc(100, [.9, .1])
-    # test_gluster_online(10, data, 2, .9, 1234, 10)
+    # test_gluster_online(10, data, 2, .9, 1, 'data', 1234, 10)
+    # test_gluster_online(10, data, 2, .9, 1, 'largest', 1234, 10)
 
-    # More iterations
+    # # More iterations
     # data = data_unique_perc(100, [.9, .1])
-    # test_gluster_online(10, data, 2, .9, 1234, 100)
+    # test_gluster_online(10, data, 2, .9, 1, 'data', 1234, 100)
+    # test_gluster_online(10, data, 2, .9, 1, 'largest', 1234, 100)
 
     # Time test
     # data = data_unique_perc(1000, [.9, .1])
@@ -357,9 +460,10 @@ if __name__ == '__main__':
     # 2-3x solwer
 
     # noise
-    # data = data_unique_perc(100, [.9, .1])
-    # data = purturb_data(data, .01)
-    # test_gluster_online(10, data, 2, .9, 1234, 100)
+    data = data_unique_perc(100, [.9, .1])
+    data = purturb_data(data, .01)
+    test_gluster_online(10, data, 2, .9, 1, 'data', 1234, 100)
+    test_gluster_online(10, data, 2, .9, 1, 'largest', 1234, 100)
 
     # gluster batch
     # data = data_unique_n(100, 5)
@@ -370,16 +474,16 @@ if __name__ == '__main__':
     # data = purturb_data(data, .01)
     # test_gluster_batch(10, data, 2, 1, 12345, 10)
 
-    # MNIST
-    citers = 2
-    figname = 'notebooks/figs_gluster/mlp,nclusters_2,citers_2.pth.tar'
-    test_mnist(128, 2, 2, 10, 1234, citers, figname)
+    # # MNIST
+    # citers = 2
+    # figname = 'notebooks/figs_gluster/mlp,nclusters_2,citers_2.pth.tar'
+    # test_mnist(128, 2, 2, 10, 1234, citers, figname)
 
-    citers = 10
-    figname = 'notebooks/figs_gluster/mlp,nclusters_2,citers_10.pth.tar'
-    test_mnist(128, 2, 2, 10, 1234, citers, figname)
+    # citers = 10
+    # figname = 'notebooks/figs_gluster/mlp,nclusters_2,citers_10.pth.tar'
+    # test_mnist(128, 2, 2, 10, 1234, citers, figname)
 
-    nclusters = 10
-    citers = 10
-    figname = 'notebooks/figs_gluster/mlp,nclusters_10,citers_10.pth.tar'
-    test_mnist(128, 2, nclusters, 10, 1234, citers, figname)
+    # nclusters = 10
+    # citers = 10
+    # figname = 'notebooks/figs_gluster/mlp,nclusters_10,citers_10.pth.tar'
+    # test_mnist(128, 2, nclusters, 10, 1234, citers, figname, nclusters)

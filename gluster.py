@@ -29,11 +29,13 @@ class GradientCluster(object):
         self.nclusters = nclusters
         # self.train_size = train_size
         self.model = model
+        self.device = device = self.model.parameters().next().device
         self.modules = []
         self.zero_data()
         self._init_centers()
-        self.reinits = torch.zeros(nclusters, 1).long().cuda()
-        self.cluster_size = torch.zeros(nclusters, 1).cuda()
+        self.reinits = torch.zeros(nclusters, 1).long().to(device)
+        self.cluster_size = torch.zeros(nclusters, 1).to(device)
+        self.total_dist = torch.zeros(self.nclusters, 1).to(device)
         # self.assignments = torch.zeros(train_size).long().cuda()
 
         self._register_hooks()
@@ -184,6 +186,7 @@ class GradientCluster(object):
         print(normC)
         print('Reinit count: %s' % str(self.reinits.cpu().numpy()))
         print('Cluster size: %s' % str(self.cluster_size.cpu().numpy()))
+        print('Total dists: %s' % str(self.total_dist.cpu().numpy()))
         return normC
 
 
@@ -209,9 +212,9 @@ class GradientClusterBatch(GradientCluster):
             self.cluster_size.add_(counts)
         return assign_i, batch_dist
 
-    def update_batch(self, data_loader, train_size, device='cuda'):
-        # TODO: read through and write a simple test
+    def update_batch(self, data_loader, train_size):
         model = self.model
+        device = self.device
         assign_i = torch.zeros(train_size, 1).long().to(device)
         pred_i = np.zeros(train_size)
         loss_i = np.zeros(train_size)
@@ -237,6 +240,7 @@ class GradientClusterBatch(GradientCluster):
             total_dist.scatter_add_(0, ai, batch_dist)
         total_dist.div_(self.cluster_size.clamp(1))
         td = total_dist.sum().item()
+        self.total_dist.copy_(total_dist)
         print('> Gluster batch: total distortions: %f (negative is fine)' % td)
 
         # split the scattered cluster if the smallest cluster is small
@@ -246,7 +250,7 @@ class GradientClusterBatch(GradientCluster):
         if s < self.min_size:
             # TODO: negative distortion
             _, j = total_dist.masked_fill(
-                self.cluster_size == 0, float('-inf')).max(0)
+                self.cluster_size < self.min_size, float('-inf')).max(0)
             idx = torch.arange(assign_i.shape[0])[assign_i[:, 0] == j]
             assign_i[idx[torch.randperm(len(idx))[:len(idx)/2]]] = i
             self.reinits[i] += 1
@@ -311,16 +315,20 @@ class GradientClusterBatch(GradientCluster):
 
 
 class GradientClusterOnline(GradientCluster):
-    def __init__(self, model, beta=0.9, nclusters=1):
+    def __init__(self, model, beta=0.9, min_size=1,
+                 reinit_method='data', nclusters=1):
         super(GradientClusterOnline, self).__init__(model, nclusters)
         self.beta = beta  # cluster size decay factor
+        self.min_size = 1
+        self.reinit_method = reinit_method  # 'data' or 'largest'
+        self.cluster_size.fill_(self.min_size)
 
     def em_step(self):
         if self.is_active:
-            assign_i = self.assign()
+            assign_i, batch_dist = self.assign()
             if not self.is_eval:
-                self.update(assign_i)
-            return assign_i
+                invalid_clusters = self.update(assign_i, batch_dist)
+            return assign_i, batch_dist, invalid_clusters
 
     def assign(self):
         # M: assign input
@@ -328,28 +336,23 @@ class GradientClusterOnline(GradientCluster):
         #        = argmin_c gg+CC-2*gC
         #        = argmin_c CC-2gC
         total_dist = torch.stack(self.batch_dist).sum(0)
-        _, assign_i = total_dist.min(0)
-        return assign_i
+        batch_dist, assign_i = total_dist.min(0)
+        assign_i = assign_i.unsqueeze(1)
+        batch_dist = batch_dist.unsqueeze(1)
+        return assign_i, batch_dist
 
-    def update(self, assign_i):
+    def update(self, assign_i, batch_dist):
+        # Not keeping a full internal assignment list
         # E: update C
         # E: C_c = mean_i(g_i * I(c==a_i))
         beta = self.beta
-        assign_i = assign_i.unsqueeze(1)
         counts = torch.zeros(self.nclusters, 1).cuda()
         counts.scatter_add_(0, assign_i, torch.ones(assign_i.shape).cuda())
         self.cluster_size.mul_(beta).add_(counts)  # no *(1-beta)
         pre_size = self.cluster_size-counts
-        # Reinit if no data is assigned to the cluster for some time
-        # (time = beta decay).
-        # If we reinit based only on the current batch assignemnts, it ignores
-        # reinits constantly for the 5-example test
-        reinits = (self.cluster_size < 1)
-        nreinits = reinits.sum()
-        self.reinits += reinits.long()
+        self.total_dist.mul_(pre_size).scatter_add_(
+            0, assign_i, batch_dist).div_(self.cluster_size)
 
-        # reinit from data
-        perm = torch.randperm(self.inputs.values()[0].shape[0])[:nreinits]
         for module in self.inputs.keys():
             Ai = self.inputs[module]
             Go = self.ograds[module]
@@ -371,14 +374,156 @@ class GradientClusterOnline(GradientCluster):
             Ci.mul_(pre_size).add_(Ci_new).div_(self.cluster_size)
             Co.mul_(pre_size).add_(Co_new).div_(self.cluster_size)
 
+        invalid_clusters = self.reinit()
+        return invalid_clusters
+
+    def reinit(self):
+        # Reinit if no data is assigned to the cluster for some time
+        # (time = beta decay).
+        # If we reinit based only on the current batch assignemnts, it ignores
+        # reinits constantly for the 5-example test
+        reinits = (self.cluster_size < self.min_size)
+        nreinits = reinits.sum()
+        self.reinits += reinits.long()
+        # TODO: stop reinit or delay if too often
+        if nreinits > 0:
+            if self.reinit_method == 'data':
+                return self.reinit_from_data(reinits)
+            elif self.reinit_method == 'largest':
+                return self.reinit_from_largest(reinits)
+            else:
+                raise Exception('Reinit method not defined.')
+        return []
+
+    def reinit_from_data(self, reinits):
+        nreinits = reinits.sum()
+        # reinit from data
+        perm = torch.randperm(self.inputs.values()[0].shape[0])[:nreinits]
+        self.cluster_size[reinits] = 1
+        for module in self.inputs.keys():
+            Cb = self.centers[module.bias]
+            Ci, Co = self.centers[module.weight]
+            Ai = self.inputs[module]
+            Go = self.ograds[module]
+
+            # Ci0, Co0 = self._init_centers_layer(module.weight, nzeros)
+            # Ci.masked_scatter_(counts == 0, Ci0)
+            # Co.masked_scatter_(counts == 0, Co0)
+
+            # reinit from data
+            Ci.masked_scatter_(reinits, Ai[perm])
+            Co.masked_scatter_(reinits, Go[perm])
+            Cb.masked_scatter_(reinits, Go[perm])
+        invalid_clusters = reinits.cpu().numpy()
+        return invalid_clusters
+
+    def reinit_from_largest(self, reinits):
+        # reinit from the largest cluster
+        # reinit one at a time
+        _, ri = reinits.max(0)
+        tdm = self.total_dist.masked_fill(
+            self.cluster_size < self.min_size, float('-inf'))
+        _, li = tdm.max(0)
+        # print(ri)
+        # print(li)
+        # print(tdm)
+        for module in self.inputs.keys():
+            Cb = self.centers[module.bias]
+            Ci, Co = self.centers[module.weight]
+            # reinit centers
+            # [ri] = is index_put_(ri, ...)
+            # TODO: figure out autograd with this copy
+            Ci[ri] = Ci[li]
+            Co[ri] = Co[li]
+            Cb[ri] = Cb[li]
+            # Adding noise did not help on the first test
+            # Don't do this. Ruins assignments if accidentally reinits
+            # TODO: Ties should be broken deterministically
+            # Ci.index_add_(0, ri, torch.rand_like(Ci[ri])*self.total_dist[li])
+            # Co.index_add_(0, ri, torch.rand_like(Co[ri])*self.total_dist[li])
+            # Cb.index_add_(0, ri, torch.rand_like(Cb[ri])*self.total_dist[li])
+        self.cluster_size[ri] = self.cluster_size[li] / 2
+        self.cluster_size[li] = self.cluster_size[li] / 2
+        # This is not exact, maybe add a multiple of cluster size
+        self.total_dist[ri] = self.total_dist[li]  # -1e-5
+        # print(self.cluster_size)
+        invalid_clusters = [ri]
+        return invalid_clusters
+
+
+class GradientClusterOnlineMemory(GradientCluster):
+    """
+    Main issue: when should we reset the cluster size?
+    """
+    def __init__(self, model, min_size, train_size, nclusters=1):
+        super(GradientClusterOnlineMemory, self).__init__(model, nclusters)
+        self.train_size = train_size
+        self.assign_i = torch.zeros(train_size, 1).long().to(self.device)
+
+    def em_step(self):
+        if self.is_active:
+            assign_i = self.assign()
+            if not self.is_eval:
+                self.update(assign_i)
+            return assign_i
+
+    def assign(self, idx):
+        """Assign inputs to clusters
+        M: assign input
+        M: a_i = argmin_c(|g_i-C_c|^2)
+        = argmin_c gg+CC-2*gC
+        = argmin_c CC-2gC
+        """
+        total_dist = torch.stack(self.batch_dist).sum(0)
+        batch_dist, assign_i = total_dist.min(0)
+        assign_i = assign_i.unsqueeze(1)
+        batch_dist = batch_dist.unsqueeze(1)
+        return assign_i, batch_dist
+
+    def update(self, assign_i, batch_dist, idx):
+        # E: update C
+        # E: C_c = mean_i(g_i * I(c==a_i))
+        # Keep a full internal assignment list
+        self.assign_i[idx] = assign_i
+        assign_i = assign_i.unsqueeze(1)
+
+        # Keep an exact cluster size given the internal assignment
+        # TODO: is this the only place we use self.assign_i?
+        self.cluster_size.fill_(0)
+        self.cluster_size.scatter_add_(0, assign_i,
+                                       torch.ones_like(assign_i).float())
+        counts = torch.zeros(self.nclusters, 1).cuda()
+        counts.scatter_add_(0, assign_i, torch.ones(assign_i.shape).cuda())
+        pre_size = self.cluster_size-counts
+
+        # Reinit if cluster size small
+        reinits = (self.cluster_size < self.min_size)
+        nreinits = reinits.sum()
+        self.reinits += reinits.long()
+
+        for module in self.inputs.keys():
+            Ai = self.inputs[module]
+            Go = self.ograds[module]
+
+            # TODO: refactor copies of this
+            # bias
+            Cb = self.centers[module.bias]
+            Cb_new = torch.zeros_like(Cb)
+            Cb_new.scatter_add_(0, assign_i.expand_as(Go), Go)
+            Cb.mul_(pre_size).add_(Cb_new).div_(self.cluster_size)
+
+            # weight
+            Ci, Co = self.centers[module.weight]
+            Ci_new = torch.zeros_like(Ci)
+            Co_new = torch.zeros_like(Co)
+            # TODO: SVD
+            Ci_new.scatter_add_(0, assign_i.expand_as(Ai), Ai)
+            Co_new.scatter_add_(0, assign_i.expand_as(Go), Go)
+            # Update clusters using the size
+            Ci.mul_(pre_size).add_(Ci_new).div_(self.cluster_size)
+            Co.mul_(pre_size).add_(Co_new).div_(self.cluster_size)
+
             # reinit centers
             if nreinits > 0:
-                # Ci0, Co0 = self._init_centers_layer(module.weight, nzeros)
-                # Ci.masked_scatter_(counts == 0, Ci0)
-                # Co.masked_scatter_(counts == 0, Co0)
-
-                # reinit from data
-                Ci.masked_scatter_(reinits, Ai[perm])
-                Co.masked_scatter_(reinits, Go[perm])
-                Cb.masked_scatter_(reinits, Go[perm])
-                self.cluster_size[reinits] = 1
+                # TODO: ?reinit from the largest cluster?
+                pass
