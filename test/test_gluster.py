@@ -366,35 +366,38 @@ def test_mnist_online(batch_size, epochs, nclusters, beta, min_size,
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
-    optimizer = optim.SGD(model.parameters(),
+    optimizer = optim.SGD(modelg.parameters(),
                           lr=.01, momentum=0.9,
                           weight_decay=.0005)
 
     train_size = len(train_dataset)
     gluster_tc = []
-    assign_i = torch.zeros(train_size, 1).long().cuda()
+    assign_i = np.zeros((train_size, 1))
     pred_i = np.zeros(train_size)
     loss_i = np.zeros(train_size)
     target_i = np.zeros(train_size)
     for e in range(epochs):
         for batch_idx, (data, target, idx) in enumerate(train_loader):
             tic = time.time()
-            model.train()
+            # Note modelg
+            modelg.train()
             data, target = data.cuda(), target.cuda()
             optimizer.zero_grad()
             gluster.zero_data()
-            output = model(data)
+            output = modelg(data)
             loss = F.nll_loss(output, target, reduction='none')
             # store stats
             pred_i[idx] = output.max(1, keepdim=True)[1].cpu().numpy()[:, 0]
             target_i[idx] = target.cpu().numpy()
-            loss_i[idx] = loss.cpu().numpy()
+            loss_i[idx] = loss.detach().cpu().numpy()
             loss = loss.mean()
             loss.backward()
             ai, batch_dist, iv = gluster.em_step()
-            assign_i[idx] = ai
-            assign_i[assign_i == iv] = -1
-            ai[ai == iv] = -1
+            assign_i[idx] = ai.cpu().numpy()
+            # TODO: multiple iv
+            if len(iv) > 0:
+                assign_i[assign_i == iv[0]] = -1
+                ai[ai == iv[0]] = -1
             # optim
             optimizer.step()
             toc = time.time()
@@ -404,13 +407,16 @@ def test_mnist_online(batch_size, epochs, nclusters, beta, min_size,
                     e, batch_idx, len(train_loader),
                     loss=loss.item()))
                 print('assign:')
-                print(ai)
-                print(batch_dist)
+                print(ai[:10])
+                print(batch_dist[:10])
                 normC = gluster.print_stats()
                 print('%.4f +/- %.4f' % (np.mean(gluster_tc),
                                          np.std(gluster_tc)))
                 # import ipdb; ipdb.set_trace()
 
+    u, c = np.unique(assign_i, return_counts=True)
+    print(u)
+    print(c)
     torch.save({'assign': assign_i, 'target': target_i,
                 'pred': pred_i, 'loss': loss_i,
                 'normC': normC},
@@ -456,14 +462,14 @@ if __name__ == '__main__':
 
     # Time test
     # data = data_unique_perc(1000, [.9, .1])
-    # test_gluster_online(128, data, 2, .9, 1234, 100)
+    # test_gluster_online(128, data, 2, .9, 1, 'data', 1234, 100)
     # 2-3x solwer
 
-    # noise
-    data = data_unique_perc(100, [.9, .1])
-    data = purturb_data(data, .01)
-    test_gluster_online(10, data, 2, .9, 1, 'data', 1234, 100)
-    test_gluster_online(10, data, 2, .9, 1, 'largest', 1234, 100)
+    # # noise
+    # data = data_unique_perc(100, [.9, .1])
+    # data = purturb_data(data, .01)
+    # test_gluster_online(10, data, 2, .9, 1, 'data', 1234, 100)
+    # test_gluster_online(10, data, 2, .9, 1, 'largest', 1234, 100)
 
     # gluster batch
     # data = data_unique_n(100, 5)
@@ -486,4 +492,13 @@ if __name__ == '__main__':
     # nclusters = 10
     # citers = 10
     # figname = 'notebooks/figs_gluster/mlp,nclusters_10,citers_10.pth.tar'
-    # test_mnist(128, 2, nclusters, 10, 1234, citers, figname, nclusters)
+    # test_mnist(128, 2, nclusters, 10, 1234, citers, figname)
+
+    epochs = 2
+    nclusters = 10
+    beta = .999
+    min_size = 1
+    reinit_method = 'largest'
+    figname = 'notebooks/figs_gluster/mlp,nclusters_10,online.pth.tar'
+    test_mnist_online(128, epochs, nclusters,
+                      beta, min_size, reinit_method, 1234, figname)
