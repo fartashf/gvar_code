@@ -154,6 +154,10 @@ class GradientCluster(object):
         self.inputs = {}
         self.ograds = {}
 
+    def copy_(self, model):
+        for m, g in zip(model.parameters(), self.model.parameters()):
+            g.data.copy_(m.data)
+
     def assign(self):
         raise NotImplemented('assign not implemented')
 
@@ -328,7 +332,8 @@ class GradientClusterOnline(GradientCluster):
             assign_i, batch_dist = self.assign()
             if not self.is_eval:
                 invalid_clusters = self.update(assign_i, batch_dist)
-            return assign_i, batch_dist, invalid_clusters
+                return assign_i, batch_dist, invalid_clusters
+            return assign_i, batch_dist
 
     def assign(self):
         # M: assign input

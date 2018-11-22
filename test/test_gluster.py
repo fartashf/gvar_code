@@ -423,6 +423,131 @@ def test_mnist_online(batch_size, epochs, nclusters, beta, min_size,
                figname)
 
 
+def test_mnist_online_delayed(batch_size, epochs, nclusters, beta, min_size,
+                              reinit_method, delay, seed, figname):
+    print('batch_size: %d' % batch_size)
+    print('epochs    : %d' % epochs)
+    print('nclusters : %d' % nclusters)
+    print('beta      : %d' % beta)
+    print('min_size  : %d' % min_size)
+    print('seed      : %d' % seed)
+    print('reinit    : %s' % reinit_method)
+    print('delay     : %d' % delay)
+
+    torch.backends.cudnn.deterministic = True
+    torch.manual_seed(seed)
+    np.set_printoptions(suppress=True)
+    np.random.seed(seed)
+
+    train_dataset = datasets.MNIST(
+            './data/mnist', train=True, download=True,
+            transform=transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.1307,), (0.3081,))
+            ]))
+    idxdataset = IndexedDataset(train_dataset)
+    train_loader = torch.utils.data.DataLoader(
+        idxdataset,
+        batch_size=batch_size,
+        shuffle=True, num_workers=10)
+    # shuffle doesn't matter to gluster as long as dataset is returning index
+
+    model = MLP(dropout=False)
+    model.cuda()
+    modelg = copy.deepcopy(model)
+    gluster = GradientClusterOnline(modelg, beta, min_size,
+                                    reinit_method, nclusters)
+    # Test if Gluster can be disabled
+    # gluster.deactivate()
+
+    optimizer = optim.SGD(model.parameters(),
+                          lr=.01, momentum=0.9,
+                          weight_decay=.0005)
+
+    train_size = len(train_dataset)
+    gluster_tc = []
+    train_tc = []
+    niter = 0
+    for e in range(epochs):
+        for batch_idx, (data, target, idx) in enumerate(train_loader):
+            tic = time.time()
+            model.train()
+            data, target = data.cuda(), target.cuda()
+            optimizer.zero_grad()
+            output = model(data)
+            loss = F.nll_loss(output, target)
+            loss.backward()
+            # optim
+            optimizer.step()
+            toc = time.time()
+            train_tc += [toc-tic]
+            niter += 1
+            if niter % delay == 0:
+                tic = time.time()
+                modelg.train()
+                gluster.copy_(model)
+                modelg.zero_grad()
+                gluster.zero_data()
+                output = modelg(data)
+                loss = F.nll_loss(output, target)
+                loss.backward()
+                ai, batch_dist, _ = gluster.em_step()
+                toc = time.time()
+                gluster_tc += [toc-tic]
+                print('assign:')
+                print(ai[:10])
+                print(batch_dist[:10])
+                normC = gluster.print_stats()
+                print('%.4f +/- %.4f' % (np.mean(gluster_tc),
+                                         np.std(gluster_tc)))
+                # import ipdb; ipdb.set_trace()
+            if batch_idx % 10 == 0:
+                print('Epoch: [{0}][{1}/{2}]\t Loss: {loss:.6f}\t'.format(
+                    e, batch_idx, len(train_loader),
+                    loss=loss.item()))
+
+    assign_i = np.zeros((train_size, 1))-1
+    pred_i = np.zeros(train_size)
+    loss_i = np.zeros(train_size)
+    target_i = np.zeros(train_size)
+    gluster.eval()
+    gluster.copy_(model)
+    normC = gluster.print_stats()
+    gluster_eval_tc = []
+    for batch_idx, (data, target, idx) in enumerate(train_loader):
+        tic = time.time()
+        data, target = data.cuda(), target.cuda()
+        modelg.zero_grad()
+        gluster.zero_data()
+        output = modelg(data)
+        loss = F.nll_loss(output, target, reduction='none')
+        # store stats
+        pred_i[idx] = output.max(1, keepdim=True)[1].cpu().numpy()[:, 0]
+        target_i[idx] = target.cpu().numpy()
+        loss_i[idx] = loss.detach().cpu().numpy()
+        loss = loss.mean()
+        loss.backward()
+        ai, batch_dist = gluster.em_step()
+        assign_i[idx] = ai.cpu().numpy()
+        toc = time.time()
+        gluster_eval_tc += [toc-tic]
+        if batch_idx % 10 == 0:
+            u, c = np.unique(assign_i, return_counts=True)
+            print('Assignment: [{0}/{1}]: {2}\t{3}'.format(
+                batch_idx, len(train_loader), str(list(u)), str(list(c))))
+    u, c = np.unique(assign_i, return_counts=True)
+    print(u)
+    print(c)
+    # not counting data prep time
+    print('Train time: %.4fs' % np.sum(train_tc))
+    print('Gluster update time: %.4fs' % np.sum(gluster_tc))
+    print('Gluster eval time: %.4fs' % np.sum(gluster_eval_tc))
+    torch.save({'assign': assign_i, 'target': target_i,
+                'pred': pred_i, 'loss': loss_i,
+                'normC': normC},
+               figname)
+
+
 if __name__ == '__main__':
     # # Few iterations
     # # One cluster still hasn't converged?
@@ -494,11 +619,37 @@ if __name__ == '__main__':
     # figname = 'notebooks/figs_gluster/mlp,nclusters_10,citers_10.pth.tar'
     # test_mnist(128, 2, nclusters, 10, 1234, citers, figname)
 
+    # # Online gluster on MNIST
+    # epochs = 2
+    # nclusters = 10
+    # beta = .999
+    # min_size = 1
+    # reinit_method = 'largest'
+    # figname = 'notebooks/figs_gluster/mlp,nclusters_10,online.pth.tar'
+    # test_mnist_online(128, epochs, nclusters,
+    #                   beta, min_size, reinit_method, 1234, figname)
+
+    # Online gluster with delayed update
     epochs = 2
     nclusters = 10
     beta = .999
     min_size = 1
     reinit_method = 'largest'
-    figname = 'notebooks/figs_gluster/mlp,nclusters_10,online.pth.tar'
-    test_mnist_online(128, epochs, nclusters,
-                      beta, min_size, reinit_method, 1234, figname)
+    delay = 10
+    figname = (
+        'notebooks/figs_gluster/mlp,nclusters_10,online,delay_10.pth.tar')
+    test_mnist_online_delayed(
+        128, epochs, nclusters, beta, min_size, reinit_method, delay,
+        1234, figname)
+
+    # epochs = 2
+    # nclusters = 10
+    # beta = .999
+    # min_size = 1
+    # reinit_method = 'largest'
+    # delay = 100
+    # figname = (
+    #     'notebooks/figs_gluster/mlp,nclusters_10,online,delay_100.pth.tar')
+    # test_mnist_online_delayed(
+    #     128, epochs, nclusters, beta, min_size, reinit_method, delay,
+    #     1234, figname)
