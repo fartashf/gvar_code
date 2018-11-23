@@ -17,12 +17,15 @@ def get_gluster(model, opt):
 
 
 class GradientCluster(object):
-    def __init__(self, model, nclusters=1):
+    def __init__(self, model, nclusters=1, ignore_modules=[],
+                 no_grad=False, **kwargs):
         # Q: duplicates
         # TODO: challenge: how many C? memory? time?
         self.layer_dist = {'Linear': self._linear_dist,
                            'Conv2d': self._conv2d_dist}
         self.known_modules = self.layer_dist.keys()
+        self.ignore_modules = ignore_modules
+        self.no_grad = no_grad  # grad=1 => clustring in the input space
 
         self.is_active = True
         self.is_eval = False
@@ -32,13 +35,13 @@ class GradientCluster(object):
         self.device = device = self.model.parameters().next().device
         self.modules = []
         self.zero_data()
-        self._init_centers()
+        # self._init_centers()
         self.reinits = torch.zeros(nclusters, 1).long().to(device)
         self.cluster_size = torch.zeros(nclusters, 1).to(device)
         self.total_dist = torch.zeros(self.nclusters, 1).to(device)
         # self.assignments = torch.zeros(train_size).long().cuda()
 
-        self._register_hooks()
+        self._register_hooks_centers()
 
     def activate(self):
         # Both EM steps
@@ -81,9 +84,15 @@ class GradientCluster(object):
                 torch.rand((nclusters, dout)).cuda()/(din+dout)*eps]
         return centers
 
-    def _register_hooks(self):
+    def _register_hooks_centers(self, eps=1):
         # https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/blob/master/algo/kfac.py
-        for module in self.model.modules():
+        C = OrderedDict()
+        self.centers = C
+        for name, module in self.model.named_modules():
+            if name in self.ignore_modules:
+                continue
+            for param in module.parameters():
+                C[param] = self._init_centers_layer(param, self.nclusters, eps)
             classname = module.__class__.__name__
             if classname in self.known_modules:
                 self.modules.append(module)
@@ -101,6 +110,9 @@ class GradientCluster(object):
         Ai = self.inputs[module]
         Gi = grad_input[0].clone().detach()
         Go = grad_output[0].clone().detach()
+        if self.no_grad:
+            Gi.fill_(1./Gi.numel())
+            Go.fill_(1./Go.numel())
         self.ograds[module] = Go
         # print('%s %s' % (Ai.shape, Ai.shape))
         self.layer_dist[module.__class__.__name__](module, Ai, Gi, Go)
@@ -195,8 +207,8 @@ class GradientCluster(object):
 
 
 class GradientClusterBatch(GradientCluster):
-    def __init__(self, model, min_size, nclusters=1):
-        super(GradientClusterBatch, self).__init__(model, nclusters)
+    def __init__(self, model, min_size, **kwargs):
+        super(GradientClusterBatch, self).__init__(model, **kwargs)
         self.min_size = min_size
 
     def assign(self):
@@ -320,20 +332,21 @@ class GradientClusterBatch(GradientCluster):
 
 class GradientClusterOnline(GradientCluster):
     def __init__(self, model, beta=0.9, min_size=1,
-                 reinit_method='data', nclusters=1):
-        super(GradientClusterOnline, self).__init__(model, nclusters)
+                 reinit_method='data', **kwargs):
+        super(GradientClusterOnline, self).__init__(model, **kwargs)
         self.beta = beta  # cluster size decay factor
         self.min_size = 1
         self.reinit_method = reinit_method  # 'data' or 'largest'
         self.cluster_size.fill_(self.min_size)
 
     def em_step(self):
-        if self.is_active:
-            assign_i, batch_dist = self.assign()
-            if not self.is_eval:
-                invalid_clusters = self.update(assign_i, batch_dist)
-                return assign_i, batch_dist, invalid_clusters
-            return assign_i, batch_dist
+        with torch.no_grad():
+            if self.is_active:
+                assign_i, batch_dist = self.assign()
+                if not self.is_eval:
+                    invalid_clusters = self.update(assign_i, batch_dist)
+                    return assign_i, batch_dist, invalid_clusters
+                return assign_i, batch_dist
 
     def assign(self):
         # M: assign input
@@ -460,8 +473,8 @@ class GradientClusterOnlineMemory(GradientCluster):
     """
     Main issue: when should we reset the cluster size?
     """
-    def __init__(self, model, min_size, train_size, nclusters=1):
-        super(GradientClusterOnlineMemory, self).__init__(model, nclusters)
+    def __init__(self, model, min_size, train_size, **kwargs):
+        super(GradientClusterOnlineMemory, self).__init__(model, **kwargs)
         self.train_size = train_size
         self.assign_i = torch.zeros(train_size, 1).long().to(self.device)
 

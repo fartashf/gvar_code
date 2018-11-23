@@ -136,8 +136,8 @@ def test_gluster_online(batch_size, data, nclusters, beta, min_size,
     model.cuda()
 
     modelg = copy.deepcopy(model)
-    gluster = GradientClusterOnline(modelg, beta,
-                                    min_size, reinit_method, nclusters)
+    gluster = GradientClusterOnline(modelg, beta, min_size, reinit_method,
+                                    nclusters=nclusters)
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
@@ -208,7 +208,7 @@ def test_gluster_batch(batch_size, data, nclusters, min_size, seed, citers):
     model.cuda()
 
     modelg = copy.deepcopy(model)
-    gluster = GradientClusterBatch(modelg, min_size, nclusters)
+    gluster = GradientClusterBatch(modelg, min_size, nclusters=nclusters)
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
@@ -264,7 +264,8 @@ def train(epoch, train_loader, model, optimizer):
                 loss=loss.item()))
 
 
-def test_mnist(batch_size, epochs, nclusters, min_size, seed, citers, figname):
+def test_mnist(batch_size, epochs, nclusters, min_size, seed, citers, figname,
+               ignore_modules=[], no_grad=False):
     print('batch_size: %d' % batch_size)
     print('epochs    : %d' % epochs)
     print('nclusters : %d' % nclusters)
@@ -287,7 +288,7 @@ def test_mnist(batch_size, epochs, nclusters, min_size, seed, citers, figname):
     train_loader = torch.utils.data.DataLoader(
         idxdataset,
         batch_size=batch_size,
-        shuffle=True)
+        shuffle=True, num_workers=10)
     # shuffle doesn't matter to gluster as long as dataset is returning index
 
     model = MLP(dropout=False)
@@ -302,7 +303,9 @@ def test_mnist(batch_size, epochs, nclusters, min_size, seed, citers, figname):
 
     modelg = copy.deepcopy(model)
     # model's weight are not going to change, opt.step() is not called
-    gluster = GradientClusterBatch(modelg, min_size, nclusters)
+    gluster = GradientClusterBatch(modelg, min_size, nclusters=nclusters,
+                                   ignore_modules=ignore_modules,
+                                   no_grad=no_grad)
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
@@ -355,14 +358,14 @@ def test_mnist_online(batch_size, epochs, nclusters, beta, min_size,
     train_loader = torch.utils.data.DataLoader(
         idxdataset,
         batch_size=batch_size,
-        shuffle=True)
+        shuffle=True, num_workers=10)
     # shuffle doesn't matter to gluster as long as dataset is returning index
 
     model = MLP(dropout=False)
     model.cuda()
     modelg = copy.deepcopy(model)
     gluster = GradientClusterOnline(modelg, beta, min_size,
-                                    reinit_method, nclusters)
+                                    reinit_method, nclusters=nclusters)
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
@@ -456,7 +459,7 @@ def test_mnist_online_delayed(batch_size, epochs, nclusters, beta, min_size,
     model.cuda()
     modelg = copy.deepcopy(model)
     gluster = GradientClusterOnline(modelg, beta, min_size,
-                                    reinit_method, nclusters)
+                                    reinit_method, nclusters=nclusters)
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
@@ -629,18 +632,18 @@ if __name__ == '__main__':
     # test_mnist_online(128, epochs, nclusters,
     #                   beta, min_size, reinit_method, 1234, figname)
 
-    # Online gluster with delayed update
-    epochs = 2
-    nclusters = 10
-    beta = .999
-    min_size = 1
-    reinit_method = 'largest'
-    delay = 10
-    figname = (
-        'notebooks/figs_gluster/mlp,nclusters_10,online,delay_10.pth.tar')
-    test_mnist_online_delayed(
-        128, epochs, nclusters, beta, min_size, reinit_method, delay,
-        1234, figname)
+    # # Online gluster with delayed update
+    # epochs = 2
+    # nclusters = 10
+    # beta = .999
+    # min_size = 1
+    # reinit_method = 'largest'
+    # delay = 10
+    # figname = (
+    #     'notebooks/figs_gluster/mlp,nclusters_10,online,delay_10.pth.tar')
+    # test_mnist_online_delayed(
+    #     128, epochs, nclusters, beta, min_size, reinit_method, delay,
+    #     1234, figname)
 
     # epochs = 2
     # nclusters = 10
@@ -653,3 +656,26 @@ if __name__ == '__main__':
     # test_mnist_online_delayed(
     #     128, epochs, nclusters, beta, min_size, reinit_method, delay,
     #     1234, figname)
+
+    # # Batch gluster layer 1
+    # nclusters = 10
+    # citers = 10
+    # ignore_modules = ['fc2', 'fc3', 'fc4']
+    # figname = 'notebooks/figs_gluster/mlp,nclusters_10,layer_1.pth.tar'
+    # test_mnist(128, 2, nclusters, 10, 1234, citers, figname, ignore_modules)
+
+    # # Batch gluster layer 1, input only
+    # nclusters = 10
+    # citers = 10
+    # no_grad = True
+    # ignore_modules = ['fc2', 'fc3', 'fc4']
+    # figname = 'notebooks/figs_gluster/mlp,nclusters_10,input.pth.tar'
+    # test_mnist(128, 2, nclusters, 10, 1234, citers, figname, ignore_modules,
+    #            no_grad=no_grad)
+
+    # Batch gluster layer 4
+    nclusters = 10
+    citers = 10
+    ignore_modules = ['fc1', 'fc2', 'fc3']
+    figname = 'notebooks/figs_gluster/mlp,nclusters_10,layer_4.pth.tar'
+    test_mnist(128, 2, nclusters, 10, 1234, citers, figname, ignore_modules)
