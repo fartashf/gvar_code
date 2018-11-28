@@ -16,32 +16,81 @@ def get_gluster(model, opt):
     return gluster_class[opt.gluster](model, **gluster_args)
 
 
-class GradientCluster(object):
-    def __init__(self, model, nclusters=1, ignore_modules=[],
-                 no_grad=False, **kwargs):
-        # Q: duplicates
-        # TODO: challenge: how many C? memory? time?
-        self.layer_dist = {'Linear': self._linear_dist,
-                           'Conv2d': self._conv2d_dist}
-        self.known_modules = self.layer_dist.keys()
-        self.ignore_modules = ignore_modules
-        self.no_grad = no_grad  # grad=1 => clustring in the input space
+def get_gluster_module(module):
+    module_name = module.__class__.__name__
+    glayers = {'Linear': GlusterLinear, 'Conv2D': GlusterConv}
+    if module_name in glayers:
+        return glayers[module_name]
+    if len(module.children()) > 0:
+        return GlusterModuleMulti
+    return None
 
+
+class GlusterModule(object):
+    def __init__(self, module, eps, nclusters, no_grad=False, **kwargs):
+        self.module = module
+        self.C = nclusters
+        self.eps = eps
+        # https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/blob/master/algo/kfac.py
+        module.register_forward_pre_hook(self._save_input_hook)
+        module.register_backward_hook(self._save_dist_hook)
         self.is_active = True
         self.is_eval = False
-        self.nclusters = nclusters
-        # self.train_size = train_size
-        self.model = model
-        self.device = device = self.model.parameters().next().device
-        self.modules = []
-        self.zero_data()
-        # self._init_centers()
-        self.reinits = torch.zeros(nclusters, 1).long().to(device)
-        self.cluster_size = torch.zeros(nclusters, 1).to(device)
-        self.total_dist = torch.zeros(self.nclusters, 1).to(device)
-        # self.assignments = torch.zeros(train_size).long().cuda()
+        self.no_grad = no_grad  # grad=1 => clustring in the input space
 
-        self._register_hooks_centers()
+    def _save_input_hook(self, Ai):
+        if not self.is_active:
+            return
+        self.Ai = Ai[0].clone().detach()
+
+    def _save_dist_hook(self, grad_input, grad_output):
+        if not self.is_active:
+            return
+        Ai = self.Ai
+        Gi = grad_input[0].clone().detach()
+        Go = grad_output[0].clone().detach()
+        self.Gi = Gi
+        self.Go = Go
+        if self.no_grad:
+            Gi.fill_(1./Gi.numel())
+            Go.fill_(1./Go.numel())
+        self.ograds = Go
+        # print('%s %s' % (Ai.shape, Ai.shape))
+        O = []
+        if self.module.bias:
+            O += [self._save_dist_hook_bias(Ai, Gi, Go)]
+        if self.module.weight:
+            O += [self._save_dist_hook_weight(Ai, Gi, Go)]
+        # TODO: per-layer clusters
+        self.batch_dist += O
+
+    def __zero_new_centers(self):
+        if self.module.bias:
+            self._zero_new_centers_bias()
+        if self.module.weight:
+            self._zero_new_centers_weight()
+
+    def __accum_new_centers(self, assign_i):
+        if self.module.bias:
+            self._accum_new_centers_bias(assign_i)
+        if self.module.weight:
+            self._accum_new_centers_weight(assign_i)
+
+    def __update_batch(self, cluster_size):
+        if self.module.bias:
+            self._update_batch_bias(cluster_size)
+        if self.module.weight:
+            self._update_batch_weight(cluster_size)
+
+    def __update_online(self, pre_size, new_size):
+        if self.module.bias:
+            self._update_online_bias(pre_size, new_size)
+        if self.module.weight:
+            self._update_online_weight(pre_size, new_size)
+
+    def get_dist(self):
+        # called after a backward pass with hooks
+        return self.batch_dist
 
     def activate(self):
         # Both EM steps
@@ -57,70 +106,126 @@ class GradientCluster(object):
         # No EM step
         self.is_active = False
 
-    def _init_centers(self, eps=1):
-        C = OrderedDict()
-        for param in self.model.parameters():
-            C[param] = self._init_centers_layer(param, self.nclusters, eps)
-        self.centers = C
 
-    def _init_centers_layer(self, param, nclusters, eps):
-        centers = []
-        if param.dim() == 1:
-            # Biases
-            dout = param.shape[0]
-            centers = torch.rand((nclusters, dout)).cuda()/dout*eps
-        elif param.dim() == 2:
-            # FC weights
-            din, dout = param.shape
-            centers = [
-                torch.rand((nclusters, dout)).cuda()/(din+dout)*eps,
-                torch.rand((nclusters, din)).cuda()/(din+dout)*eps]
-        else:
-            # Convolution weights
-            din = list(param.shape)[1:]
-            dout = param.shape[0]
-            centers = [
-                torch.rand([nclusters]+din).cuda()/(din+dout)*eps,
-                torch.rand((nclusters, dout)).cuda()/(din+dout)*eps]
-        return centers
+class GlusterLinear(GlusterModule):
+    def __init__(self, **kwargs):
+        super(GlusterLinear, self).__init__(self, **kwargs)
+        weight = self.module.weight
+        din, dout = weight.shape
+        dout = weight.shape[0]
+        # TODO: change init to 2/din
+        self.Ci = torch.rand((self.C, dout)).cuda()/(din+dout)*self.eps
+        self.Co = torch.rand((self.C, din)).cuda()/(din+dout)*self.eps
+        self.Cb = torch.rand((self.C, dout)).cuda()/dout*self.eps
+        self.Ci_new = torch.zeros_like(self.Ci)
+        self.Co_new = torch.zeros_like(self.Co)
+        self.Cb_new = torch.zeros_like(self.Cb)
 
-    def _register_hooks_centers(self, eps=1):
-        # https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/blob/master/algo/kfac.py
-        C = OrderedDict()
-        self.centers = C
-        for name, module in self.model.named_modules():
-            if name in self.ignore_modules:
-                continue
-            for param in module.parameters():
-                C[param] = self._init_centers_layer(param, self.nclusters, eps)
-            classname = module.__class__.__name__
-            if classname in self.known_modules:
-                self.modules.append(module)
-                module.register_forward_pre_hook(self._save_input)
-                module.register_backward_hook(self._save_dists)
+    def _save_dist_hook_bias(self, Ai, Gi, Go):
+        C = self.nclusters
+        B = Ai.shape[0]
 
-    def _save_input(self, module, input):
-        if not self.is_active:
-            return
-        self.inputs[module] = input[0].clone().detach()
+        Cb = self.Cb
+        # W^Ta_i + b = a_{i+1}
+        # dL/db = dL/da_{i+1} da_{i+1}/db = sum(dL/da_{i+1})
+        # Cb: C x d_out
+        # Go: B x d_out
+        # Ai: B x d_in
+        # https://discuss.pytorch.org/t/dot-product-batch-wise/9746/3
+        # CC = torch.matmul(Cb.unsqueeze(1), Cb.unsqueeze(2))
+        # bmm is probably slower
+        CC = (Cb*Cb).sum(1).unsqueeze(-1)
+        assert CC.shape == (C, 1), 'CC: C x 1.'
+        CG = torch.matmul(Cb, Go.t())
+        assert CG.shape == (C, B), 'CG: C x B.'
+        O = CC-2*CG
+        return O
 
-    def _save_dists(self, module, grad_input, grad_output):
-        if not self.is_active:
-            return
-        Ai = self.inputs[module]
-        Gi = grad_input[0].clone().detach()
-        Go = grad_output[0].clone().detach()
-        if self.no_grad:
-            Gi.fill_(1./Gi.numel())
-            Go.fill_(1./Go.numel())
-        self.ograds[module] = Go
-        # print('%s %s' % (Ai.shape, Ai.shape))
-        self.layer_dist[module.__class__.__name__](module, Ai, Gi, Go)
+    def _save_dist_hook_weight(self, Ai, Gi, Go):
+        O = []
+        C = self.nclusters
+        B = Ai.shape[0]
 
-    def _linear_dist(self, module, Ai, Gi, Go):
-        if not self.is_active:
-            return
-        # Bias
+        Ci, Co = self.Ci, self.Cb
+        CiAi = torch.matmul(Ci, Ai.t())
+        CoGo = torch.matmul(Co, Go.t())
+        CG = (CiAi)*(CoGo)
+        assert CG.shape == (C, B), 'CG: C x B.'
+        CiCi = (Ci*Ci).view(Ci.shape[0], -1).sum(1)
+        CoCo = (Co*Co).view(Co.shape[0], -1).sum(1)
+        CC = ((CiCi)*(CoCo)).unsqueeze(-1)
+        assert CC.shape == (C, 1), 'CC: C x 1.'
+        O += [CC-2*CG]
+        assert O.shape == (C, B), 'O: C x B.'
+        return O
+
+    def zero_new_centers(self):
+        # TODO: figure out when zeroing should be done with batch/online
+        self.Ci_new.fill_(0)
+        self.Co_new.fill_(0)
+        self.Cb_new.fill_(0)
+
+    def accum_new_centers(self, assign_i):
+        # TODO: SVD
+        self.Ci_new.scatter_add_(0, assign_i.expand_as(self.Ai), self.Ai)
+        self.Co_new.scatter_add_(0, assign_i.expand_as(self.Go), self.Go)
+        self.Cb_new.scatter_add_(0, assign_i.expand_as(self.Go), self.Go)
+
+    def update_batch(self, cluster_size):
+        self.Ci.copy_(self.Ci_new).div_(cluster_size.clamp(1))
+        self.Co.copy_(self.Co_new).div_(cluster_size.clamp(1))
+        self.Cb.copy_(self.Cb_new).div_(cluster_size.clamp(1))
+
+    def _update_online_bias(self, pre_size, new_size):
+        self.Cb.mul_(pre_size).add_(self.Cb_new).div_(new_size)
+
+    def _update_online_weight(self, pre_size, new_size):
+        self.Ci.mul_(pre_size).add_(self.Ci_new).div_(new_size)
+        self.Co.mul_(pre_size).add_(self.Co_new).div_(new_size)
+
+    def reinit_from_data(self, reinits, perm):
+        # Ci0, Co0 = self._init_centers_layer(module.weight, nzeros)
+        # Ci.masked_scatter_(counts == 0, Ci0)
+        # Co.masked_scatter_(counts == 0, Co0)
+        self.Ci.masked_scatter_(reinits, self.Ai[perm])
+        self.Co.masked_scatter_(reinits, self.Go[perm])
+        self.Cb.masked_scatter_(reinits, self.Go[perm])
+
+    def reinit_from_largest(self, ri, li):
+        """
+        reinit from the largest cluster
+        reinit one at a time
+        """
+        # reinit centers
+        # X[ri] = is index_put_(ri, ...)
+        # TODO: figure out autograd with this copy
+        self.Ci[ri] = self.Ci[li]
+        self.Co[ri] = self.Co[li]
+        self.Cb[ri] = self.Cb[li]
+        # Adding noise did not help on the first test
+        # Don't do this. Ruins assignments if accidentally reinits
+        # Ci.index_add_(0, ri, torch.rand_like(Ci[ri])*self.total_dist[li])
+        # Co.index_add_(0, ri, torch.rand_like(Co[ri])*self.total_dist[li])
+        # Cb.index_add_(0, ri, torch.rand_like(Cb[ri])*self.total_dist[li])
+
+
+class GlusterConv(GlusterModule):
+    def __init__(self, **kwargs):
+        super(GlusterConv, self).__init__(self, **kwargs)
+        self.param = self.module.weight
+        din = list(self.param.shape)[1:]
+        dout = self.param.shape[0]
+        eps = self.eps
+        self.Ci = torch.rand([self.C]+din).cuda()/(np.prod(din)+dout)*eps,
+        self.Co = torch.rand((self.C, dout)).cuda()/(np.prod(din)+dout)*eps
+        self.Cb = torch.rand((self.C, dout)).cuda()/dout*self.eps
+
+    def _save_dist_hook_bias(self, Ai0, Gi, Go0):
+        module = self.module
+        C = self.nclusters
+        B = Ai0.shape[0]
+        Go = Go0.reshape(Go0.shape[:-2]+(np.prod(Go0.shape[-2:]), ))
+
         Cb = self.centers[module.bias]
         # W^Ta_i + b = a_{i+1}
         # dL/db = dL/da_{i+1} da_{i+1}/db = sum(dL/da_{i+1})
@@ -131,40 +236,117 @@ class GradientCluster(object):
         # CC = torch.matmul(Cb.unsqueeze(1), Cb.unsqueeze(2))
         # bmm is probably slower
         CC = (Cb*Cb).sum(1).unsqueeze(-1)
-        assert CC.shape == (self.nclusters, 1), 'CC: C x 1.'
-        CG = torch.matmul(Cb, Go.t())
-        assert CG.shape == (self.nclusters, Ai.shape[0]), 'CG: C x B.'
+        assert CC.shape == (C, 1), 'CC: C x 1.'
+        CG = torch.einsum('ko,bot->kb', [Cb, Go])
+        assert CG.shape == (C, B), 'CG: C x B.'
         O = CC-2*CG
-        self.batch_dist += [O]
+        return O
 
-        # Weight
+    def _save_dist_hook_weight(self, Ai0, Gi, Go0):
+        module = self.module
+        param = self.param
+        C = self.nclusters
+        B = Ai0.shape[0]
+        din = param.shape[1:]
+        dout = param.shape[0]
+        Go = Go0.reshape(Go0.shape[:-2]+(np.prod(Go0.shape[-2:]), ))
+        T = Go.shape[-1]
+
+        assert Go.shape == (B, dout, T), 'Go: B x dout x T'
+        Ai = F.unfold(
+                Ai0, module.kernel_size,
+                padding=module.padding,
+                stride=module.stride, dilation=module.dilation)
+        assert Ai.shape == (B, np.prod(din), T), 'Ai: B x din x T'
         Ci, Co = self.centers[module.weight]
-        CiAi = torch.matmul(Ci, Ai.t())
-        CoGo = torch.matmul(Co, Go.t())
-        CG = (CiAi)*(CoGo)
-        assert CG.shape == (self.nclusters, Ai.shape[0]), 'CG: C x B.'
+        assert Ci.shape == (C, )+din, 'Ci: C x din'
+        assert Co.shape == (C, dout), 'Co: C x dout'
+        Ci = Ci.reshape((C, -1))
+        # TODO: one big einsum
+        CiAi = torch.einsum('ki,bit->kbt', [Ci, Ai])
+        CoGo = torch.einsum('ko,bot->kbt', [Co, Go])
+        CG = torch.einsum('kbt,kbt->kb', [CiAi, CoGo])
+        assert CG.shape == (C, B), 'CG: C x B.'
         CiCi = (Ci*Ci).view(Ci.shape[0], -1).sum(1)
         CoCo = (Co*Co).view(Co.shape[0], -1).sum(1)
         CC = ((CiCi)*(CoCo)).unsqueeze(-1)
-        assert CC.shape == (self.nclusters, 1), 'CC: C x 1.'
+        assert CC.shape == (C, 1), 'CC: C x 1.'
         O = CC-2*CG
-        assert O.shape == (self.nclusters, Ai.shape[0]), 'O: C x B.'
+        assert O.shape == (C, B), 'O: C x B.'
 
-        # TODO: per-layer clusters
-        self.batch_dist += [O]
+        return O
 
-    def _conv2d_dist(self, module, a_in, d_in, d_out):
-        if not self.is_active:
-            return
-        # TODO: conv
-        pass
 
-    def zero_data(self):
-        if not self.is_active:
-            return
-        self.batch_dist = []
-        self.inputs = {}
-        self.ograds = {}
+class GlusterModuleMulti(GlusterModule):
+    def __init__(
+            self, module, eps, nclusters, no_grad=False,
+            ignore_modules=[]):
+        self.module = module
+        self.ignore_modules = ignore_modules
+        self.C = nclusters
+        self.eps = eps
+        self.G = OrderedDict()
+        for name, m in module.named_modules():
+            if name in self.ignore_modules:
+                continue
+            glayer = get_gluster_module(m)
+            self.G[m] = glayer(m, eps, nclusters)
+
+    def get_dist(self):
+        batch_dist = []
+        for module in self.G.keys():
+            batch_dist += self.G[module].get_dist()
+        return batch_dist
+
+    def update_batch(self, assign_i):
+        """Update Clusters
+        E: update C
+        E: C_c = mean_i(g_i * I(c==a_i))
+        """
+        for module in self.G.keys():
+            self.G[module].update_batch(assign_i)
+
+    def update_online(self, assign_i):
+        """Update Clusters
+        E: update C
+        E: C_c = mean_i(g_i * I(c==a_i))
+        """
+        for module in self.G.keys():
+            self.G[module].update_online(assign_i)
+
+    def normalize(self):
+        for module in self.G.keys():
+            self.G[module].normalize()
+
+
+class GradientCluster(object):
+    def __init__(
+            self, model, nclusters=1, no_grad=False,
+            ignore_modules=[], **kwargs):
+        # Q: duplicates
+        # TODO: challenge: how many C? memory? time?
+
+        self.nclusters = nclusters
+        self.model = model
+        self.device = device = self.model.parameters().next().device
+        # self.zero_data()
+        # self._init_centers()
+        self.reinits = torch.zeros(nclusters, 1).long().to(device)
+        self.cluster_size = torch.zeros(nclusters, 1).to(device)
+        self.total_dist = torch.zeros(self.nclusters, 1).to(device)
+
+        self.G = GlusterModuleMulti(
+                model, 1, nclusters, no_grad=no_grad,
+                ignore_modules=ignore_modules)
+
+    def activate(self):
+        self.G.activate()
+
+    def eval(self):
+        self.G.eval()
+
+    def deactivate(self):
+        self.G.deactivate()
 
     def copy_(self, model):
         for m, g in zip(model.parameters(), self.model.parameters()):
@@ -218,7 +400,8 @@ class GradientClusterBatch(GradientCluster):
         = argmin_c gg+CC-2*gC
         = argmin_c CC-2gC
         """
-        total_dist = torch.stack(self.batch_dist).sum(0)
+        batch_dist = self.G.get_dist()
+        total_dist = torch.stack(batch_dist).sum(0)
         batch_dist, assign_i = total_dist.min(0)
         assign_i = assign_i.unsqueeze(1)
         batch_dist = batch_dist.unsqueeze(1)
@@ -243,7 +426,7 @@ class GradientClusterBatch(GradientCluster):
             data, target = Variable(data), Variable(target)
             data, target = data.to(device), target.to(device)
             model.zero_grad()
-            self.zero_data()
+            # self.zero_data()
             output = self.model(data)
             pred_i[idx] = output.max(1, keepdim=True)[1].cpu().numpy()[:, 0]
             target_i[idx] = target.cpu().numpy()
@@ -260,8 +443,7 @@ class GradientClusterBatch(GradientCluster):
         print('> Gluster batch: total distortions: %f (negative is fine)' % td)
 
         # split the scattered cluster if the smallest cluster is small
-        # TODO: more than one split, challenge: don't know the new dist
-        # after one split
+        # More than one split: don't know the new dist after one split
         s, i = self.cluster_size.min(0)
         if s < self.min_size:
             # TODO: negative distortion
@@ -273,61 +455,26 @@ class GradientClusterBatch(GradientCluster):
 
         print('> Gluster batch: Update cluster centers given the assignments')
         self._init_centers(0)
+        self.G.zero_new_centers()
         for data, target, idx in data_loader:
             data, target = Variable(data), Variable(target)
             data, target = data.to(device), target.to(device)
             model.zero_grad()
-            self.zero_data()
+            # self.zero_data()
             output = self.model(data)
             loss = F.nll_loss(output, target)
             loss.backward()
             # recompute A, G but don't do reassign as clusters change
             self.assign()
             # assign_i[idx], _ = self.assign()  # recompute A, G
-            self.update(assign_i[idx])
+            self.G.accum_new_centers(assign_i[idx])
 
         self.cluster_size.fill_(0)
         self.cluster_size.scatter_add_(0, assign_i,
                                        torch.ones_like(assign_i).float())
-        self.normalize()
+        self.G.update_batch(self.cluster_size)
         # td before E step, we have to do another loop for td after E step
         return td, assign_i.cpu().numpy(), target_i, pred_i, loss_i
-
-    def update(self, assign_i):
-        """Update Clusters
-        E: update C
-        E: C_c = mean_i(g_i * I(c==a_i))
-        """
-
-        for module in self.inputs.keys():
-            Ai = self.inputs[module]
-            Go = self.ograds[module]
-
-            # bias
-            Cb = self.centers[module.bias]
-            Cb_new = torch.zeros_like(Cb)
-            Cb_new.scatter_add_(0, assign_i.expand_as(Go), Go)
-            Cb.add_(Cb_new)
-
-            # weight
-            Ci, Co = self.centers[module.weight]
-            Ci_new = torch.zeros_like(Ci)
-            Co_new = torch.zeros_like(Co)
-            # TODO: SVD
-            Ci_new.scatter_add_(0, assign_i.expand_as(Ai), Ai)
-            Co_new.scatter_add_(0, assign_i.expand_as(Go), Go)
-            # Update clusters
-            Ci.add_(Ci_new)
-            Co.add_(Co_new)
-
-    def normalize(self):
-        for module in self.inputs.keys():
-            Cb = self.centers[module.bias]
-            Cb.div_(self.cluster_size.clamp(1))
-
-            Ci, Co = self.centers[module.weight]
-            Ci.div_(self.cluster_size.clamp(1))
-            Co.div_(self.cluster_size.clamp(1))
 
 
 class GradientClusterOnline(GradientCluster):
@@ -353,7 +500,8 @@ class GradientClusterOnline(GradientCluster):
         # M: a_i = argmin_c(|g_i-C_c|^2)
         #        = argmin_c gg+CC-2*gC
         #        = argmin_c CC-2gC
-        total_dist = torch.stack(self.batch_dist).sum(0)
+        batch_dist = self.G.get_dist()
+        total_dist = torch.stack(batch_dist).sum(0)
         batch_dist, assign_i = total_dist.min(0)
         assign_i = assign_i.unsqueeze(1)
         batch_dist = batch_dist.unsqueeze(1)
@@ -371,26 +519,9 @@ class GradientClusterOnline(GradientCluster):
         self.total_dist.mul_(pre_size).scatter_add_(
             0, assign_i, batch_dist).div_(self.cluster_size)
 
-        for module in self.inputs.keys():
-            Ai = self.inputs[module]
-            Go = self.ograds[module]
-
-            # bias
-            Cb = self.centers[module.bias]
-            Cb_new = torch.zeros_like(Cb)
-            Cb_new.scatter_add_(0, assign_i.expand_as(Go), Go)
-            Cb.mul_(pre_size).add_(Cb_new).div_(self.cluster_size)
-
-            # weight
-            Ci, Co = self.centers[module.weight]
-            Ci_new = torch.zeros_like(Ci)
-            Co_new = torch.zeros_like(Co)
-            # TODO: SVD
-            Ci_new.scatter_add_(0, assign_i.expand_as(Ai), Ai)
-            Co_new.scatter_add_(0, assign_i.expand_as(Go), Go)
-            # Update clusters using the size
-            Ci.mul_(pre_size).add_(Ci_new).div_(self.cluster_size)
-            Co.mul_(pre_size).add_(Co_new).div_(self.cluster_size)
+        self.G.zero_new_centers()
+        self.G.accum_new_centers(assign_i)
+        self.G.update_online(pre_size, self.cluster_size)
 
         invalid_clusters = self.reinit()
         return invalid_clusters
@@ -418,20 +549,7 @@ class GradientClusterOnline(GradientCluster):
         # reinit from data
         perm = torch.randperm(self.inputs.values()[0].shape[0])[:nreinits]
         self.cluster_size[reinits] = 1
-        for module in self.inputs.keys():
-            Cb = self.centers[module.bias]
-            Ci, Co = self.centers[module.weight]
-            Ai = self.inputs[module]
-            Go = self.ograds[module]
-
-            # Ci0, Co0 = self._init_centers_layer(module.weight, nzeros)
-            # Ci.masked_scatter_(counts == 0, Ci0)
-            # Co.masked_scatter_(counts == 0, Co0)
-
-            # reinit from data
-            Ci.masked_scatter_(reinits, Ai[perm])
-            Co.masked_scatter_(reinits, Go[perm])
-            Cb.masked_scatter_(reinits, Go[perm])
+        self.G.reinit_from_data(reinits, perm)
         invalid_clusters = reinits.cpu().numpy()
         return invalid_clusters
 
@@ -441,25 +559,9 @@ class GradientClusterOnline(GradientCluster):
         _, ri = reinits.max(0)
         tdm = self.total_dist.masked_fill(
             self.cluster_size < self.min_size, float('-inf'))
+        # TODO: Ties should be broken deterministically
         _, li = tdm.max(0)
-        # print(ri)
-        # print(li)
-        # print(tdm)
-        for module in self.inputs.keys():
-            Cb = self.centers[module.bias]
-            Ci, Co = self.centers[module.weight]
-            # reinit centers
-            # [ri] = is index_put_(ri, ...)
-            # TODO: figure out autograd with this copy
-            Ci[ri] = Ci[li]
-            Co[ri] = Co[li]
-            Cb[ri] = Cb[li]
-            # Adding noise did not help on the first test
-            # Don't do this. Ruins assignments if accidentally reinits
-            # TODO: Ties should be broken deterministically
-            # Ci.index_add_(0, ri, torch.rand_like(Ci[ri])*self.total_dist[li])
-            # Co.index_add_(0, ri, torch.rand_like(Co[ri])*self.total_dist[li])
-            # Cb.index_add_(0, ri, torch.rand_like(Cb[ri])*self.total_dist[li])
+        self.G.reinit_from_largest(ri, li)
         self.cluster_size[ri] = self.cluster_size[li] / 2
         self.cluster_size[li] = self.cluster_size[li] / 2
         # This is not exact, maybe add a multiple of cluster size
@@ -492,7 +594,8 @@ class GradientClusterOnlineMemory(GradientCluster):
         = argmin_c gg+CC-2*gC
         = argmin_c CC-2gC
         """
-        total_dist = torch.stack(self.batch_dist).sum(0)
+        batch_dist = self.G.get_dist()
+        total_dist = torch.stack(batch_dist).sum(0)
         batch_dist, assign_i = total_dist.min(0)
         assign_i = assign_i.unsqueeze(1)
         batch_dist = batch_dist.unsqueeze(1)
