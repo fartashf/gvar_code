@@ -137,7 +137,7 @@ class GradientClusterBatch(GradientCluster):
             self.reinits[i] += 1
 
         print('> Gluster batch: Update cluster centers given the assignments')
-        self._init_centers(0)
+        # self._init_centers(0)
         self.G.zero_new_centers()
         for data, target, idx in data_loader:
             data, target = Variable(data), Variable(target)
@@ -170,8 +170,8 @@ class GradientClusterOnline(GradientCluster):
         self.cluster_size.fill_(self.min_size)
 
     def em_step(self):
-        with torch.no_grad():
-            if self.G.is_active:
+        if self.G.is_active:
+            with torch.no_grad():
                 assign_i, batch_dist = self.assign()
                 if not self.G.is_eval:
                     invalid_clusters = self.update(assign_i, batch_dist)
@@ -206,10 +206,10 @@ class GradientClusterOnline(GradientCluster):
         self.G.accum_new_centers(assign_i)
         self.G.update_online(pre_size, self.cluster_size)
 
-        invalid_clusters = self.reinit()
+        invalid_clusters = self.reinit(assign_i.shape[0])
         return invalid_clusters
 
-    def reinit(self):
+    def reinit(self, batch_size):
         # Reinit if no data is assigned to the cluster for some time
         # (time = beta decay).
         # If we reinit based only on the current batch assignemnts, it ignores
@@ -220,17 +220,17 @@ class GradientClusterOnline(GradientCluster):
         # TODO: stop reinit or delay if too often
         if nreinits > 0:
             if self.reinit_method == 'data':
-                return self.reinit_from_data(reinits)
+                return self.reinit_from_data(reinits, batch_size)
             elif self.reinit_method == 'largest':
                 return self.reinit_from_largest(reinits)
             else:
                 raise Exception('Reinit method not defined.')
         return []
 
-    def reinit_from_data(self, reinits):
+    def reinit_from_data(self, reinits, batch_size):
         nreinits = reinits.sum()
         # reinit from data
-        perm = torch.randperm(self.inputs.values()[0].shape[0])[:nreinits]
+        perm = torch.randperm(batch_size)[:nreinits]
         self.cluster_size[reinits] = 1
         self.G.reinit_from_data(reinits, perm)
         invalid_clusters = reinits.cpu().numpy()

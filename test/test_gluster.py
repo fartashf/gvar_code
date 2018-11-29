@@ -487,16 +487,18 @@ def test_mnist_online_delayed(
                 output = modelg(data)
                 loss = F.nll_loss(output, target)
                 loss.backward()
-                ai, batch_dist, _ = gluster.em_step()
+                ret = gluster.em_step()
                 toc = time.time()
                 gluster_tc += [toc - tic]
-                print('assign:')
-                print(ai[:10])
-                print(batch_dist[:10])
-                normC = gluster.print_stats()
-                print('%.4f +/- %.4f' % (np.mean(gluster_tc),
-                                         np.std(gluster_tc)))
-                # import ipdb; ipdb.set_trace()
+                if ret is not None:
+                    ai, batch_dist, _ = ret
+                    print('assign:')
+                    print(ai[:10])
+                    print(batch_dist[:10])
+                    normC = gluster.print_stats()
+                    print('%.4f +/- %.4f' % (np.mean(gluster_tc),
+                                             np.std(gluster_tc)))
+                    # import ipdb; ipdb.set_trace()
             if batch_idx % 10 == 0:
                 print('Epoch: [{0}][{1}/{2}]\t Loss: {loss:.6f}\t'.format(
                     e, batch_idx, len(train_loader),
@@ -545,50 +547,56 @@ def test_mnist_online_delayed(
 
 
 if __name__ == '__main__':
+    # TODO: clone model for every test
     model = MLP(dropout=False)
     model.cuda()
     print('Model initialized.')
 
-    # Few iterations
-    # One cluster still hasn't converged?
-    data = data_unique_n(100, 5)
-    test_gluster_online(model, 10, data, 5, .9, 1, 'data', 1234, 10)
-    # But the init with largest takes longer
-    test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 1234, 10)
+    # # Few iterations
+    # data = data_unique_n(100, 5)
+    # test_gluster_online(model, 10, data, 5, .9, 1, 'data', 1234, 10)
+    # print(">>> One cluster still hasn't converged?")
+    # test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 1234, 10)
+    # print(">>> But the init with largest takes longer")
 
     # # More iterations
-    # # centers should match input based on Dist
     # data = data_unique_n(100, 5)
     # test_gluster_online(model, 10, data, 5, .9, 1, 'data', 1234, 100)
+    # print(">>> This has now converged.")
     # test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 1234, 100)
+    # print(">>> centers should match input based on Dist")
 
     # # More unique data than centers
-    # # Clusters should get about the same number of data points they don't
     # data = data_unique_n(100, 10)
     # test_gluster_online(model, 10, data, 5, .9, 1, 'data', 1234, 100)
     # test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 1234, 100)
+    # print(
+    #         "*** Clusters should get about the same "
+    #         "number of data points, but they don't, why?***")
 
-    # More centers than data
+    # # More centers than data
     # # TODO: stop reinit if more centers
     # data = data_unique_n(100, 5)
     # test_gluster_online(model, 10, data, 10, .9, 1, 'data', 1234, 100)
-    # # 5 centers are reinited > 30 times but first 5 are stable
+    # print("*** 5 centers are reinited > 30 times but first 5 are stable ***")
     # test_gluster_online(model, 10, data, 10, .9, 1, 'largest', 1234, 100)
 
-    # # Imbalance data finds 2 clusters in 1 reinit but hasn't converged in 10
+    # # Imbalance data
     # data = data_unique_perc(100, [.9, .1])
     # test_gluster_online(model, 10, data, 2, .9, 1, 'data', 1234, 10)
     # test_gluster_online(model, 10, data, 2, .9, 1, 'largest', 1234, 10)
+    # print("***  finds 2 clusters in 1 reinit but hasn't converged in 10 ***")
 
     # # More iterations
     # data = data_unique_perc(100, [.9, .1])
     # test_gluster_online(model, 10, data, 2, .9, 1, 'data', 1234, 100)
     # test_gluster_online(model, 10, data, 2, .9, 1, 'largest', 1234, 100)
+    # print("***  converged now ***")
 
-    # Time test
+    # # Time test
     # data = data_unique_perc(1000, [.9, .1])
     # test_gluster_online(model, 128, data, 2, .9, 1, 'data', 1234, 100)
-    # 2-3x solwer
+    # print("2-3x solwer")
 
     # # noise
     # data = data_unique_perc(100, [.9, .1])
@@ -596,11 +604,11 @@ if __name__ == '__main__':
     # test_gluster_online(model, 10, data, 2, .9, 1, 'data', 1234, 100)
     # test_gluster_online(model, 10, data, 2, .9, 1, 'largest', 1234, 100)
 
-    # gluster batch
+    # # gluster batch
     # data = data_unique_n(100, 5)
     # test_gluster_batch(model, 10, data, 5, 1, 1234, 10)
 
-    # gluster batch noise
+    # # gluster batch noise
     # data = data_unique_perc(100, [.9, .1])
     # data = purturb_data(data, .01)
     # test_gluster_batch(model, 10, data, 2, 1, 12345, 10)
@@ -638,9 +646,10 @@ if __name__ == '__main__':
     # delay = 10
     # figname = (
     #     'notebooks/figs_gluster/mlp,nclusters_10,online,delay_10.pth.tar')
-    # test_mnist_online_delayed(model,
-    #     128, epochs, nclusters, beta, min_size, reinit_method, delay,
-    #     1234, figname)
+    # test_mnist_online_delayed(
+    #         model,
+    #         128, epochs, nclusters, beta, min_size, reinit_method, delay,
+    #         1234, figname)
 
     # epochs = 2
     # nclusters = 10
@@ -650,17 +659,10 @@ if __name__ == '__main__':
     # delay = 100
     # figname = (
     #     'notebooks/figs_gluster/mlp,nclusters_10,online,delay_100.pth.tar')
-    # test_mnist_online_delayed(model,
-    #     128, epochs, nclusters, beta, min_size, reinit_method, delay,
-    #     1234, figname)
-
-    # # Batch gluster layer 1
-    # nclusters = 10
-    # citers = 10
-    # ignore_modules = ['fc2', 'fc3', 'fc4']
-    # figname = 'notebooks/figs_gluster/mlp,nclusters_10,layer_1.pth.tar'
-    # test_mnist(
-    # model, 128, 2, nclusters, 10, 1234, citers, figname, ignore_modules)
+    # test_mnist_online_delayed(
+    #         model,
+    #         128, epochs, nclusters, beta, min_size, reinit_method, delay,
+    #         1234, figname)
 
     # # Batch gluster layer 1, input only
     # nclusters = 10
@@ -669,8 +671,17 @@ if __name__ == '__main__':
     # ignore_modules = ['fc2', 'fc3', 'fc4']
     # figname = 'notebooks/figs_gluster/mlp,nclusters_10,input.pth.tar'
     # test_mnist(
-    # model, 128, 2, nclusters, 10, 1234, citers, figname, ignore_modules,
-    #            no_grad=no_grad)
+    #         model, 128, 2, nclusters, 10, 1234, citers, figname,
+    #         ignore_modules, no_grad=no_grad)
+
+    # # Batch gluster layer 1
+    # nclusters = 10
+    # citers = 10
+    # ignore_modules = ['fc2', 'fc3', 'fc4']
+    # figname = 'notebooks/figs_gluster/mlp,nclusters_10,layer_1.pth.tar'
+    # test_mnist(
+    #         model, 128, 2, nclusters, 10, 1234, citers,
+    #         figname, ignore_modules)
 
     # # Batch gluster layer 4
     # nclusters = 10
@@ -680,12 +691,12 @@ if __name__ == '__main__':
     # test_mnist(model, 128, 2, nclusters, 10, 1234,
     #            citers, figname, ignore_modules)
 
-    # model = Convnet(dropout=False)
-    # model.cuda()
-    # print('Model initialized.')
+    model = Convnet(dropout=False)
+    model.cuda()
+    print('Model initialized.')
 
-    # # Batch gluster conv
-    # nclusters = 10
-    # citers = 10
-    # figname = 'notebooks/figs_gluster/mlp,nclusters_10,conv.pth.tar'
-    # test_mnist(model, 128, 0, nclusters, 10, 1234, citers, figname)
+    # Batch gluster conv
+    nclusters = 10
+    citers = 10
+    figname = 'notebooks/figs_gluster/mlp,nclusters_10,conv.pth.tar'
+    test_mnist(model, 128, 0, nclusters, 10, 1234, citers, figname)

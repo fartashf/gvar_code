@@ -31,9 +31,12 @@ class GlusterModule(object):
                 m for name, m in module.named_children() if name
                 not in ignore_modules]
         self.children = OrderedDict()
+        self.has_param = (hasattr(module, 'weight') or hasattr(module, 'bias'))
         self._register_hooks()
 
     def _register_hooks(self):
+        if not self.has_param:
+            return
         # https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/blob/master/algo/kfac.py
         self.module.register_forward_pre_hook(self._save_input_hook)
         self.module.register_backward_hook(self._save_dist_hook)
@@ -41,10 +44,14 @@ class GlusterModule(object):
     def _save_input_hook(self, m, Ai):
         if not self.is_active:
             return
+        if not self.has_param:
+            return
         self.Ai = Ai[0].clone().detach()
 
     def _save_dist_hook(self, m, grad_input, grad_output):
         if not self.is_active:
+            return
+        if not self.has_param:
             return
         Ai = self.Ai
         Gi = grad_input[0].clone().detach()
@@ -65,6 +72,8 @@ class GlusterModule(object):
         self.batch_dist = O
 
     def get_dist(self):
+        if not self.has_param:
+            return
         # called after a backward
         return self.batch_dist
 
@@ -83,28 +92,38 @@ class GlusterModule(object):
         self.is_active = False
 
     def zero_new_centers(self):
+        if not self.has_param:
+            return
         # TODO: figure out when zeroing should be done with batch/online
         self.Ci_new.fill_(0)
         self.Co_new.fill_(0)
         self.Cb_new.fill_(0)
 
     def accum_new_centers(self, assign_i):
+        if not self.has_param:
+            return
         # TODO: SVD
         self.Ci_new.scatter_add_(0, assign_i.expand_as(self.Ai), self.Ai)
         self.Co_new.scatter_add_(0, assign_i.expand_as(self.Go), self.Go)
         self.Cb_new.scatter_add_(0, assign_i.expand_as(self.Go), self.Go)
 
     def update_batch(self, cluster_size):
+        if not self.has_param:
+            return
         self.Ci.copy_(self.Ci_new).div_(cluster_size.clamp(1))
         self.Co.copy_(self.Co_new).div_(cluster_size.clamp(1))
         self.Cb.copy_(self.Cb_new).div_(cluster_size.clamp(1))
 
     def update_online(self, pre_size, new_size):
+        if not self.has_param:
+            return
         self.Ci.mul_(pre_size).add_(self.Ci_new).div_(new_size)
         self.Co.mul_(pre_size).add_(self.Co_new).div_(new_size)
         self.Cb.mul_(pre_size).add_(self.Cb_new).div_(new_size)
 
     def reinit_from_data(self, reinits, perm):
+        if not self.has_param:
+            return
         # Ci0, Co0 = self._init_centers_layer(module.weight, nzeros)
         # Ci.masked_scatter_(counts == 0, Ci0)
         # Co.masked_scatter_(counts == 0, Co0)
@@ -113,6 +132,8 @@ class GlusterModule(object):
         self.Cb.masked_scatter_(reinits, self.Go[perm])
 
     def reinit_from_largest(self, ri, li):
+        if not self.has_param:
+            return
         """
         reinit from the largest cluster
         reinit one at a time
@@ -130,10 +151,12 @@ class GlusterModule(object):
         # Cb.index_add_(0, ri, torch.rand_like(Cb[ri])*self.total_dist[li])
 
     def get_centers(self):
+        if not self.has_param:
+            return
         centers = []
-        centers += [self.Cb]
         Cf = torch.matmul(self.Co.unsqueeze(-1), self.Ci.unsqueeze(1))
         centers += [Cf]
+        centers += [self.Cb]
         assert Cf.shape == (
                 self.Ci.shape[0], self.Co.shape[1], self.Ci.shape[1]
                 ), 'Cf: C x d_out x d_in'
@@ -141,11 +164,12 @@ class GlusterModule(object):
 
 
 class LoopFunction(object):
-    def __init__(self, children, fname):
-        fs = []
+    def __init__(self, module, children, fname):
+        fs = [getattr(super(module.__class__, module), fname)]
         for module in children.keys():
             fs += [getattr(children[module], fname)]
         self.fs = fs
+        self.fname = fname
 
     def __call__(self, *args, **kwargs):
         rs = []
@@ -175,9 +199,10 @@ class GlusterContainer(GlusterModule):
         loop_functions = [
                 'update_batch', 'update_online', 'zero_new_centers',
                 'accum_new_centers', 'reinit_from_data',
-                'reinit_from_largest', 'get_dist', 'get_centers']
+                'reinit_from_largest', 'get_dist', 'get_centers',
+                'deactivate', 'activate', 'eval']
         for fname in loop_functions:
-            setattr(self, fname, LoopFunction(self.children, fname))
+            setattr(self, fname, LoopFunction(self, self.children, fname))
 
 
 class GlusterLinear(GlusterModule):
