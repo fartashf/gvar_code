@@ -9,8 +9,8 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 sys.path.append('../')
 from models.mnist import MLP, Convnet  # NOQA
-from gluster import GradientClusterOnline  # NOQA
-from gluster import GradientClusterBatch  # NOQA
+from gluster.gluster import GradientClusterOnline  # NOQA
+from gluster.gluster import GradientClusterBatch  # NOQA
 
 
 def print_stats(model, gluster, X, T, batch_size):
@@ -115,7 +115,7 @@ def model_time(model, X, T, batch_size, niters):
     return model_tc
 
 
-def test_gluster_online(batch_size, data, nclusters, beta, min_size,
+def test_gluster_online(model, batch_size, data, nclusters, beta, min_size,
                         reinit_method, seed, niters):
     X, T, Xte, Yte = data
     train_size = X.shape[0]
@@ -133,9 +133,6 @@ def test_gluster_online(batch_size, data, nclusters, beta, min_size,
     np.set_printoptions(suppress=True)
     np.random.seed(seed)
 
-    model = MLP(dropout=False)
-    model.cuda()
-
     modelg = copy.deepcopy(model)
     gluster = GradientClusterOnline(modelg, beta, min_size, reinit_method,
                                     nclusters=nclusters)
@@ -149,7 +146,7 @@ def test_gluster_online(batch_size, data, nclusters, beta, min_size,
         x = Variable(X[ids[:batch_size]]).cuda()
         t = Variable(T[ids[:batch_size]]).cuda()
         modelg.zero_grad()
-        gluster.zero_data()
+        # gluster.zero_data()
         y = modelg(x)
         loss = F.nll_loss(y, t)
         loss.backward()
@@ -224,7 +221,7 @@ def test_gluster_batch(
     x = Variable(Xte).cuda()
     t = Variable(Yte).cuda()
     modelg.zero_grad()
-    gluster.zero_data()
+    # gluster.zero_data()
     y = modelg(x)
     loss = F.nll_loss(y, t)
     loss.backward()
@@ -381,7 +378,7 @@ def test_mnist_online(
             modelg.train()
             data, target = data.cuda(), target.cuda()
             optimizer.zero_grad()
-            gluster.zero_data()
+            # gluster.zero_data()
             output = modelg(data)
             loss = F.nll_loss(output, target, reduction='none')
             # store stats
@@ -486,7 +483,7 @@ def test_mnist_online_delayed(
                 modelg.train()
                 gluster.copy_(model)
                 modelg.zero_grad()
-                gluster.zero_data()
+                # gluster.zero_data()
                 output = modelg(data)
                 loss = F.nll_loss(output, target)
                 loss.backward()
@@ -517,7 +514,7 @@ def test_mnist_online_delayed(
         tic = time.time()
         data, target = data.cuda(), target.cuda()
         modelg.zero_grad()
-        gluster.zero_data()
+        # gluster.zero_data()
         output = modelg(data)
         loss = F.nll_loss(output, target, reduction='none')
         # store stats
@@ -548,15 +545,16 @@ def test_mnist_online_delayed(
 
 
 if __name__ == '__main__':
-    # model = MLP(dropout=False)
-    # model.cuda()
+    model = MLP(dropout=False)
+    model.cuda()
+    print('Model initialized.')
 
-    # # Few iterations
-    # # One cluster still hasn't converged?
-    # data = data_unique_n(100, 5)
-    # test_gluster_online(model, 10, data, 5, .9, 1, 'data', 1234, 10)
-    # # But the init with largest takes longer
-    # test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 1234, 10)
+    # Few iterations
+    # One cluster still hasn't converged?
+    data = data_unique_n(100, 5)
+    test_gluster_online(model, 10, data, 5, .9, 1, 'data', 1234, 10)
+    # But the init with largest takes longer
+    test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 1234, 10)
 
     # # More iterations
     # # centers should match input based on Dist
@@ -682,11 +680,12 @@ if __name__ == '__main__':
     # test_mnist(model, 128, 2, nclusters, 10, 1234,
     #            citers, figname, ignore_modules)
 
-    model = Convnet(dropout=False)
-    model.cuda()
+    # model = Convnet(dropout=False)
+    # model.cuda()
+    # print('Model initialized.')
 
-    # Batch gluster conv
-    nclusters = 10
-    citers = 10
-    figname = 'notebooks/figs_gluster/mlp,nclusters_10,conv.pth.tar'
-    test_mnist(model, 128, 0, nclusters, 10, 1234, citers, figname)
+    # # Batch gluster conv
+    # nclusters = 10
+    # citers = 10
+    # figname = 'notebooks/figs_gluster/mlp,nclusters_10,conv.pth.tar'
+    # test_mnist(model, 128, 0, nclusters, 10, 1234, citers, figname)
