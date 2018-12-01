@@ -547,10 +547,10 @@ def test_mnist_online_delayed(
 
 
 if __name__ == '__main__':
-    # TODO: clone model for every test
-    model = MLP(dropout=False)
-    model.cuda()
-    print('Model initialized.')
+    # # TODO: clone model for every test
+    # model = MLP(dropout=False)
+    # model.cuda()
+    # print('Model initialized.')
 
     # # Few iterations
     # data = data_unique_n(100, 5)

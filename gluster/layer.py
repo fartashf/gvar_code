@@ -8,7 +8,7 @@ def get_gluster_module(module):
     module_name = module.__class__.__name__
     glayers = {
             'Sequential': GlusterModule,
-            'Linear': GlusterLinear, 'Conv2D': GlusterConv}
+            'Linear': GlusterLinear, 'Conv2d': GlusterConv}
     if module_name in glayers:
         return glayers[module_name]
     return None
@@ -46,7 +46,16 @@ class GlusterModule(object):
             return
         if not self.has_param:
             return
-        self.Ai = Ai[0].clone().detach()
+        Ai = Ai[0].clone().detach()
+        self.Ai = self._post_proc_Ai(Ai)
+
+    def _post_proc_Ai(self, Ai0):
+        return Ai0
+
+    def _post_proc_Go(self, Go0):
+        if self.no_grad:
+            Go0.fill_(1./Go0.numel())
+        return Go0
 
     def _save_dist_hook(self, m, grad_input, grad_output):
         if not self.is_active:
@@ -54,20 +63,15 @@ class GlusterModule(object):
         if not self.has_param:
             return
         Ai = self.Ai
-        Gi = grad_input[0].clone().detach()
-        Go = grad_output[0].clone().detach()
-        self.Gi = Gi
-        self.Go = Go
-        if self.no_grad:
-            Gi.fill_(1./Gi.numel())
-            Go.fill_(1./Go.numel())
-        self.ograds = Go
+        # Gi = grad_input[0].clone().detach()  # has 3 elements, 1 is Gi?
+        Go0 = grad_output[0].clone().detach()
+        self.Go = Go = self._post_proc_Go(Go0)
         # print('%s %s' % (Ai.shape, Ai.shape))
         O = []
         if self.module.bias is not None:
-            O += [self._save_dist_hook_bias(Ai, Gi, Go)]
+            O += [self._save_dist_hook_bias(Ai, Go)]
         if self.module.weight is not None:
-            O += [self._save_dist_hook_weight(Ai, Gi, Go)]
+            O += [self._save_dist_hook_weight(Ai, Go)]
         # TODO: per-layer clusters
         self.batch_dist = O
 
@@ -99,14 +103,6 @@ class GlusterModule(object):
         self.Co_new.fill_(0)
         self.Cb_new.fill_(0)
 
-    def accum_new_centers(self, assign_i):
-        if not self.has_param:
-            return
-        # TODO: SVD
-        self.Ci_new.scatter_add_(0, assign_i.expand_as(self.Ai), self.Ai)
-        self.Co_new.scatter_add_(0, assign_i.expand_as(self.Go), self.Go)
-        self.Cb_new.scatter_add_(0, assign_i.expand_as(self.Go), self.Go)
-
     def update_batch(self, cluster_size):
         if not self.has_param:
             return
@@ -121,15 +117,15 @@ class GlusterModule(object):
         self.Co.mul_(pre_size).add_(self.Co_new).div_(new_size)
         self.Cb.mul_(pre_size).add_(self.Cb_new).div_(new_size)
 
+    def accum_new_centers(self, assign_i):
+        if not self.has_param:
+            return
+        raise Exception('Not implemented.')
+
     def reinit_from_data(self, reinits, perm):
         if not self.has_param:
             return
-        # Ci0, Co0 = self._init_centers_layer(module.weight, nzeros)
-        # Ci.masked_scatter_(counts == 0, Ci0)
-        # Co.masked_scatter_(counts == 0, Co0)
-        self.Ci.masked_scatter_(reinits, self.Ai[perm])
-        self.Co.masked_scatter_(reinits, self.Go[perm])
-        self.Cb.masked_scatter_(reinits, self.Go[perm])
+        raise Exception('Not implemented.')
 
     def reinit_from_largest(self, ri, li):
         if not self.has_param:
@@ -193,7 +189,8 @@ class GlusterContainer(GlusterModule):
     def _init_children(self, *args, **kwargs):
         for m in self.active_modules:
             glayer = get_gluster_module(m)
-            self.children[m] = glayer(*((m, )+args[1:]), **kwargs)
+            if glayer is not None:
+                self.children[m] = glayer(*((m, )+args[1:]), **kwargs)
 
     def _set_default_loop(self):
         loop_functions = [
@@ -219,7 +216,7 @@ class GlusterLinear(GlusterModule):
         self.Co_new = torch.zeros_like(self.Co)
         self.Cb_new = torch.zeros_like(self.Cb)
 
-    def _save_dist_hook_bias(self, Ai, Gi, Go):
+    def _save_dist_hook_bias(self, Ai, Go):
         C = self.nclusters
         B = Ai.shape[0]
 
@@ -239,7 +236,7 @@ class GlusterLinear(GlusterModule):
         O = CC-2*CG
         return O
 
-    def _save_dist_hook_weight(self, Ai, Gi, Go):
+    def _save_dist_hook_weight(self, Ai, Go):
         C = self.nclusters
         B = Ai.shape[0]
 
@@ -256,26 +253,55 @@ class GlusterLinear(GlusterModule):
         assert O.shape == (C, B), 'O: C x B.'
         return O
 
+    def reinit_from_data(self, reinits, perm):
+        # Ci0, Co0 = self._init_centers_layer(module.weight, nzeros)
+        # Ci.masked_scatter_(counts == 0, Ci0)
+        # Co.masked_scatter_(counts == 0, Co0)
+        self.Ci.masked_scatter_(reinits, self.Ai[perm])
+        self.Co.masked_scatter_(reinits, self.Go[perm])
+        self.Cb.masked_scatter_(reinits, self.Go[perm])
+
+    def accum_new_centers(self, assign_i):
+        # TODO: SVD
+        Ai = self.Ai
+        Go = self.Go
+        self.Ci_new.scatter_add_(0, assign_i.expand_as(Ai), Ai)
+        self.Co_new.scatter_add_(0, assign_i.expand_as(Go), Go)
+        self.Cb_new.scatter_add_(0, assign_i.expand_as(Go), Go)
+
 
 class GlusterConv(GlusterModule):
     def __init__(self, *args, **kwargs):
         super(GlusterConv, self).__init__(*args, **kwargs)
         self.param = self.module.weight
-        din = list(self.param.shape)[1:]
+        din = np.prod(list(self.param.shape)[1:])
         dout = self.param.shape[0]
         eps = self.eps
         C = self.nclusters
-        self.Ci = torch.rand([C]+din).cuda()/(np.prod(din)+dout)*eps,
-        self.Co = torch.rand((C, dout)).cuda()/(np.prod(din)+dout)*eps
+        self.Ci = torch.rand((C, din)).cuda()/(din+dout)*eps
+        self.Co = torch.rand((C, dout)).cuda()/(din+dout)*eps
         self.Cb = torch.rand((C, dout)).cuda()/dout*self.eps
+        self.Ci_new = torch.zeros_like(self.Ci)
+        self.Co_new = torch.zeros_like(self.Co)
+        self.Cb_new = torch.zeros_like(self.Cb)
 
-    def _save_dist_hook_bias(self, Ai0, Gi, Go0):
+    def _post_proc_Ai(self, Ai0):
         module = self.module
-        C = self.nclusters
-        B = Ai0.shape[0]
-        Go = Go0.reshape(Go0.shape[:-2]+(np.prod(Go0.shape[-2:]), ))
+        Ai = F.unfold(
+                Ai0, module.kernel_size,
+                padding=module.padding,
+                stride=module.stride, dilation=module.dilation)
+        return Ai
 
-        Cb = self.centers[module.bias]
+    def _post_proc_Go(self, Go0):
+        Go = Go0.reshape(Go0.shape[:-2]+(np.prod(Go0.shape[-2:]), ))
+        return Go
+
+    def _save_dist_hook_bias(self, Ai, Go):
+        C = self.nclusters
+        B = Ai.shape[0]
+
+        Cb = self.Cb
         # W^Ta_i + b = a_{i+1}
         # dL/db = dL/da_{i+1} da_{i+1}/db = sum(dL/da_{i+1})
         # Cb: C x d_out
@@ -291,24 +317,18 @@ class GlusterConv(GlusterModule):
         O = CC-2*CG
         return O
 
-    def _save_dist_hook_weight(self, Ai0, Gi, Go0):
-        module = self.module
+    def _save_dist_hook_weight(self, Ai, Go):
         param = self.param
         C = self.nclusters
-        B = Ai0.shape[0]
-        din = param.shape[1:]
+        B = Ai.shape[0]
+        din = np.prod(param.shape[1:])
         dout = param.shape[0]
-        Go = Go0.reshape(Go0.shape[:-2]+(np.prod(Go0.shape[-2:]), ))
         T = Go.shape[-1]
 
         assert Go.shape == (B, dout, T), 'Go: B x dout x T'
-        Ai = F.unfold(
-                Ai0, module.kernel_size,
-                padding=module.padding,
-                stride=module.stride, dilation=module.dilation)
-        assert Ai.shape == (B, np.prod(din), T), 'Ai: B x din x T'
-        Ci, Co = self.centers[module.weight]
-        assert Ci.shape == (C, )+din, 'Ci: C x din'
+        assert Ai.shape == (B, din, T), 'Ai: B x din x T'
+        Ci, Co = self.Ci, self.Co
+        assert Ci.shape == (C, din), 'Ci: C x din'
         assert Co.shape == (C, dout), 'Co: C x dout'
         Ci = Ci.reshape((C, -1))
         # TODO: one big einsum
@@ -324,3 +344,20 @@ class GlusterConv(GlusterModule):
         assert O.shape == (C, B), 'O: C x B.'
 
         return O
+
+    def reinit_from_data(self, reinits, perm):
+        Ai = self.Ai[perm].sum(-1)
+        Go = self.Go[perm].sum(-1)
+        self.Ci.masked_scatter_(reinits, Ai)
+        self.Co.masked_scatter_(reinits, Go)
+        self.Cb.masked_scatter_(reinits, Go)
+
+    def accum_new_centers(self, assign_i):
+        if not self.has_param:
+            return
+        # TODO: SVD
+        Ai = self.Ai.sum(-1)
+        Go = self.Go.sum(-1)
+        self.Ci_new.scatter_add_(0, assign_i.expand_as(Ai), Ai)
+        self.Co_new.scatter_add_(0, assign_i.expand_as(Go), Go)
+        self.Cb_new.scatter_add_(0, assign_i.expand_as(Go), Go)
