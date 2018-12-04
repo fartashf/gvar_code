@@ -113,6 +113,7 @@ class GlusterModule(object):
     def update_online(self, pre_size, new_size):
         if not self.has_param:
             return
+        # TODO: .4/5.5s overhead
         self.Ci.mul_(pre_size).add_(self.Ci_new).div_(new_size)
         self.Co.mul_(pre_size).add_(self.Co_new).div_(new_size)
         self.Cb.mul_(pre_size).add_(self.Cb_new).div_(new_size)
@@ -149,14 +150,7 @@ class GlusterModule(object):
     def get_centers(self):
         if not self.has_param:
             return
-        centers = []
-        Cf = torch.matmul(self.Co.unsqueeze(-1), self.Ci.unsqueeze(1))
-        centers += [Cf]
-        centers += [self.Cb]
-        assert Cf.shape == (
-                self.Ci.shape[0], self.Co.shape[1], self.Ci.shape[1]
-                ), 'Cf: C x d_out x d_in'
-        return centers
+        raise Exception('Not implemented.')
 
 
 class LoopFunction(object):
@@ -229,6 +223,7 @@ class GlusterLinear(GlusterModule):
         # https://discuss.pytorch.org/t/dot-product-batch-wise/9746/3
         # CC = torch.matmul(Cb.unsqueeze(1), Cb.unsqueeze(2))
         # bmm is probably slower
+        # TODO: save dists 1.5/5.5s overhead
         CC = (Cb*Cb).sum(1).unsqueeze(-1)
         assert CC.shape == (C, 1), 'CC: C x 1.'
         CG = torch.matmul(Cb, Go.t())
@@ -265,13 +260,26 @@ class GlusterLinear(GlusterModule):
         # TODO: SVD
         Ai = self.Ai
         Go = self.Go
+        # TODO: .7/5.5s overhead
         self.Ci_new.scatter_add_(0, assign_i.expand_as(Ai), Ai)
         self.Co_new.scatter_add_(0, assign_i.expand_as(Go), Go)
         self.Cb_new.scatter_add_(0, assign_i.expand_as(Go), Go)
 
+    def get_centers(self):
+        centers = []
+        Cf = torch.matmul(self.Co.unsqueeze(-1), self.Ci.unsqueeze(1))
+        centers += [Cf]
+        centers += [self.Cb]
+        assert Cf.shape == (
+                self.Ci.shape[0], self.Co.shape[1], self.Ci.shape[1]
+                ), 'Cf: C x d_out x d_in'
+        return centers
+
 
 class GlusterConv(GlusterModule):
     def __init__(self, *args, **kwargs):
+        # TODO: Roger, Martens, A Kronecker-factored approximate Fisher matrix
+        # for convolution layer
         super(GlusterConv, self).__init__(*args, **kwargs)
         self.param = self.module.weight
         din = np.prod(list(self.param.shape)[1:])
@@ -300,6 +308,7 @@ class GlusterConv(GlusterModule):
     def _save_dist_hook_bias(self, Ai, Go):
         C = self.nclusters
         B = Ai.shape[0]
+        T = Go.shape[-1]
 
         Cb = self.Cb
         # W^Ta_i + b = a_{i+1}
@@ -312,7 +321,8 @@ class GlusterConv(GlusterModule):
         # bmm is probably slower
         CC = (Cb*Cb).sum(1).unsqueeze(-1)
         assert CC.shape == (C, 1), 'CC: C x 1.'
-        CG = torch.einsum('ko,bot->kb', [Cb, Go])
+        # TODO: mean/sum?
+        CG = torch.einsum('ko,bot->kb', [Cb, Go])/T
         assert CG.shape == (C, B), 'CG: C x B.'
         O = CC-2*CG
         return O
@@ -330,11 +340,12 @@ class GlusterConv(GlusterModule):
         Ci, Co = self.Ci, self.Co
         assert Ci.shape == (C, din), 'Ci: C x din'
         assert Co.shape == (C, dout), 'Co: C x dout'
-        Ci = Ci.reshape((C, -1))
+        # Ci = Ci.reshape((C, -1))
         # TODO: one big einsum
         CiAi = torch.einsum('ki,bit->kbt', [Ci, Ai])
         CoGo = torch.einsum('ko,bot->kbt', [Co, Go])
-        CG = torch.einsum('kbt,kbt->kb', [CiAi, CoGo])
+        # TODO: mean/sum?
+        CG = torch.einsum('kbt,kbt->kb', [CiAi, CoGo])/T
         assert CG.shape == (C, B), 'CG: C x B.'
         CiCi = (Ci*Ci).view(Ci.shape[0], -1).sum(1)
         CoCo = (Co*Co).view(Co.shape[0], -1).sum(1)
@@ -346,8 +357,10 @@ class GlusterConv(GlusterModule):
         return O
 
     def reinit_from_data(self, reinits, perm):
-        Ai = self.Ai[perm].sum(-1)
-        Go = self.Go[perm].sum(-1)
+        # TODO: mean/sum?
+        T = self.Go.shape[-1]
+        Ai = self.Ai[perm].sum(-1)/T
+        Go = self.Go[perm].sum(-1)/T
         self.Ci.masked_scatter_(reinits, Ai)
         self.Co.masked_scatter_(reinits, Go)
         self.Cb.masked_scatter_(reinits, Go)
@@ -356,8 +369,24 @@ class GlusterConv(GlusterModule):
         if not self.has_param:
             return
         # TODO: SVD
-        Ai = self.Ai.sum(-1)
-        Go = self.Go.sum(-1)
+        # TODO: mean/sum?
+        T = self.Go.shape[-1]
+        Ai = self.Ai.sum(-1)/T
+        Go = self.Go.sum(-1)/T
         self.Ci_new.scatter_add_(0, assign_i.expand_as(Ai), Ai)
         self.Co_new.scatter_add_(0, assign_i.expand_as(Go), Go)
         self.Cb_new.scatter_add_(0, assign_i.expand_as(Go), Go)
+
+    def get_centers(self):
+        C = self.nclusters
+        dout = self.module.weight.shape[0]
+        din = self.module.weight.shape[1:]
+        centers = []
+        # TODO: dist to centers is bad, maybe because of /T and numerical prec
+        Cf = torch.matmul(self.Co.unsqueeze(-1), self.Ci.unsqueeze(1))
+        assert Cf.shape == (C, dout, np.prod(din)), 'Cf: C x din x dout'
+        Cf = Cf.reshape((C, ) + self.module.weight.shape)
+        assert Cf.shape == (C, dout, )+din, 'Cf: C x co x ci x H x W'
+        centers += [Cf]
+        centers += [self.Cb]
+        return centers

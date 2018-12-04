@@ -1,3 +1,4 @@
+import unittest
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -11,6 +12,14 @@ sys.path.append('../')
 from models.mnist import MLP, Convnet  # NOQA
 from gluster.gluster import GradientClusterOnline  # NOQA
 from gluster.gluster import GradientClusterBatch  # NOQA
+
+
+def set_seed(seed):
+    print('seed      : %d' % seed)
+    torch.backends.cudnn.deterministic = True
+    torch.manual_seed(seed)
+    np.set_printoptions(suppress=True)
+    np.random.seed(seed)
 
 
 def print_stats(model, gluster, X, T, batch_size):
@@ -29,6 +38,8 @@ def print_stats(model, gluster, X, T, batch_size):
         t = Variable(T[i:i + 1]).cuda()
         model.zero_grad()
         y = model(x)
+        # TODO: dist to centers for Conv is not zero
+        # fix that, do all tests, move to sampling
         loss = F.nll_loss(y, t) / batch_size
         grad_params = torch.autograd.grad(loss, W)
         L = [(g - c).pow(2).view(nclusters, -1).sum(1).cpu().numpy()
@@ -116,22 +127,16 @@ def model_time(model, X, T, batch_size, niters):
 
 
 def test_gluster_online(model, batch_size, data, nclusters, beta, min_size,
-                        reinit_method, seed, niters):
+                        reinit_method, niters):
     X, T, Xte, Yte = data
     train_size = X.shape[0]
     print('batch_size: %d' % batch_size)
     print('nclusters : %d' % nclusters)
     print('beta      : %d' % beta)
-    print('seed      : %d' % seed)
     print('niters    : %d' % niters)
     print('train_size: %d' % train_size)
     print('min size  : %d' % min_size)
     print('reinit    : %s' % reinit_method)
-
-    torch.backends.cudnn.deterministic = True
-    torch.manual_seed(seed)
-    np.set_printoptions(suppress=True)
-    np.random.seed(seed)
 
     modelg = copy.deepcopy(model)
     gluster = GradientClusterOnline(modelg, beta, min_size, reinit_method,
@@ -188,20 +193,14 @@ class DataLoader(object):
 
 
 def test_gluster_batch(
-        model, batch_size, data, nclusters, min_size, seed, citers):
+        model, batch_size, data, nclusters, min_size, citers):
     X, T, Xte, Yte = data
     train_size = X.shape[0]
     print('batch_size: %d' % batch_size)
     print('nclusters : %d' % nclusters)
     print('min_size  : %d' % min_size)
-    print('seed      : %d' % seed)
     print('citers    : %d' % citers)
     print('train_size: %d' % train_size)
-
-    torch.backends.cudnn.deterministic = True
-    torch.manual_seed(seed)
-    np.set_printoptions(suppress=True)
-    np.random.seed(seed)
 
     modelg = copy.deepcopy(model)
     gluster = GradientClusterBatch(modelg, min_size, nclusters=nclusters)
@@ -260,19 +259,13 @@ def train(epoch, train_loader, model, optimizer):
 
 
 def test_mnist(
-        model, batch_size, epochs, nclusters, min_size, seed, citers, figname,
+        model, batch_size, epochs, nclusters, min_size, citers, figname,
         ignore_modules=[], no_grad=False):
     print('batch_size: %d' % batch_size)
     print('epochs    : %d' % epochs)
     print('nclusters : %d' % nclusters)
     print('min_size  : %d' % min_size)
-    print('seed      : %d' % seed)
     print('citers    : %d' % citers)
-
-    torch.backends.cudnn.deterministic = True
-    torch.manual_seed(seed)
-    np.set_printoptions(suppress=True)
-    np.random.seed(seed)
 
     train_dataset = datasets.MNIST(
         './data/mnist', train=True, download=True,
@@ -328,19 +321,13 @@ def test_mnist(
 
 def test_mnist_online(
         model, batch_size, epochs, nclusters, beta, min_size,
-        reinit_method, seed, figname):
+        reinit_method, figname):
     print('batch_size: %d' % batch_size)
     print('epochs    : %d' % epochs)
     print('nclusters : %d' % nclusters)
     print('beta      : %d' % beta)
     print('min_size  : %d' % min_size)
-    print('seed      : %d' % seed)
     print('reinit    : %s' % reinit_method)
-
-    torch.backends.cudnn.deterministic = True
-    torch.manual_seed(seed)
-    np.set_printoptions(suppress=True)
-    np.random.seed(seed)
 
     train_dataset = datasets.MNIST(
         './data/mnist', train=True, download=True,
@@ -420,20 +407,14 @@ def test_mnist_online(
 
 def test_mnist_online_delayed(
         model, batch_size, epochs, nclusters, beta, min_size,
-        reinit_method, delay, seed, figname):
+        reinit_method, delay, figname):
     print('batch_size: %d' % batch_size)
     print('epochs    : %d' % epochs)
     print('nclusters : %d' % nclusters)
     print('beta      : %d' % beta)
     print('min_size  : %d' % min_size)
-    print('seed      : %d' % seed)
     print('reinit    : %s' % reinit_method)
     print('delay     : %d' % delay)
-
-    torch.backends.cudnn.deterministic = True
-    torch.manual_seed(seed)
-    np.set_printoptions(suppress=True)
-    np.random.seed(seed)
 
     train_dataset = datasets.MNIST(
         './data/mnist', train=True, download=True,
@@ -482,7 +463,7 @@ def test_mnist_online_delayed(
                 tic = time.time()
                 modelg.train()
                 gluster.copy_(model)
-                modelg.zero_grad()
+                # modelg.zero_grad()
                 # gluster.zero_data()
                 output = modelg(data)
                 loss = F.nll_loss(output, target)
@@ -546,157 +527,209 @@ def test_mnist_online_delayed(
                figname)
 
 
+class ToyTests(object):
+    def test_few_iters(self):
+        model = self.model
+        # Few iterations
+        data = data_unique_n(100, 5)
+        test_gluster_online(model, 10, data, 5, .9, 1, 'data', 10)
+        print(">>> One cluster still hasn't converged?")
+        test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 10)
+        print(">>> But the init with largest takes longer")
+
+    def test_more_iters(self):
+        model = self.model
+        # More iterations
+        data = data_unique_n(100, 5)
+        test_gluster_online(model, 10, data, 5, .9, 1, 'data', 100)
+        print(">>> This has now converged.")
+        test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 100)
+        print(">>> centers should match input based on Dist")
+
+    def test_more_data(self):
+        model = self.model
+        # More unique data than centers
+        data = data_unique_n(100, 10)
+        test_gluster_online(model, 10, data, 5, .9, 1, 'data', 100)
+        test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 100)
+        print(
+                "*** Clusters should get about the same "
+                "number of data points, but they don't, why?***")
+
+    def test_more_centers(self):
+        model = self.model
+        # More centers than data
+        # TODO: stop reinit if more centers
+        data = data_unique_n(100, 5)
+        test_gluster_online(model, 10, data, 10, .9, 1, 'data', 100)
+        print(
+                "*** 5 centers are reinited > 30 "
+                "times but first 5 are stable ***")
+        test_gluster_online(model, 10, data, 10, .9, 1, 'largest', 100)
+
+    def test_imbalance(self):
+        model = self.model
+        # Imbalance data
+        data = data_unique_perc(100, [.9, .1])
+        test_gluster_online(model, 10, data, 2, .9, 1, 'data', 10)
+        test_gluster_online(model, 10, data, 2, .9, 1, 'largest', 10)
+        print(
+                "***  finds 2 clusters in 1 reinit "
+                "but hasn't converged in 10 ***")
+
+    def test_imbalance_more_iters(self):
+        model = self.model
+        # More iterations
+        data = data_unique_perc(100, [.9, .1])
+        test_gluster_online(model, 10, data, 2, .9, 1, 'data', 100)
+        test_gluster_online(model, 10, data, 2, .9, 1, 'largest', 100)
+        print("***  converged now ***")
+
+    def test_time(self):
+        model = self.model
+        # Time test
+        data = data_unique_perc(1000, [.9, .1])
+        test_gluster_online(model, 128, data, 2, .9, 1, 'data', 100)
+        print("2-3x solwer")
+
+    def test_noise(self):
+        model = self.model
+        # noise
+        data = data_unique_perc(100, [.9, .1])
+        data = purturb_data(data, .01)
+        test_gluster_online(model, 10, data, 2, .9, 1, 'data', 100)
+        test_gluster_online(model, 10, data, 2, .9, 1, 'largest', 100)
+
+    def test_gluster_batch(self):
+        model = self.model
+        # gluster batch
+        data = data_unique_n(100, 5)
+        test_gluster_batch(model, 10, data, 5, 1, 10)
+
+    def test_gluster_batch_noise(self):
+        model = self.model
+        # gluster batch noise
+        data = data_unique_perc(100, [.9, .1])
+        data = purturb_data(data, .01)
+        # TODO: seed 12345
+        test_gluster_batch(model, 10, data, 2, 1, 10)
+
+
+class MNISTTest(object):
+    def test_mnist_citer2(self):
+        model = self.model
+        # MNIST
+        citers = 2
+        figname = self.prefix+',nclusters_2,citers_2.pth.tar'
+        test_mnist(model, 128, 2, 2, 10, citers, figname)
+
+    def test_mnist_citer10(self):
+        model = self.model
+        citers = 10
+        figname = self.prefix+',nclusters_2,citers_10.pth.tar'
+        test_mnist(model, 128, 2, 2, 10, citers, figname)
+
+    def test_mnist_nclusters10(self):
+        model = self.model
+        nclusters = 10
+        citers = 10
+        figname = self.prefix+',nclusters_10,citers_10.pth.tar'
+        test_mnist(model, 128, 2, nclusters, 10, citers, figname)
+
+    def test_mnist_online(self):
+        model = self.model
+        # Online gluster on MNIST
+        epochs = 2
+        nclusters = 10
+        beta = .999
+        min_size = 1
+        reinit_method = 'largest'
+        figname = self.prefix+',nclusters_10,online.pth.tar'
+        test_mnist_online(model, 128, epochs, nclusters,
+                          beta, min_size, reinit_method, figname)
+
+    def test_mnist_online_delayed(self):
+        model = self.model
+        # Online gluster with delayed update
+        epochs = 2
+        nclusters = 10
+        beta = .999
+        min_size = 1
+        reinit_method = 'largest'
+        delay = 10
+        figname = (
+            self.prefix+',nclusters_10,online,delay_10.pth.tar')
+        test_mnist_online_delayed(
+                model,
+                128, epochs, nclusters, beta, min_size, reinit_method, delay,
+                figname)
+
+    def test_mnist_online_delay100(self):
+        model = self.model
+        epochs = 2
+        nclusters = 10
+        beta = .999
+        min_size = 1
+        reinit_method = 'largest'
+        delay = 100
+        figname = (
+            self.prefix+',nclusters_10,online,delay_100.pth.tar')
+        test_mnist_online_delayed(
+                model,
+                128, epochs, nclusters, beta, min_size, reinit_method, delay,
+                figname)
+
+    def test_mnist_input(self):
+        model = self.model
+        # Batch gluster layer 1, input only
+        nclusters = 10
+        citers = 10
+        no_grad = True
+        ignore_modules = ['fc2', 'fc3', 'fc4']
+        figname = self.prefix+',nclusters_10,input.pth.tar'
+        test_mnist(
+                model, 128, 2, nclusters, 10, citers, figname,
+                ignore_modules, no_grad=no_grad)
+
+    def test_mnist_layer1(self):
+        model = self.model
+        # Batch gluster layer 1
+        nclusters = 10
+        citers = 10
+        ignore_modules = ['fc2', 'fc3', 'fc4']
+        figname = self.prefix+',nclusters_10,layer_1.pth.tar'
+        test_mnist(
+                model, 128, 2, nclusters, 10, citers,
+                figname, ignore_modules)
+
+    def test_mnist_layer4(self):
+        model = self.model
+        # Batch gluster layer 4
+        nclusters = 10
+        citers = 10
+        ignore_modules = ['fc1', 'fc2', 'fc3']
+        figname = self.prefix+',nclusters_10,layer_4.pth.tar'
+        test_mnist(model, 128, 2, nclusters, 10,
+                   citers, figname, ignore_modules)
+
+
+class TestGlusterMLP(unittest.TestCase, ToyTests, MNISTTest):
+    def setUp(self):
+        set_seed(1234)
+        self.model = MLP(dropout=False)
+        self.model.cuda()
+        print('Model initialized.')
+        self.prefix = '/u/faghri/dmom/code/notebooks/figs_gluster/mlp'
+
+
+class TestGlusterConv(unittest.TestCase, ToyTests, MNISTTest):
+    def setUp(self):
+        set_seed(1234)
+        self.model = Convnet(dropout=False)
+        self.model.cuda()
+        print('Model initialized.')
+        self.prefix = '/u/faghri/dmom/code/notebooks/figs_gluster/cnn'
+
+
 if __name__ == '__main__':
-    # # TODO: clone model for every test
-    # model = MLP(dropout=False)
-    # model.cuda()
-    # print('Model initialized.')
-
-    # # Few iterations
-    # data = data_unique_n(100, 5)
-    # test_gluster_online(model, 10, data, 5, .9, 1, 'data', 1234, 10)
-    # print(">>> One cluster still hasn't converged?")
-    # test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 1234, 10)
-    # print(">>> But the init with largest takes longer")
-
-    # # More iterations
-    # data = data_unique_n(100, 5)
-    # test_gluster_online(model, 10, data, 5, .9, 1, 'data', 1234, 100)
-    # print(">>> This has now converged.")
-    # test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 1234, 100)
-    # print(">>> centers should match input based on Dist")
-
-    # # More unique data than centers
-    # data = data_unique_n(100, 10)
-    # test_gluster_online(model, 10, data, 5, .9, 1, 'data', 1234, 100)
-    # test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 1234, 100)
-    # print(
-    #         "*** Clusters should get about the same "
-    #         "number of data points, but they don't, why?***")
-
-    # # More centers than data
-    # # TODO: stop reinit if more centers
-    # data = data_unique_n(100, 5)
-    # test_gluster_online(model, 10, data, 10, .9, 1, 'data', 1234, 100)
-    # print("*** 5 centers are reinited > 30 times but first 5 are stable ***")
-    # test_gluster_online(model, 10, data, 10, .9, 1, 'largest', 1234, 100)
-
-    # # Imbalance data
-    # data = data_unique_perc(100, [.9, .1])
-    # test_gluster_online(model, 10, data, 2, .9, 1, 'data', 1234, 10)
-    # test_gluster_online(model, 10, data, 2, .9, 1, 'largest', 1234, 10)
-    # print("***  finds 2 clusters in 1 reinit but hasn't converged in 10 ***")
-
-    # # More iterations
-    # data = data_unique_perc(100, [.9, .1])
-    # test_gluster_online(model, 10, data, 2, .9, 1, 'data', 1234, 100)
-    # test_gluster_online(model, 10, data, 2, .9, 1, 'largest', 1234, 100)
-    # print("***  converged now ***")
-
-    # # Time test
-    # data = data_unique_perc(1000, [.9, .1])
-    # test_gluster_online(model, 128, data, 2, .9, 1, 'data', 1234, 100)
-    # print("2-3x solwer")
-
-    # # noise
-    # data = data_unique_perc(100, [.9, .1])
-    # data = purturb_data(data, .01)
-    # test_gluster_online(model, 10, data, 2, .9, 1, 'data', 1234, 100)
-    # test_gluster_online(model, 10, data, 2, .9, 1, 'largest', 1234, 100)
-
-    # # gluster batch
-    # data = data_unique_n(100, 5)
-    # test_gluster_batch(model, 10, data, 5, 1, 1234, 10)
-
-    # # gluster batch noise
-    # data = data_unique_perc(100, [.9, .1])
-    # data = purturb_data(data, .01)
-    # test_gluster_batch(model, 10, data, 2, 1, 12345, 10)
-
-    # # MNIST
-    # citers = 2
-    # figname = 'notebooks/figs_gluster/mlp,nclusters_2,citers_2.pth.tar'
-    # test_mnist(model, 128, 2, 2, 10, 1234, citers, figname)
-
-    # citers = 10
-    # figname = 'notebooks/figs_gluster/mlp,nclusters_2,citers_10.pth.tar'
-    # test_mnist(model, 128, 2, 2, 10, 1234, citers, figname)
-
-    # nclusters = 10
-    # citers = 10
-    # figname = 'notebooks/figs_gluster/mlp,nclusters_10,citers_10.pth.tar'
-    # test_mnist(model, 128, 2, nclusters, 10, 1234, citers, figname)
-
-    # # Online gluster on MNIST
-    # epochs = 2
-    # nclusters = 10
-    # beta = .999
-    # min_size = 1
-    # reinit_method = 'largest'
-    # figname = 'notebooks/figs_gluster/mlp,nclusters_10,online.pth.tar'
-    # test_mnist_online(model, 128, epochs, nclusters,
-    #                   beta, min_size, reinit_method, 1234, figname)
-
-    # # Online gluster with delayed update
-    # epochs = 2
-    # nclusters = 10
-    # beta = .999
-    # min_size = 1
-    # reinit_method = 'largest'
-    # delay = 10
-    # figname = (
-    #     'notebooks/figs_gluster/mlp,nclusters_10,online,delay_10.pth.tar')
-    # test_mnist_online_delayed(
-    #         model,
-    #         128, epochs, nclusters, beta, min_size, reinit_method, delay,
-    #         1234, figname)
-
-    # epochs = 2
-    # nclusters = 10
-    # beta = .999
-    # min_size = 1
-    # reinit_method = 'largest'
-    # delay = 100
-    # figname = (
-    #     'notebooks/figs_gluster/mlp,nclusters_10,online,delay_100.pth.tar')
-    # test_mnist_online_delayed(
-    #         model,
-    #         128, epochs, nclusters, beta, min_size, reinit_method, delay,
-    #         1234, figname)
-
-    # # Batch gluster layer 1, input only
-    # nclusters = 10
-    # citers = 10
-    # no_grad = True
-    # ignore_modules = ['fc2', 'fc3', 'fc4']
-    # figname = 'notebooks/figs_gluster/mlp,nclusters_10,input.pth.tar'
-    # test_mnist(
-    #         model, 128, 2, nclusters, 10, 1234, citers, figname,
-    #         ignore_modules, no_grad=no_grad)
-
-    # # Batch gluster layer 1
-    # nclusters = 10
-    # citers = 10
-    # ignore_modules = ['fc2', 'fc3', 'fc4']
-    # figname = 'notebooks/figs_gluster/mlp,nclusters_10,layer_1.pth.tar'
-    # test_mnist(
-    #         model, 128, 2, nclusters, 10, 1234, citers,
-    #         figname, ignore_modules)
-
-    # # Batch gluster layer 4
-    # nclusters = 10
-    # citers = 10
-    # ignore_modules = ['fc1', 'fc2', 'fc3']
-    # figname = 'notebooks/figs_gluster/mlp,nclusters_10,layer_4.pth.tar'
-    # test_mnist(model, 128, 2, nclusters, 10, 1234,
-    #            citers, figname, ignore_modules)
-
-    model = Convnet(dropout=False)
-    model.cuda()
-    print('Model initialized.')
-
-    # Batch gluster conv
-    nclusters = 10
-    citers = 10
-    figname = 'notebooks/figs_gluster/mlp,nclusters_10,conv.pth.tar'
-    test_mnist(model, 128, 0, nclusters, 10, 1234, citers, figname)
+    unittest.main()
