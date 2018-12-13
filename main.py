@@ -13,13 +13,8 @@ import yaml
 import os
 import glob
 import models
-import models.mnist
-import models.cifar10
-import models.logreg
-import models.imagenet
-import models.cifar10_wresnet
-import models.cifar10_wresnet2
 # import nonacc_autograd
+import utils
 from optim.dmom import DMomSGD
 from optim.add_dmom import AddDMom
 from optim.jvp import DMomSGDJVP, DMomSGDNoScheduler
@@ -28,7 +23,7 @@ import torch.backends.cudnn as cudnn
 from train import train
 from test import test, stats
 from args import add_args
-from gluster import GradientCluster
+from gluster.gluster import GradientClusterOnline
 tb_logger = TBXWrapper()
 
 
@@ -42,7 +37,7 @@ def main():
     od = vars(args)
     for k, v in od.iteritems():
         opt[k] = v
-    opt = DictWrapper(opt)
+    opt = utils.DictWrapper(opt)
 
     if opt.lr_scale:
         opt.lr = opt.lr * opt.batch_size/128.
@@ -72,46 +67,7 @@ def main():
     epoch_iters = int(np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
     opt.maxiter = epoch_iters * opt.epochs
 
-    if opt.dataset == 'mnist':
-        if opt.arch == 'cnn':
-            model = models.mnist.Convnet(not opt.nodropout)
-        elif opt.arch == 'bigcnn':
-            model = models.mnist.BigConvnet(not opt.nodropout)
-        elif opt.arch == 'mlp':
-            model = models.mnist.MLP(not opt.nodropout)
-        elif opt.arch == 'smlp':
-            model = models.mnist.SmallMLP(not opt.nodropout)
-        elif opt.arch == 'ssmlp':
-            model = models.mnist.SuperSmallMLP(not opt.nodropout)
-        # else:
-        #     model = models.mnist.MNISTNet()
-    elif opt.dataset == 'cifar10' or opt.dataset == 'svhn':
-        # model = torch.nn.DataParallel(
-        #     models.cifar10.__dict__[opt.arch]())
-        # model.cuda()
-        if opt.arch == 'cnn':
-            model = models.cifar10.Convnet()
-        elif opt.arch.startswith('wrn'):
-            depth, widen_factor = map(int, opt.arch[3:].split('-'))
-            # model = models.cifar10_wresnet.Wide_ResNet(28, 10, 0.3, 10)
-            model = models.cifar10_wresnet2.WideResNet(
-                depth, opt.num_class, widen_factor, 0.3)
-        else:
-            model = models.cifar10.__dict__[opt.arch]()
-        model = torch.nn.DataParallel(model)
-    elif opt.dataset == 'imagenet':
-        model = models.imagenet.Model(opt.arch, opt.pretrained)
-    elif opt.dataset.startswith('imagenet'):
-        model = models.imagenet.Model(opt.arch, opt.pretrained, opt.num_class)
-    elif opt.dataset == 'logreg':
-        model = models.logreg.Linear(opt.dim, opt.num_class)
-    elif opt.dataset == '10class':
-        model = models.logreg.Linear(opt.dim, opt.num_class)
-    elif opt.dataset == '5class':
-        model = models.logreg.Linear(opt.dim, opt.num_class)
-
-    if opt.cuda:
-        model.cuda()
+    model = models.init_model(opt)
 
     if opt.label_smoothing > 0:
         smooth_label = LabelSmoothing(opt)
@@ -121,7 +77,8 @@ def main():
 
     gluster = None
     if opt.gluster:
-        gluster = GradientCluster(model, opt.gluster_num, opt.gluster_beta)
+        gluster = GradientClusterOnline(
+                model, opt.gluster_num, opt.gluster_beta)
 
     if opt.optim == 'dmom':
         optimizer = DMomSGD(model.parameters(),
@@ -278,14 +235,6 @@ class LabelSmoothing:
         target = tmp_.detach()
         loss = F.kl_div(outputs, target, reduction=reduction)
         return loss
-
-
-class DictWrapper(object):
-    def __init__(self, d):
-        self.d = d
-
-    def __getattr__(self, key):
-        return self.d[key]
 
 
 def vis_samples(alphas, train_dataset, epoch):

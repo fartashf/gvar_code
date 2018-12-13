@@ -12,7 +12,7 @@ dmom: 0.5
 low_theta: 1.e-5
 high_theta: 1.e5
 arch: mlp
-workers: 2
+workers: 10
 weight_decay: 5.e-4
 dmom_interval: 1
 dmom_temp: 0
@@ -62,5 +62,8 @@ label_smoothing: 0
 duplicate: 0,0
 alpha_diff: False
 gluster: False
-gluster_num: 10
-gluster_beta: 0.9
+g_ncluster: 10
+g_beta: 0.999
+g_min_size: 1
+g_reinit: largest
+gb_citers: 10

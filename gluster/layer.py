@@ -2,22 +2,23 @@ import torch
 import torch.nn.functional as F
 from collections import OrderedDict
 import numpy as np
+import logging
 
 
 def get_gluster_module(module):
     module_name = module.__class__.__name__
-    glayers = {
-            'Sequential': GlusterModule,
-            'Linear': GlusterLinear, 'Conv2d': GlusterConv}
+    glayers = {'Linear': GlusterLinear, 'Conv2d': GlusterConv}
     if module_name in glayers:
         return glayers[module_name]
+    if len(list(module.children())) > 0:
+        return GlusterContainer
     return None
 
 
 class GlusterModule(object):
     def __init__(
             self, module, eps, nclusters, no_grad=False,
-            ignore_modules=[], *args, **kwargs):
+            ignore_modules=[], active_only='', name='', *args, **kwargs):
         self.module = module
         self.nclusters = nclusters
         self.eps = eps
@@ -26,17 +27,26 @@ class GlusterModule(object):
         self.is_eval = False
         self.no_grad = no_grad  # grad=1 => clustring in the input space
         self.ignore_modules = ignore_modules
+        self.name = name
+        self.active_only = active_only
         # TODO: unnamed children
         self.active_modules = [
-                m for name, m in module.named_children() if name
-                not in ignore_modules]
+                (n, m) for n, m in module.named_children()
+                if n not in ignore_modules]
         self.children = OrderedDict()
-        self.has_param = (hasattr(module, 'weight') or hasattr(module, 'bias'))
+        self.has_weight = hasattr(module, 'weight')
+        self.has_bias = hasattr(module, 'bias')
+        self.has_param = (self.has_weight or self.has_bias)
+        self.has_param = (
+                self.has_param and
+                (self.active_only == '' or self.active_only == self.name))
         self._register_hooks()
 
     def _register_hooks(self):
         if not self.has_param:
             return
+        logging.info(
+                'Gluster> register hooks {} {}'.format(self.name, self.module))
         # https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/blob/master/algo/kfac.py
         self.module.register_forward_pre_hook(self._save_input_hook)
         self.module.register_backward_hook(self._save_dist_hook)
@@ -99,24 +109,30 @@ class GlusterModule(object):
         if not self.has_param:
             return
         # TODO: figure out when zeroing should be done with batch/online
-        self.Ci_new.fill_(0)
-        self.Co_new.fill_(0)
-        self.Cb_new.fill_(0)
+        if self.has_weight:
+            self.Ci_new.fill_(0)
+            self.Co_new.fill_(0)
+        if self.has_bias:
+            self.Cb_new.fill_(0)
 
     def update_batch(self, cluster_size):
         if not self.has_param:
             return
-        self.Ci.copy_(self.Ci_new).div_(cluster_size.clamp(1))
-        self.Co.copy_(self.Co_new).div_(cluster_size.clamp(1))
-        self.Cb.copy_(self.Cb_new).div_(cluster_size.clamp(1))
+        if self.has_weight:
+            self.Ci.copy_(self.Ci_new).div_(cluster_size.clamp(1))
+            self.Co.copy_(self.Co_new).div_(cluster_size.clamp(1))
+        if self.has_bias:
+            self.Cb.copy_(self.Cb_new).div_(cluster_size.clamp(1))
 
     def update_online(self, pre_size, new_size):
         if not self.has_param:
             return
         # TODO: .4/5.5s overhead
-        self.Ci.mul_(pre_size).add_(self.Ci_new).div_(new_size)
-        self.Co.mul_(pre_size).add_(self.Co_new).div_(new_size)
-        self.Cb.mul_(pre_size).add_(self.Cb_new).div_(new_size)
+        if self.has_weight:
+            self.Ci.mul_(pre_size).add_(self.Ci_new).div_(new_size)
+            self.Co.mul_(pre_size).add_(self.Co_new).div_(new_size)
+        if self.has_bias:
+            self.Cb.mul_(pre_size).add_(self.Cb_new).div_(new_size)
 
     def accum_new_centers(self, assign_i):
         if not self.has_param:
@@ -173,17 +189,20 @@ class LoopFunction(object):
 class GlusterContainer(GlusterModule):
     def __init__(self, *args, **kwargs):
         super(GlusterContainer, self).__init__(*args, **kwargs)
+        # logging.info('Gluster> container {}'.format(self.module))
         self._init_children(*args, **kwargs)
         self._set_default_loop()
-        print('Gluster init done.')
 
     def _register_hooks(self):
         pass
 
     def _init_children(self, *args, **kwargs):
-        for m in self.active_modules:
+        for name, m in self.active_modules:
             glayer = get_gluster_module(m)
             if glayer is not None:
+                kwargs['name'] = (
+                        self.name+'.'
+                        if self.name != '' else '')+name
                 self.children[m] = glayer(*((m, )+args[1:]), **kwargs)
 
     def _set_default_loop(self):
@@ -252,27 +271,37 @@ class GlusterLinear(GlusterModule):
         # Ci0, Co0 = self._init_centers_layer(module.weight, nzeros)
         # Ci.masked_scatter_(counts == 0, Ci0)
         # Co.masked_scatter_(counts == 0, Co0)
-        self.Ci.masked_scatter_(reinits, self.Ai[perm])
-        self.Co.masked_scatter_(reinits, self.Go[perm])
-        self.Cb.masked_scatter_(reinits, self.Go[perm])
+        if self.has_weight:
+            self.Ci.masked_scatter_(reinits, self.Ai[perm])
+            self.Co.masked_scatter_(reinits, self.Go[perm])
+        if self.has_bias:
+            self.Cb.masked_scatter_(reinits, self.Go[perm])
 
     def accum_new_centers(self, assign_i):
+        if not self.has_param:
+            return
         # TODO: SVD
         Ai = self.Ai
         Go = self.Go
         # TODO: .7/5.5s overhead
-        self.Ci_new.scatter_add_(0, assign_i.expand_as(Ai), Ai)
-        self.Co_new.scatter_add_(0, assign_i.expand_as(Go), Go)
-        self.Cb_new.scatter_add_(0, assign_i.expand_as(Go), Go)
+        if self.has_weight:
+            self.Ci_new.scatter_add_(0, assign_i.expand_as(Ai), Ai)
+            self.Co_new.scatter_add_(0, assign_i.expand_as(Go), Go)
+        if self.has_bias:
+            self.Cb_new.scatter_add_(0, assign_i.expand_as(Go), Go)
 
     def get_centers(self):
+        if not self.has_param:
+            return
         centers = []
-        Cf = torch.matmul(self.Co.unsqueeze(-1), self.Ci.unsqueeze(1))
-        centers += [Cf]
-        centers += [self.Cb]
-        assert Cf.shape == (
-                self.Ci.shape[0], self.Co.shape[1], self.Ci.shape[1]
-                ), 'Cf: C x d_out x d_in'
+        if self.has_weight:
+            Cf = torch.matmul(self.Co.unsqueeze(-1), self.Ci.unsqueeze(1))
+            centers += [Cf.cpu().detach()]
+            assert Cf.shape == (
+                    self.Ci.shape[0], self.Co.shape[1], self.Ci.shape[1]
+                    ), 'Cf: C x d_out x d_in'
+        if self.has_bias:
+            centers += [self.Cb.cpu().detach()]
         return centers
 
 
@@ -299,10 +328,14 @@ class GlusterConv(GlusterModule):
                 Ai0, module.kernel_size,
                 padding=module.padding,
                 stride=module.stride, dilation=module.dilation)
+        del Ai0
         return Ai
 
     def _post_proc_Go(self, Go0):
+        if self.no_grad:
+            Go0.fill_(1./Go0.numel())
         Go = Go0.reshape(Go0.shape[:-2]+(np.prod(Go0.shape[-2:]), ))
+        del Go0
         return Go
 
     def _save_dist_hook_bias(self, Ai, Go):
@@ -342,6 +375,7 @@ class GlusterConv(GlusterModule):
         assert Co.shape == (C, dout), 'Co: C x dout'
         # Ci = Ci.reshape((C, -1))
         # TODO: one big einsum
+        # TODO: multi-GPU
         CiAi = torch.einsum('ki,bit->kbt', [Ci, Ai])
         CoGo = torch.einsum('ko,bot->kbt', [Co, Go])
         # TODO: mean/sum?
@@ -357,13 +391,17 @@ class GlusterConv(GlusterModule):
         return O
 
     def reinit_from_data(self, reinits, perm):
+        if not self.has_param:
+            return
         # TODO: mean/sum?
         T = self.Go.shape[-1]
         Ai = self.Ai[perm].sum(-1)/T
         Go = self.Go[perm].sum(-1)/T
-        self.Ci.masked_scatter_(reinits, Ai)
-        self.Co.masked_scatter_(reinits, Go)
-        self.Cb.masked_scatter_(reinits, Go)
+        if self.has_weight:
+            self.Ci.masked_scatter_(reinits, Ai)
+            self.Co.masked_scatter_(reinits, Go)
+        if self.has_bias:
+            self.Cb.masked_scatter_(reinits, Go)
 
     def accum_new_centers(self, assign_i):
         if not self.has_param:
@@ -373,20 +411,26 @@ class GlusterConv(GlusterModule):
         T = self.Go.shape[-1]
         Ai = self.Ai.sum(-1)/T
         Go = self.Go.sum(-1)/T
-        self.Ci_new.scatter_add_(0, assign_i.expand_as(Ai), Ai)
-        self.Co_new.scatter_add_(0, assign_i.expand_as(Go), Go)
-        self.Cb_new.scatter_add_(0, assign_i.expand_as(Go), Go)
+        if self.has_weight:
+            self.Ci_new.scatter_add_(0, assign_i.expand_as(Ai), Ai)
+            self.Co_new.scatter_add_(0, assign_i.expand_as(Go), Go)
+        if self.has_bias:
+            self.Cb_new.scatter_add_(0, assign_i.expand_as(Go), Go)
 
     def get_centers(self):
+        if not self.has_param:
+            return
         C = self.nclusters
         dout = self.module.weight.shape[0]
         din = self.module.weight.shape[1:]
         centers = []
         # TODO: dist to centers is bad, maybe because of /T and numerical prec
-        Cf = torch.matmul(self.Co.unsqueeze(-1), self.Ci.unsqueeze(1))
-        assert Cf.shape == (C, dout, np.prod(din)), 'Cf: C x din x dout'
-        Cf = Cf.reshape((C, ) + self.module.weight.shape)
-        assert Cf.shape == (C, dout, )+din, 'Cf: C x co x ci x H x W'
-        centers += [Cf]
-        centers += [self.Cb]
+        if self.has_weight:
+            Cf = torch.matmul(self.Co.unsqueeze(-1), self.Ci.unsqueeze(1))
+            assert Cf.shape == (C, dout, np.prod(din)), 'Cf: C x din x dout'
+            Cf = Cf.reshape((C, ) + self.module.weight.shape)
+            assert Cf.shape == (C, dout, )+din, 'Cf: C x co x ci x H x W'
+            centers += [Cf.cpu().detach()]
+        if self.has_bias:
+            centers += [self.Cb.cpu().detach()]
         return centers

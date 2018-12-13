@@ -9,6 +9,10 @@ import requests
 import torch
 import pylab as plt
 import matplotlib.ticker as mtick
+from data import get_loaders
+import torchvision.utils as vutils
+from torchvision import transforms
+import utils
 
 
 class TBMultiplexer:
@@ -378,3 +382,82 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
             fi += 1
     plt.savefig(fig_name, dpi=100, bbox_inches='tight')
     return data, run_names
+
+
+def plot_clusters(run_dir, gfname, nsamples=20, sz=28, seed=123, topk=True):
+    gpath = os.path.join(run_dir, '%s.pth.tar' % gfname)
+    fig_name = os.path.join(run_dir, '%s.png' % gfname)
+    data = torch.load(gpath)
+    assign_i, target_i = data['assign'], data['target']
+    pred_i, loss_i, normC = data['pred'], data['loss'], data['normC']
+    topk_i = data['topk']
+    if topk:
+        correct = topk_i[:, 1]
+    else:
+        correct = topk_i[:, 0]
+    opt, dataset = data['opt'], data['dataset']
+    opt = utils.DictWrapper(opt)
+    pad = 2
+    np.random.seed(seed)
+
+    opt.cuda = not opt.no_cuda and torch.cuda.is_available()
+
+    train_loader, test_loader, train_test_loader = get_loaders(opt)
+    if dataset == 'train_test':
+        dataset = train_test_loader.dataset
+    elif dataset == 'test':
+        dataset = test_loader.dataset
+    dataset.ds.transform = transforms.Compose([
+        transforms.Resize(sz),
+        transforms.CenterCrop(sz),
+        transforms.ToTensor(),
+        ])
+
+    _, counts = np.unique(assign_i, return_counts=True)
+
+    nclusters = assign_i.max()+1
+    height = nclusters
+    width = nsamples
+    plt.figure(figsize=(7 * width, 4 * height))
+    plt.tight_layout(pad=1., w_pad=3., h_pad=3.0)
+
+    lc = np.zeros((nclusters, ))
+    for i in range(nclusters):
+        idx, _ = np.where(assign_i == i)
+        if len(idx) > 0:
+            lc[i] = loss_i[idx].mean()
+    cids = np.argsort(lc)
+    hpad = sz+2*pad
+    images = np.zeros((nclusters, nsamples, 3, hpad, hpad))
+    # TODO: top5
+    print('Total loss: %.4f' % (loss_i.mean()))
+    print('Total accuracy: %.2f%%\n' % ((correct*100.).mean()))
+    for c in range(nclusters):
+        i = cids[c]
+        idx, _ = np.where(assign_i == i)
+        print('Cluster %d, size: %d' % (i, len(idx)))
+        if len(idx) == 0:
+            continue
+        print('Cluster %d, normC: %.8f' % (i, normC[i]))
+        print('Cluster %d, loss: %.4f' % (i, loss_i[idx].mean()))
+        acc = (correct[idx]*100.).mean()
+        print('Cluster %d, accuracy: %.2f%%\n' % (i, acc))
+        np.random.shuffle(idx)
+        for j in range(min(len(idx), nsamples)):
+            xi = dataset[idx[j]][0]
+            xi2 = np.zeros((3, hpad, hpad))
+            xi2[0] = (pred_i[idx[j]] != target_i[idx[j]])
+            if xi.shape[0] == 1:
+                xi2[0:1, pad:sz+pad, pad:sz+pad] = xi
+                xi2[1:2, pad:sz+pad, pad:sz+pad] = xi
+                xi2[2:3, pad:sz+pad, pad:sz+pad] = xi
+            else:
+                xi2[:, pad:sz+pad, pad:sz+pad] = xi
+            images[c, j] = xi2
+
+    fig = torch.tensor(images.reshape(-1, 3, hpad, hpad))
+    xi = vutils.make_grid(fig, nrow=nsamples, normalize=True, scale_each=True)
+
+    plt.imshow(xi.numpy().transpose([1, 2, 0]))
+    plt.axis('off')
+    plt.savefig(fig_name, dpi=100, bbox_inches='tight')
