@@ -126,15 +126,18 @@ class GradientClusterBatch(GradientCluster):
             if batch_idx % 10 == 0:
                 logging.info(
                         'Gluster> [{0}/{3}][Assign:0/2][{1}/{2}]\t'
+                        'Loss: {loss:.6f}\t'
                         'Time: {batch_time.val: .3f}'
                         '({batch_time.avg:.3f})'.format(
                             ci, batch_idx, len(data_loader), citers,
+                            loss=loss.item(),
                             batch_time=batch_time))
         total_dist.div_(self.cluster_size.clamp(1))
-        td = total_dist.sum().item()
+        td = total_dist.cpu().numpy()
         self.total_dist.copy_(total_dist)
         logging.info(
-                'Gluster batch> total distortions: %f (negative is fine)' % td)
+                'Gluster batch> total distortions: %f (negative is fine)'
+                % td.sum().item())
 
         # split the scattered cluster if the smallest cluster is small
         # More than one split: don't know the new dist after one split
@@ -170,9 +173,11 @@ class GradientClusterBatch(GradientCluster):
             if batch_idx % 10 == 0:
                 logging.info(
                         'Gluster> [{0}/{3}][Update:1/2][{1}/{2}]\t'
+                        'Loss: {loss:.6f}\t'
                         'Time: {batch_time.val: .3f}'
                         '({batch_time.avg:.3f})'.format(
                             ci, batch_idx, len(data_loader), citers,
+                            loss=loss.item(),
                             batch_time=batch_time))
 
         self.cluster_size.fill_(0)

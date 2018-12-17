@@ -42,7 +42,7 @@ def print_stats(model, gluster, X, T, batch_size):
         # fix that, do all tests, move to sampling
         loss = F.nll_loss(y, t) / batch_size
         grad_params = torch.autograd.grad(loss, W)
-        L = [(g - c).pow(2).view(nclusters, -1).sum(1).cpu().numpy()
+        L = [(g - c.cuda()).pow(2).view(nclusters, -1).sum(1).cpu().numpy()
              for g, c in zip(grad_params, centers)]
         dist[i] = np.sum(L, 0)
         normG[i] = np.sum([g.pow(2).sum().item() for g in grad_params])
@@ -354,7 +354,7 @@ def test_mnist_online(
 
     train_size = len(train_dataset)
     gluster_tc = []
-    assign_i = np.zeros((train_size, 1))
+    assign_i = -np.ones((train_size, 1))
     pred_i = np.zeros(train_size)
     loss_i = np.zeros(train_size)
     target_i = np.zeros(train_size)

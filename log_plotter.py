@@ -390,6 +390,7 @@ def plot_clusters(run_dir, gfname, nsamples=20, sz=28, seed=123, topk=True):
     data = torch.load(gpath)
     assign_i, target_i = data['assign'], data['target']
     pred_i, loss_i, normC = data['pred'], data['loss'], data['normC']
+    total_dist = data['total_dist']
     topk_i = data['topk']
     if topk:
         correct = topk_i[:, 1]
@@ -415,7 +416,7 @@ def plot_clusters(run_dir, gfname, nsamples=20, sz=28, seed=123, topk=True):
 
     _, counts = np.unique(assign_i, return_counts=True)
 
-    nclusters = assign_i.max()+1
+    nclusters = int(assign_i.max()+1)
     height = nclusters
     width = nsamples
     plt.figure(figsize=(7 * width, 4 * height))
@@ -429,9 +430,10 @@ def plot_clusters(run_dir, gfname, nsamples=20, sz=28, seed=123, topk=True):
     cids = np.argsort(lc)
     hpad = sz+2*pad
     images = np.zeros((nclusters, nsamples, 3, hpad, hpad))
-    # TODO: top5
     print('Total loss: %.4f' % (loss_i.mean()))
-    print('Total accuracy: %.2f%%\n' % ((correct*100.).mean()))
+    print('Total accuracy: %.2f%%' % ((correct*100.).mean()))
+    print('Total dist: %.4f' % total_dist.sum())
+    print('')
     for c in range(nclusters):
         i = cids[c]
         idx, _ = np.where(assign_i == i)

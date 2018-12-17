@@ -68,7 +68,7 @@ label_smoothing: 0
 duplicate: 0,0
 alpha_diff: False
 gluster: False
-g_ncluster: 10
+g_nclusters: 10
 g_beta: 0.999
 g_min_size: 1
 g_reinit: largest

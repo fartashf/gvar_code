@@ -166,7 +166,7 @@ def add_args():
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--gluster',
                         default=argparse.SUPPRESS, action='store_true')
-    parser.add_argument('--g_ncluster',
+    parser.add_argument('--g_nclusters',
                         default=argparse.SUPPRESS, type=int)
     parser.add_argument('--g_beta',
                         default=argparse.SUPPRESS, type=float)
@@ -180,5 +180,6 @@ def add_args():
     parser.add_argument('--ckpt_name', default='model_best.pth.tar')
     parser.add_argument('--g_no_grad', action='store_true')
     parser.add_argument('--g_active_only', default='')
+    parser.add_argument('--g_online', action='store_true')
     args = parser.parse_args()
     return args

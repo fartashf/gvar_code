@@ -1,13 +1,25 @@
+## Dec 17
+gluster online
+```
+CUDA_VISIBLE_DEVICES=0 ipython --pdb -- bgluster.py --dataset imagenet --arch resnet34 --run_dir runs/resnet34_online --gb_citers 5000 --pretrained --test_batch_size 64 --g_nclusters 20 --g_online --g_min_size 100
+```
+
+test gluster
+```
+ipython -m unittest -- test_gluster.TestGlusterConv.test_mnist_online_delayed
+```
+
 ## Dec 12
 gluster batch
 ```
-CUDA_VISIBLE_DEVICES=2 ipython --pdb -- bgluster.py --dataset imagenet --arch resnet34 --run_dir runs/resnet34_fc --gb_citers 20 --pretrained --test_batch_size 256 --g_ncluster 20 --g_active_only 'model.module.fc'
-CUDA_VISIBLE_DEVICES=2 ipython --pdb -- bgluster.py --dataset imagenet --arch resnet34 --run_dir runs/resnet34_input0 --gb_citers 20 --pretrained --test_batch_size 128 --g_ncluster 20 --g_no_grad --g_active_only 'model.module.conv1'
-CUDA_VISIBLE_DEVICES=1 ipython --pdb -- bgluster.py --dataset imagenet --arch resnet34 --run_dir runs/resnet34_input --gb_citers 20 --pretrained --test_batch_size 64 --g_ncluster 20 --g_no_grad
-CUDA_VISIBLE_DEVICES=0 ipython --pdb -- bgluster.py --dataset imagenet --arch resnet34 --run_dir runs/resnet34_seed2 --gb_citers 20 --pretrained --test_batch_size 8 --g_ncluster 20 --seed 2
-CUDA_VISIBLE_DEVICES=0 ipython --pdb -- bgluster.py --dataset imagenet --arch resnet34 --run_dir runs/resnet34 --gb_citers 20 --pretrained --test_batch_size 8 --g_ncluster 20
-CUDA_VISIBLE_DEVICES=0 ipython --pdb -- bgluster.py --dataset imagenet --arch vgg19 --run_dir runs/vgg19 --gb_citers 20 --pretrained --test_batch_size 8 --g_ncluster 20
-CUDA_VISIBLE_DEVICES=0 ipython --pdb -- bgluster.py --dataset imagenet --arch alexnet --run_dir runs/alexnet --gb_citers 20 --pretrained --test_batch_size 256 --g_ncluster 20
+CUDA_VISIBLE_DEVICES=1 ipython --pdb -- bgluster.py --dataset imagenet --arch resnet34 --run_dir runs/resnet34_act --gb_citers 20 --pretrained --test_batch_size 64 --g_nclusters 20 --g_no_grad
+CUDA_VISIBLE_DEVICES=2 ipython --pdb -- bgluster.py --dataset imagenet --arch resnet34 --run_dir runs/resnet34_fc --gb_citers 20 --pretrained --test_batch_size 256 --g_nclusters 20 --g_active_only 'model.module.fc'
+CUDA_VISIBLE_DEVICES=2 ipython --pdb -- bgluster.py --dataset imagenet --arch resnet34 --run_dir runs/resnet34_input0 --gb_citers 20 --pretrained --test_batch_size 128 --g_nclusters 20 --g_no_grad --g_active_only 'model.module.conv1'
+CUDA_VISIBLE_DEVICES=0 ipython --pdb -- bgluster.py --dataset imagenet --arch resnet34 --run_dir runs/resnet34_seed2 --gb_citers 20 --pretrained --test_batch_size 8 --g_nclusters 20 --seed 2
+CUDA_VISIBLE_DEVICES=0 ipython --pdb -- bgluster.py --dataset imagenet --arch resnet34 --run_dir runs/resnet34 --gb_citers 20 --pretrained --test_batch_size 64 --g_nclusters 20
+CUDA_VISIBLE_DEVICES=0 ipython --pdb -- bgluster.py --dataset imagenet --arch vgg19 --run_dir runs/vgg19 --gb_citers 20 --pretrained --test_batch_size 8 --g_nclusters 20
+CUDA_VISIBLE_DEVICES=0 ipython --pdb -- bgluster.py --dataset imagenet --arch alexnet --run_dir runs/alexnet --gb_citers 20 --pretrained --test_batch_size 256 --g_nclusters 20
+CUDA_VISIBLE_DEVICES=0 ipython --pdb -- bgluster.py --dataset imagenet --arch resnet34 --run_dir runs/resnet34_online --gb_citers 20 --pretrained --test_batch_size 64 --g_nclusters 20 --g_online
 ```
 
 mnist train

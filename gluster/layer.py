@@ -40,6 +40,8 @@ class GlusterModule(object):
         self.has_param = (
                 self.has_param and
                 (self.active_only == '' or self.active_only == self.name))
+        self.Ai = torch.Tensor(0)
+        self.Go = torch.Tensor(0)
         self._register_hooks()
 
     def _register_hooks(self):
@@ -56,15 +58,19 @@ class GlusterModule(object):
             return
         if not self.has_param:
             return
-        Ai = Ai[0].clone().detach()
-        self.Ai = self._post_proc_Ai(Ai)
+        Ai0 = Ai[0]
+        Ai0 = self._post_proc_Ai(Ai0)
+        if self.Ai.shape != Ai0.shape:
+            self.Ai = torch.zeros_like(Ai0).cuda()
+        self.Ai.copy_(Ai0)
+        # if self.Ai.max() > 100000:
+        #     # TODO: seed 1 this happens, try toy tests
+        #     import ipdb; ipdb.set_trace()
 
     def _post_proc_Ai(self, Ai0):
         return Ai0
 
     def _post_proc_Go(self, Go0):
-        if self.no_grad:
-            Go0.fill_(1./Go0.numel())
         return Go0
 
     def _save_dist_hook(self, m, grad_input, grad_output):
@@ -74,14 +80,26 @@ class GlusterModule(object):
             return
         Ai = self.Ai
         # Gi = grad_input[0].clone().detach()  # has 3 elements, 1 is Gi?
-        Go0 = grad_output[0].clone().detach()
-        self.Go = Go = self._post_proc_Go(Go0)
+        Go0 = grad_output[0]
+        Go0 = self._post_proc_Go(Go0)
+        if self.Go.shape != Go0.shape:
+            self.Go = torch.zeros_like(Go0).cuda()
+        self.Go.copy_(Go0)
+        Go = self.Go
+        if self.no_grad:
+            Go.fill_(1.)  # /Go0.numel())
         # print('%s %s' % (Ai.shape, Ai.shape))
         O = []
+        # s = 0
         if self.module.bias is not None:
             O += [self._save_dist_hook_bias(Ai, Go)]
+            # s += O[-1].sum()
         if self.module.weight is not None:
             O += [self._save_dist_hook_weight(Ai, Go)]
+            # s += O[-1].sum()
+        # if s < -10000:
+        #     # TODO: seed 1 this happens, try toy tests
+        #     import ipdb; ipdb.set_trace()
         # TODO: per-layer clusters
         self.batch_dist = O
 
@@ -328,14 +346,10 @@ class GlusterConv(GlusterModule):
                 Ai0, module.kernel_size,
                 padding=module.padding,
                 stride=module.stride, dilation=module.dilation)
-        del Ai0
         return Ai
 
     def _post_proc_Go(self, Go0):
-        if self.no_grad:
-            Go0.fill_(1./Go0.numel())
         Go = Go0.reshape(Go0.shape[:-2]+(np.prod(Go0.shape[-2:]), ))
-        del Go0
         return Go
 
     def _save_dist_hook_bias(self, Ai, Go):
