@@ -312,7 +312,9 @@ def get_all_tensors():
                 A += [obj]
         except Exception:
             pass
-    return A
+    B = [a.numel() for a in A]
+    I = np.argsort(B)
+    return [A[i] for i in I]
 
 
 def get_memory(A):

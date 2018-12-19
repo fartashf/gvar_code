@@ -123,12 +123,10 @@ class GradientClusterBatch(GradientCluster):
             loss_i[idx] = loss.detach().cpu().numpy()
             loss = loss.mean()
             loss.backward()
-            from log_utils import get_all_tensors, get_memory
-            A = get_all_tensors()
-            B = [a.numel() for a in A]
-            I = np.argsort(B)
-            print([A[x].shape for x in I[-20:]])
-            import ipdb; ipdb.set_trace()
+            # from log_utils import get_all_tensors, get_memory
+            # A = get_all_tensors()
+            # print([a.shape for a in A[-20:]])
+            # import ipdb; ipdb.set_trace()
             ai, batch_dist = self.assign()
             if not (batch_dist.max() < 1e10 and batch_dist.min() > -1e10):
                 raise Exception('Distortion out of bounds')

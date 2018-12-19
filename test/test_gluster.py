@@ -8,6 +8,7 @@ import sys
 import time
 import torch.optim as optim
 from torchvision import datasets, transforms
+import logging
 sys.path.append('../')
 from models.mnist import MLP, Convnet  # NOQA
 from gluster.gluster import GradientClusterOnline  # NOQA
@@ -300,7 +301,6 @@ def test_mnist(
     pred_i = 0
     loss_i = 0
     for i in range(citers):
-        import ipdb; ipdb.set_trace()
         tic = time.time()
         stat = gluster.update_batch(train_loader, len(train_dataset))
         if i > 0:
@@ -718,6 +718,9 @@ class MNISTTest(object):
 
 class TestGlusterMLP(unittest.TestCase, ToyTests, MNISTTest):
     def setUp(self):
+        print('In method %s' % self._testMethodName)
+        logging.basicConfig(
+                format='%(asctime)s %(message)s', level=logging.INFO)
         set_seed(1234)
         self.model = MLP(dropout=False)
         self.model.cuda()
@@ -727,6 +730,9 @@ class TestGlusterMLP(unittest.TestCase, ToyTests, MNISTTest):
 
 class TestGlusterConv(unittest.TestCase, ToyTests, MNISTTest):
     def setUp(self):
+        print('In method %s' % self._testMethodName)
+        logging.basicConfig(
+                format='%(asctime)s %(message)s', level=logging.INFO)
         set_seed(1234)
         self.model = Convnet(dropout=False)
         self.model.cuda()

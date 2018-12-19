@@ -40,8 +40,10 @@ class GlusterModule(object):
         self.has_param = (
                 self.has_param and
                 (self.active_only == '' or self.active_only == self.name))
-        self.Ai = torch.Tensor(0)
-        self.Go = torch.Tensor(0)
+        self.Ai0 = torch.Tensor(0)
+        self.Ais = torch.Tensor(0)
+        self.Gos = torch.Tensor(0)
+        # self.Go = torch.Tensor(0)
         self._register_hooks()
 
     def _register_hooks(self):
@@ -59,10 +61,11 @@ class GlusterModule(object):
         if not self.has_param:
             return
         Ai0 = Ai[0]
-        Ai0 = self._post_proc_Ai(Ai0)
-        if self.Ai.shape != Ai0.shape:
-            self.Ai = torch.zeros_like(Ai0).cuda()
-        self.Ai.copy_(Ai0)
+        # Ai0 = self._post_proc_Ai(Ai0)
+        if self.Ai0.shape != Ai0.shape:
+            self.Ai0 = torch.zeros_like(Ai0).cuda()
+        # self.Ai.copy_(Ai0)
+        self.Ai0.copy_(Ai0)
         # del Ai0
         # if self.Ai.max() > 100000:
         #     # TODO: seed 1 this happens, try toy tests
@@ -79,31 +82,33 @@ class GlusterModule(object):
             return
         if not self.has_param:
             return
-        Ai = self.Ai
-        # Gi = grad_input[0].clone().detach()  # has 3 elements, 1 is Gi?
-        Go0 = grad_output[0]
-        Go0 = self._post_proc_Go(Go0)
-        if self.Go.shape != Go0.shape:
-            self.Go = torch.zeros_like(Go0).cuda()
-        self.Go.copy_(Go0)
-        # del Go0
-        Go = self.Go
-        if self.no_grad:
-            Go.fill_(1.)  # /Go0.numel())
-        # print('%s %s' % (Ai.shape, Ai.shape))
-        O = []
-        # s = 0
-        if self.module.bias is not None:
-            O += [self._save_dist_hook_bias(Ai, Go)]
-            # s += O[-1].sum()
-        if self.module.weight is not None:
-            O += [self._save_dist_hook_weight(Ai, Go)]
-            # s += O[-1].sum()
-        # if s < -10000:
-        #     # TODO: seed 1 this happens, try toy tests
-        #     import ipdb; ipdb.set_trace()
-        # TODO: per-layer clusters
-        self.batch_dist = O
+        with torch.no_grad():
+            # Ai = self.Ai
+            # Gi = grad_input[0].clone().detach()  # has 3 elements, 1 is Gi?
+            Go0 = grad_output[0]
+            # Go0 = self._post_proc_Go(Go0)
+            # if self.Go0.shape != Go0.shape:
+            #     self.Go0 = torch.zeros_like(Go0).cuda()
+            # self.Go.copy_(Go0)
+            Ai, Go = self._post_proc(Go0)
+            # del Go0
+            # Go = self.Go
+            if self.no_grad:
+                Go.fill_(1.)  # /Go0.numel())
+            # print('%s %s' % (Ai.shape, Ai.shape))
+            O = []
+            # s = 0
+            if self.module.bias is not None:
+                O += [self._save_dist_hook_bias(Ai, Go)]
+                # s += O[-1].sum()
+            if self.module.weight is not None:
+                O += [self._save_dist_hook_weight(Ai, Go)]
+                # s += O[-1].sum()
+            # if s < -10000:
+            #     # TODO: seed 1 this happens, try toy tests
+            #     import ipdb; ipdb.set_trace()
+            # TODO: per-layer clusters
+            self.batch_dist = O
 
     def get_dist(self):
         if not self.has_param:
@@ -157,7 +162,15 @@ class GlusterModule(object):
     def accum_new_centers(self, assign_i):
         if not self.has_param:
             return
-        raise Exception('Not implemented.')
+        # TODO: SVD
+        Ais = self.Ais
+        Gos = self.Gos
+        # TODO: .7/5.5s overhead
+        if self.has_weight:
+            self.Ci_new.scatter_add_(0, assign_i.expand_as(Ais), Ais)
+            self.Co_new.scatter_add_(0, assign_i.expand_as(Gos), Gos)
+        if self.has_bias:
+            self.Cb_new.scatter_add_(0, assign_i.expand_as(Gos), Gos)
 
     def reinit_from_data(self, reinits, perm):
         if not self.has_param:
@@ -242,12 +255,13 @@ class GlusterLinear(GlusterModule):
         dout, din = weight.shape
         # TODO: change init to 2/din
         C = self.nclusters
-        self.Ci = torch.rand((C, din)).cuda()/(din+dout)*self.eps
-        self.Co = torch.rand((C, dout)).cuda()/(din+dout)*self.eps
-        self.Cb = torch.rand((C, dout)).cuda()/dout*self.eps
-        self.Ci_new = torch.zeros_like(self.Ci)
-        self.Co_new = torch.zeros_like(self.Co)
-        self.Cb_new = torch.zeros_like(self.Cb)
+        with torch.no_grad():
+            self.Ci = torch.rand((C, din)).cuda()/(din+dout)*self.eps
+            self.Co = torch.rand((C, dout)).cuda()/(din+dout)*self.eps
+            self.Cb = torch.rand((C, dout)).cuda()/dout*self.eps
+            self.Ci_new = torch.zeros_like(self.Ci)
+            self.Co_new = torch.zeros_like(self.Co)
+            self.Cb_new = torch.zeros_like(self.Cb)
 
     def _save_dist_hook_bias(self, Ai, Go):
         C = self.nclusters
@@ -292,23 +306,15 @@ class GlusterLinear(GlusterModule):
         # Ci.masked_scatter_(counts == 0, Ci0)
         # Co.masked_scatter_(counts == 0, Co0)
         if self.has_weight:
-            self.Ci.masked_scatter_(reinits, self.Ai[perm])
-            self.Co.masked_scatter_(reinits, self.Go[perm])
+            self.Ci.masked_scatter_(reinits, self.Ais[perm])
+            self.Co.masked_scatter_(reinits, self.Gos[perm])
         if self.has_bias:
-            self.Cb.masked_scatter_(reinits, self.Go[perm])
+            self.Cb.masked_scatter_(reinits, self.Gos[perm])
 
-    def accum_new_centers(self, assign_i):
-        if not self.has_param:
-            return
-        # TODO: SVD
-        Ai = self.Ai
-        Go = self.Go
-        # TODO: .7/5.5s overhead
-        if self.has_weight:
-            self.Ci_new.scatter_add_(0, assign_i.expand_as(Ai), Ai)
-            self.Co_new.scatter_add_(0, assign_i.expand_as(Go), Go)
-        if self.has_bias:
-            self.Cb_new.scatter_add_(0, assign_i.expand_as(Go), Go)
+    def _post_proc(self, Go0):
+        self.Ais = self.Ai0
+        self.Gos = Go0
+        return self.Ai0, Go0
 
     def get_centers(self):
         if not self.has_param:
@@ -335,12 +341,13 @@ class GlusterConv(GlusterModule):
         dout = self.param.shape[0]
         eps = self.eps
         C = self.nclusters
-        self.Ci = torch.rand((C, din)).cuda()/(din+dout)*eps
-        self.Co = torch.rand((C, dout)).cuda()/(din+dout)*eps
-        self.Cb = torch.rand((C, dout)).cuda()/dout*self.eps
-        self.Ci_new = torch.zeros_like(self.Ci)
-        self.Co_new = torch.zeros_like(self.Co)
-        self.Cb_new = torch.zeros_like(self.Cb)
+        with torch.no_grad():
+            self.Ci = torch.rand((C, din)).cuda()/(din+dout)*eps
+            self.Co = torch.rand((C, dout)).cuda()/(din+dout)*eps
+            self.Cb = torch.rand((C, dout)).cuda()/dout*self.eps
+            self.Ci_new = torch.zeros_like(self.Ci)
+            self.Co_new = torch.zeros_like(self.Co)
+            self.Cb_new = torch.zeros_like(self.Cb)
 
     def _post_proc_Ai(self, Ai0):
         module = self.module
@@ -400,6 +407,10 @@ class GlusterConv(GlusterModule):
         if cost1 < cost2:
             CiAi = torch.einsum('ki,bit->kbt', [Ci, Ai])
             CoGo = torch.einsum('ko,bot->kbt', [Co, Go])
+            # worse in memory, maybe because of its internal cache
+            # batch matmul matchs from the end of tensor2 backwards
+            # CiAi = torch.matmul(Ci.unsqueeze(1).unsqueeze(1), Ai).squeeze(2)
+            # CoGo = torch.matmul(Co.unsqueeze(1).unsqueeze(1), Go).squeeze(2)
             # TODO: mean/sum?
             CG = torch.einsum('kbt,kbt->kb', [CiAi, CoGo])/T
         else:
@@ -423,28 +434,29 @@ class GlusterConv(GlusterModule):
         if not self.has_param:
             return
         # TODO: mean/sum?
-        T = self.Go.shape[-1]
-        Ai = self.Ai[perm].sum(-1)/T
-        Go = self.Go[perm].sum(-1)/T
+        # T = self.Go.shape[-1]
+        # Ai = self.Ai[perm].sum(-1)/T
+        # Go = self.Go[perm].sum(-1)/T
+        Ais = self.Ais
+        Gos = self.Gos
         if self.has_weight:
-            self.Ci.masked_scatter_(reinits, Ai)
-            self.Co.masked_scatter_(reinits, Go)
+            self.Ci.masked_scatter_(reinits, Ais)
+            self.Co.masked_scatter_(reinits, Gos)
         if self.has_bias:
-            self.Cb.masked_scatter_(reinits, Go)
+            self.Cb.masked_scatter_(reinits, Gos)
 
-    def accum_new_centers(self, assign_i):
-        if not self.has_param:
-            return
-        # TODO: SVD
+    def _post_proc(self, Go0):
+        module = self.module
+        Ai = F.unfold(
+                self.Ai0, module.kernel_size,
+                padding=module.padding,
+                stride=module.stride, dilation=module.dilation)
+        Go = Go0.reshape(Go0.shape[:-2]+(np.prod(Go0.shape[-2:]), ))
         # TODO: mean/sum?
-        T = self.Go.shape[-1]
-        Ai = self.Ai.sum(-1)/T
-        Go = self.Go.sum(-1)/T
-        if self.has_weight:
-            self.Ci_new.scatter_add_(0, assign_i.expand_as(Ai), Ai)
-            self.Co_new.scatter_add_(0, assign_i.expand_as(Go), Go)
-        if self.has_bias:
-            self.Cb_new.scatter_add_(0, assign_i.expand_as(Go), Go)
+        T = Go.shape[-1]
+        self.Ais = Ai.sum(-1)/T
+        self.Gos = Go.sum(-1)/T
+        return Ai, Go
 
     def get_centers(self):
         if not self.has_param:
