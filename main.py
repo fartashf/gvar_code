@@ -35,7 +35,7 @@ def main():
     with open(yaml_path, 'r') as handle:
         opt = yaml.load(handle)
     od = vars(args)
-    for k, v in od.iteritems():
+    for k, v in list(od.items()):
         opt[k] = v
     opt = utils.DictWrapper(opt)
 

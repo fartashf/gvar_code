@@ -15,7 +15,7 @@ class GradientCluster(object):
 
         self.nclusters = nclusters
         self.model = model
-        self.device = device = self.model.parameters().next().device
+        self.device = device = next(self.model.parameters()).device
         # self.zero_data()
         # self._init_centers()
         self.reinits = torch.zeros(nclusters, 1).long().to(device)
@@ -87,6 +87,7 @@ class GradientClusterBatch(GradientCluster):
 
     def update_batch(self, data_loader, train_size, ci=0, citers=0):
         model = self.model
+        model.eval()
         device = self.device
         assign_i = torch.zeros(train_size, 1).long().to(device)
         pred_i = np.zeros(train_size)
@@ -102,6 +103,10 @@ class GradientClusterBatch(GradientCluster):
         batch_time = AverageMeter()
         end = time.time()
         for batch_idx, (data, target, idx) in enumerate(data_loader):
+            # if batch_idx < 690:
+            #     continue
+            # if batch_idx > 700:
+            #     break
             data, target = Variable(data), Variable(target)
             data, target = data.to(device), target.to(device)
             model.zero_grad()
@@ -118,7 +123,15 @@ class GradientClusterBatch(GradientCluster):
             loss_i[idx] = loss.detach().cpu().numpy()
             loss = loss.mean()
             loss.backward()
+            from log_utils import get_all_tensors, get_memory
+            A = get_all_tensors()
+            B = [a.numel() for a in A]
+            I = np.argsort(B)
+            print([A[x].shape for x in I[-20:]])
+            import ipdb; ipdb.set_trace()
             ai, batch_dist = self.assign()
+            if not (batch_dist.max() < 1e10 and batch_dist.min() > -1e10):
+                raise Exception('Distortion out of bounds')
             assign_i[idx] = ai
             total_dist.scatter_add_(0, ai, batch_dist)
             batch_time.update(time.time() - end)
@@ -132,6 +145,9 @@ class GradientClusterBatch(GradientCluster):
                             ci, batch_idx, len(data_loader), citers,
                             loss=loss.item(),
                             batch_time=batch_time))
+                torch.cuda.empty_cache()
+                # import gc
+                # gc.collect()
         total_dist.div_(self.cluster_size.clamp(1))
         td = total_dist.cpu().numpy()
         self.total_dist.copy_(total_dist)
@@ -147,7 +163,7 @@ class GradientClusterBatch(GradientCluster):
             _, j = total_dist.masked_fill(
                 self.cluster_size < self.min_size, float('-inf')).max(0)
             idx = torch.arange(assign_i.shape[0])[assign_i[:, 0] == j]
-            assign_i[idx[torch.randperm(len(idx))[:len(idx)/2]]] = i
+            assign_i[idx[torch.randperm(len(idx))[:len(idx)//2]]] = i
             self.reinits[i] += 1
 
         logging.info(
@@ -157,6 +173,10 @@ class GradientClusterBatch(GradientCluster):
         batch_time = AverageMeter()
         end = time.time()
         for batch_idx, (data, target, idx) in enumerate(data_loader):
+            # if batch_idx < 690:
+            #     continue
+            # if batch_idx > 20:
+            #     break
             data, target = Variable(data), Variable(target)
             data, target = data.to(device), target.to(device)
             model.zero_grad()
@@ -179,6 +199,7 @@ class GradientClusterBatch(GradientCluster):
                             ci, batch_idx, len(data_loader), citers,
                             loss=loss.item(),
                             batch_time=batch_time))
+                torch.cuda.empty_cache()
 
         self.cluster_size.fill_(0)
         self.cluster_size.scatter_add_(0, assign_i,

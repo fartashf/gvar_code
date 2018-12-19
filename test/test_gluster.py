@@ -185,7 +185,7 @@ class DataLoader(object):
         batch_size = self.batch_size
         for i in range(0, X.shape[0], batch_size):
             a = i
-            b = min(i + batch_size, X.shape)
+            b = min(i + batch_size, X.shape[0])
             yield X[a:b], T[a:b], np.arange(a, b)
 
     def __len__(self):
@@ -300,13 +300,14 @@ def test_mnist(
     pred_i = 0
     loss_i = 0
     for i in range(citers):
+        import ipdb; ipdb.set_trace()
         tic = time.time()
         stat = gluster.update_batch(train_loader, len(train_dataset))
         if i > 0:
             assert pred_i.sum() == stat[3].sum(), 'predictions changed'
             assert loss_i.sum() == stat[4].sum(), 'loss changed'
-            assert stat[0] <= total_dist, 'Total distortions went up'
-        total_dist, assign_i, target_i, pred_i, loss_i = stat
+            assert stat[0].sum() <= total_dist.sum(), 'Total dists went up'
+        total_dist, assign_i, target_i, pred_i, loss_i, topk_i = stat
         toc = time.time()
         gluster_tc[i] = (toc - tic)
         normC = gluster.print_stats()
@@ -375,9 +376,11 @@ def test_mnist_online(
             loss = loss.mean()
             loss.backward()
             ai, batch_dist, iv = gluster.em_step()
-            assign_i[idx] = ai.cpu().numpy()
+            ai = ai.cpu().numpy()
+            assign_i[idx] = ai
             # TODO: multiple iv
             if len(iv) > 0:
+                iv[0] = iv[0].cpu().numpy()
                 assign_i[assign_i == iv[0]] = -1
                 ai[ai == iv[0]] = -1
             # optim

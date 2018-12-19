@@ -117,9 +117,11 @@ def test_online(model, data_loader, opt, dataset):
             loss = loss.mean()
             loss.backward()
             ai, batch_dist, iv = gluster.em_step()
-            assign_i[idx] = ai.cpu().numpy()
+            ai = ai.cpu().numpy()
+            assign_i[idx] = ai
             # TODO: multiple iv
             if len(iv) > 0:
+                iv[0] = iv[0].cpu().numpy()
                 assign_i[assign_i == iv[0]] = -1
                 ai[ai == iv[0]] = -1
             toc = time.time()
@@ -176,7 +178,7 @@ def main():
     with open(yaml_path, 'r') as handle:
         opt = yaml.load(handle)
     od = vars(args)
-    for k, v in od.iteritems():
+    for k, v in od.items():
         opt[k] = v
     opt = utils.DictWrapper(opt)
 

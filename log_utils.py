@@ -5,6 +5,7 @@ from tensorboardX import SummaryWriter
 import time
 import torch
 import os
+import gc
 
 
 def hist_bins(val):
@@ -255,7 +256,7 @@ class LogCollector(object):
 
     def __str__(self):
         s = ''
-        for i, (k, v) in enumerate(self.meters.iteritems()):
+        for i, (k, v) in enumerate(self.meters.items()):
             if k in self.log_keys or 'all' in self.log_keys:
                 if i > 0:
                     s += '  '
@@ -263,7 +264,7 @@ class LogCollector(object):
         return s
 
     def tb_log(self, tb_logger, prefix='', step=None):
-        for k, v in self.meters.iteritems():
+        for k, v in self.meters.items():
             v.tb_log(tb_logger, prefix+k, step=step)
 
 
@@ -287,7 +288,7 @@ class Profiler(object):
         self.tic()
 
     def end(self):
-        for k, v in self.times.iteritems():
+        for k, v in self.times.items():
             if k not in self.meters:
                 self.meters[k] = AverageMeter()
             self.meters[k].update(sum(v), 1)
@@ -295,8 +296,24 @@ class Profiler(object):
 
     def __str__(self):
         s = ''
-        for i, (k, v) in enumerate(self.meters.iteritems()):
+        for i, (k, v) in enumerate(self.meters.items()):
             if i > 0:
                 s += '  '
             s += k+': ' + str(v)
         return s
+
+
+def get_all_tensors():
+    A = []
+    for obj in gc.get_objects():
+        try:
+            if (torch.is_tensor(obj)
+                    or (hasattr(obj, 'data') and torch.is_tensor(obj.data))):
+                A += [obj]
+        except Exception:
+            pass
+    return A
+
+
+def get_memory(A):
+    return sum([a.numel() for a in A])*4/1024/1024/1024

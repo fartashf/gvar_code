@@ -63,6 +63,7 @@ class GlusterModule(object):
         if self.Ai.shape != Ai0.shape:
             self.Ai = torch.zeros_like(Ai0).cuda()
         self.Ai.copy_(Ai0)
+        # del Ai0
         # if self.Ai.max() > 100000:
         #     # TODO: seed 1 this happens, try toy tests
         #     import ipdb; ipdb.set_trace()
@@ -85,6 +86,7 @@ class GlusterModule(object):
         if self.Go.shape != Go0.shape:
             self.Go = torch.zeros_like(Go0).cuda()
         self.Go.copy_(Go0)
+        # del Go0
         Go = self.Go
         if self.no_grad:
             Go.fill_(1.)  # /Go0.numel())
@@ -388,12 +390,22 @@ class GlusterConv(GlusterModule):
         assert Ci.shape == (C, din), 'Ci: C x din'
         assert Co.shape == (C, dout), 'Co: C x dout'
         # Ci = Ci.reshape((C, -1))
-        # TODO: one big einsum
         # TODO: multi-GPU
-        CiAi = torch.einsum('ki,bit->kbt', [Ci, Ai])
-        CoGo = torch.einsum('ko,bot->kbt', [Co, Go])
-        # TODO: mean/sum?
-        CG = torch.einsum('kbt,kbt->kb', [CiAi, CoGo])/T
+        self.cost1 = cost1 = C*din*B*T + C*dout*B*T + C*B*T
+        self.cost2 = cost2 = B*din*T*dout + C*B*din*dout
+        if self.batch_dist is None:
+            logging.info(
+                    'Cost ratio %s: %.4f'
+                    % (self.name, 1.*self.cost1/self.cost2))
+        if cost1 < cost2:
+            CiAi = torch.einsum('ki,bit->kbt', [Ci, Ai])
+            CoGo = torch.einsum('ko,bot->kbt', [Co, Go])
+            # TODO: mean/sum?
+            CG = torch.einsum('kbt,kbt->kb', [CiAi, CoGo])/T
+        else:
+            AiGo = torch.einsum('bit,bot->bio', [Ai, Go])
+            # TODO: mean/sum?
+            CG = torch.einsum('ki,bio,ko->kb', [Ci, AiGo, Co])/T
         assert CG.shape == (C, B), 'CG: C x B.'
         CiCi = (Ci*Ci).view(Ci.shape[0], -1).sum(1)
         CoCo = (Co*Co).view(Co.shape[0], -1).sum(1)
@@ -401,6 +413,9 @@ class GlusterConv(GlusterModule):
         assert CC.shape == (C, 1), 'CC: C x 1.'
         O = CC-2*CG
         assert O.shape == (C, B), 'O: C x B.'
+        # if self.Ai.max() > 10000:
+        #     # TODO: seed 1 this happens, try toy tests
+        #     import ipdb; ipdb.set_trace()
 
         return O
 
