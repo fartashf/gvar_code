@@ -209,7 +209,9 @@ def test_gluster_batch(
     print('train_size: %d' % train_size)
 
     modelg = copy.deepcopy(model)
-    gluster = GradientClusterBatch(modelg, min_size, nclusters=nclusters)
+    gluster = GradientClusterBatch(
+            modelg, min_size, nclusters=nclusters,
+            active_only=active_only)
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
@@ -265,8 +267,8 @@ def train(epoch, train_loader, model, optimizer):
 
 
 def test_mnist(
-        model, batch_size, epochs, nclusters, min_size, citers, figname,
-        ignore_modules=[], no_grad=False):
+        model, batch_size, epochs, nclusters, min_size, citers, figname=None,
+        ignore_modules=[], no_grad=False, active_only=''):
     print('batch_size: %d' % batch_size)
     print('epochs    : %d' % epochs)
     print('nclusters : %d' % nclusters)
@@ -297,7 +299,7 @@ def test_mnist(
     # model's weight are not going to change, opt.step() is not called
     gluster = GradientClusterBatch(modelg, min_size, nclusters=nclusters,
                                    ignore_modules=ignore_modules,
-                                   no_grad=no_grad)
+                                   no_grad=no_grad, active_only=active_only)
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
@@ -318,10 +320,11 @@ def test_mnist(
         normC = gluster.print_stats()
 
     print('%.4f +/- %.4f' % (gluster_tc.mean(), gluster_tc.std()))
-    torch.save({'assign': assign_i, 'target': target_i,
-                'pred': pred_i, 'loss': loss_i,
-                'normC': normC},
-               figname)
+    if figname is not None:
+        torch.save({'assign': assign_i, 'target': target_i,
+                    'pred': pred_i, 'loss': loss_i,
+                    'normC': normC},
+                   figname)
     # import ipdb; ipdb.set_trace()
 
 
@@ -757,6 +760,39 @@ class TestGlusterConv(unittest.TestCase, ToyTests, MNISTTest):
         data = data_unique_n(100, 5)
         test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 100, 'conv2')
         print(">>> Similar magnitude of normC, dists small.")
+
+    def test_gluster_batch_conv1(self):
+        # TODO: init challenge
+        model = self.model
+        # gluster batch
+        data = data_unique_n(100, 5)
+        set_seed(1)
+        test_gluster_batch(model, 10, data, 5, 1, 10, 'conv1')
+        print(">>> Init challenge.")
+
+    def test_gluster_batch_conv2(self):
+        model = self.model
+        # gluster batch
+        data = data_unique_n(100, 5)
+        test_gluster_batch(model, 10, data, 5, 1, 10, 'conv2')
+
+    def test_mnist_citer10_fc2(self):
+        model = self.model
+        citers = 10
+        figname = None
+        test_mnist(model, 128, 2, 2, 10, citers, figname, active_only='fc2')
+
+    def test_mnist_citer10_conv1(self):
+        model = self.model
+        citers = 10
+        figname = None
+        test_mnist(model, 128, 2, 2, 10, citers, figname, active_only='conv1')
+
+    def test_mnist_citer10_conv2(self):
+        model = self.model
+        citers = 10
+        figname = None
+        test_mnist(model, 128, 2, 2, 10, citers, figname, active_only='conv2')
 
 
 if __name__ == '__main__':

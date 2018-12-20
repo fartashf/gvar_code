@@ -157,7 +157,7 @@ class GradientClusterBatch(GradientCluster):
         # More than one split: don't know the new dist after one split
         s, i = self.cluster_size.min(0)
         if s < self.min_size:
-            # TODO: negative distortion
+            # TODO: maybe + cluster size
             _, j = total_dist.masked_fill(
                 self.cluster_size < self.min_size, float('-inf')).max(0)
             idx = torch.arange(assign_i.shape[0])[assign_i[:, 0] == j]

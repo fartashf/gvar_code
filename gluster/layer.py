@@ -100,10 +100,10 @@ class GlusterModule(object):
             # print('%s %s' % (Ai.shape, Ai.shape))
             O = []
             # s = 0
-            if self.module.bias is not None:
+            if self.has_bias:
                 O += [self._save_dist_hook_bias(Ai, Go)]
                 # s += O[-1].sum()
-            if self.module.weight is not None:
+            if self.has_weight:
                 O += [self._save_dist_hook_weight(Ai, Go)]
                 # s += O[-1].sum()
             # if s < -10000:
@@ -193,7 +193,7 @@ class GlusterModule(object):
                 self.Ci_new[c].copy_(s*U[:, si])
                 self.Co_new[c].copy_(V[:, si])
             if self.has_bias:
-                self.Co_new[c].copy_(s*V[:, si])
+                self.Cb_new[c].copy_(s*V[:, si])
 
     def reinit_from_data(self, reinits, perm):
         if not self.has_param:
@@ -210,9 +210,11 @@ class GlusterModule(object):
         # reinit centers
         # X[ri] = is index_put_(ri, ...)
         # TODO: figure out autograd with this copy
-        self.Ci[ri] = self.Ci[li]
-        self.Co[ri] = self.Co[li]
-        self.Cb[ri] = self.Cb[li]
+        if self.has_weight:
+            self.Ci[ri] = self.Ci[li]
+            self.Co[ri] = self.Co[li]
+        if self.has_bias:
+            self.Cb[ri] = self.Cb[li]
         # Adding noise did not help on the first test
         # Don't do this. Ruins assignments if accidentally reinits
         # Ci.index_add_(0, ri, torch.rand_like(Ci[ri])*self.total_dist[li])
@@ -279,12 +281,14 @@ class GlusterLinear(GlusterModule):
         # TODO: change init to 2/din
         C = self.nclusters
         with torch.no_grad():
-            self.Ci = torch.rand((C, din)).cuda()/(din+dout)*self.eps
-            self.Co = torch.rand((C, dout)).cuda()/(din+dout)*self.eps
-            self.Cb = torch.rand((C, dout)).cuda()/dout*self.eps
-            self.Ci_new = torch.zeros_like(self.Ci)
-            self.Co_new = torch.zeros_like(self.Co)
-            self.Cb_new = torch.zeros_like(self.Cb)
+            if self.has_weight:
+                self.Ci = torch.rand((C, din)).cuda()/(din+dout)*self.eps
+                self.Co = torch.rand((C, dout)).cuda()/(din+dout)*self.eps
+                self.Ci_new = torch.zeros_like(self.Ci)
+                self.Co_new = torch.zeros_like(self.Co)
+            if self.has_bias:
+                self.Cb = torch.rand((C, dout)).cuda()/dout*self.eps
+                self.Cb_new = torch.zeros_like(self.Cb)
 
     def _save_dist_hook_bias(self, Ai, Go):
         C = self.nclusters
@@ -372,12 +376,14 @@ class GlusterConv(GlusterModule):
         eps = self.eps
         C = self.nclusters
         with torch.no_grad():
-            self.Ci = torch.rand((C, din)).cuda()/(din+dout)*eps
-            self.Co = torch.rand((C, dout)).cuda()/(din+dout)*eps
-            self.Cb = torch.rand((C, dout)).cuda()/dout*self.eps
-            self.Ci_new = torch.zeros_like(self.Ci)
-            self.Co_new = torch.zeros_like(self.Co)
-            self.Cb_new = torch.zeros_like(self.Cb)
+            if self.has_weight:
+                self.Ci = torch.rand((C, din)).cuda()/(din+dout)*eps
+                self.Co = torch.rand((C, dout)).cuda()/(din+dout)*eps
+                self.Ci_new = torch.zeros_like(self.Ci)
+                self.Co_new = torch.zeros_like(self.Co)
+            if self.has_bias:
+                self.Cb = torch.rand((C, dout)).cuda()/dout*self.eps
+                self.Cb_new = torch.zeros_like(self.Cb)
 
     def _post_proc_Ai(self, Ai0):
         module = self.module
