@@ -35,7 +35,7 @@ class GlusterModule(object):
                 if n not in ignore_modules]
         self.children = OrderedDict()
         self.has_weight = hasattr(module, 'weight')
-        self.has_bias = hasattr(module, 'bias')
+        self.has_bias = False  # TODO: hasattr(module, 'bias') # SVD
         self.has_param = (self.has_weight or self.has_bias)
         self.has_param = (
                 self.has_param and
@@ -43,8 +43,10 @@ class GlusterModule(object):
         self.Ai0 = torch.Tensor(0)
         self.Ais = torch.Tensor(0)
         self.Gos = torch.Tensor(0)
+        self.Dw = torch.Tensor(0)
         # self.Go = torch.Tensor(0)
         self._register_hooks()
+        self.do_svd = False
 
     def _register_hooks(self):
         if not self.has_param:
@@ -162,7 +164,13 @@ class GlusterModule(object):
     def accum_new_centers(self, assign_i):
         if not self.has_param:
             return
-        # TODO: SVD
+        with torch.no_grad():
+            if self.do_svd:
+                self.accum_new_centers_svd(assign_i)
+            else:
+                self.accum_new_centers_uncorr(assign_i)
+
+    def accum_new_centers_uncorr(self, assign_i):
         Ais = self.Ais
         Gos = self.Gos
         # TODO: .7/5.5s overhead
@@ -171,6 +179,21 @@ class GlusterModule(object):
             self.Co_new.scatter_add_(0, assign_i.expand_as(Gos), Gos)
         if self.has_bias:
             self.Cb_new.scatter_add_(0, assign_i.expand_as(Gos), Gos)
+
+    def accum_new_centers_svd(self, assign_i):
+        # TODO: SVD
+        DwI = torch.zeros((self.nclusters, )+self.Dw.shape[1:]).cuda()
+        DwI.scatter_add_(
+                0, assign_i.unsqueeze(1).expand_as(self.Dw), self.Dw)
+        for c in range(self.nclusters):
+            # N = (assign_i == c).sum().float().clamp(1)
+            U, S, V = torch.svd(DwI[c], some=True)
+            s, si = S.max(0)
+            if self.has_weight:
+                self.Ci_new[c].copy_(s*U[:, si])
+                self.Co_new[c].copy_(V[:, si])
+            if self.has_bias:
+                self.Co_new[c].copy_(s*V[:, si])
 
     def reinit_from_data(self, reinits, perm):
         if not self.has_param:
@@ -288,7 +311,7 @@ class GlusterLinear(GlusterModule):
         C = self.nclusters
         B = Ai.shape[0]
 
-        Ci, Co = self.Ci, self.Cb
+        Ci, Co = self.Ci, self.Co
         CiAi = torch.matmul(Ci, Ai.t())
         CoGo = torch.matmul(Co, Go.t())
         CG = (CiAi)*(CoGo)
@@ -302,6 +325,8 @@ class GlusterLinear(GlusterModule):
         return O
 
     def reinit_from_data(self, reinits, perm):
+        if not self.has_param:
+            return
         # Ci0, Co0 = self._init_centers_layer(module.weight, nzeros)
         # Ci.masked_scatter_(counts == 0, Ci0)
         # Co.masked_scatter_(counts == 0, Co0)
@@ -314,6 +339,11 @@ class GlusterLinear(GlusterModule):
     def _post_proc(self, Go0):
         self.Ais = self.Ai0
         self.Gos = Go0
+        if self.do_svd:
+            Dw = torch.einsum('bi,bo->bio', [self.Ai0, Go0])
+            if Dw.shape != self.Dw.shape:
+                self.Dw = torch.zeros_like(Dw).cuda()
+            self.Dw.copy_(Dw)
         return self.Ai0, Go0
 
     def get_centers(self):
@@ -364,7 +394,7 @@ class GlusterConv(GlusterModule):
     def _save_dist_hook_bias(self, Ai, Go):
         C = self.nclusters
         B = Ai.shape[0]
-        T = Go.shape[-1]
+        # T = Go.shape[-1]
 
         Cb = self.Cb
         # W^Ta_i + b = a_{i+1}
@@ -377,8 +407,8 @@ class GlusterConv(GlusterModule):
         # bmm is probably slower
         CC = (Cb*Cb).sum(1).unsqueeze(-1)
         assert CC.shape == (C, 1), 'CC: C x 1.'
-        # TODO: mean/sum?
-        CG = torch.einsum('ko,bot->kb', [Cb, Go])/T
+        # mean/sum? sum
+        CG = torch.einsum('ko,bot->kb', [Cb, Go])  # /T
         assert CG.shape == (C, B), 'CG: C x B.'
         O = CC-2*CG
         return O
@@ -411,12 +441,12 @@ class GlusterConv(GlusterModule):
             # batch matmul matchs from the end of tensor2 backwards
             # CiAi = torch.matmul(Ci.unsqueeze(1).unsqueeze(1), Ai).squeeze(2)
             # CoGo = torch.matmul(Co.unsqueeze(1).unsqueeze(1), Go).squeeze(2)
-            # TODO: mean/sum?
-            CG = torch.einsum('kbt,kbt->kb', [CiAi, CoGo])/T
+            # mean/sum? sum
+            CG = torch.einsum('kbt,kbt->kb', [CiAi, CoGo])  # /T
         else:
             AiGo = torch.einsum('bit,bot->bio', [Ai, Go])
-            # TODO: mean/sum?
-            CG = torch.einsum('ki,bio,ko->kb', [Ci, AiGo, Co])/T
+            # mean/sum? sum
+            CG = torch.einsum('ki,bio,ko->kb', [Ci, AiGo, Co])  # /T
         assert CG.shape == (C, B), 'CG: C x B.'
         CiCi = (Ci*Ci).view(Ci.shape[0], -1).sum(1)
         CoCo = (Co*Co).view(Co.shape[0], -1).sum(1)
@@ -433,17 +463,13 @@ class GlusterConv(GlusterModule):
     def reinit_from_data(self, reinits, perm):
         if not self.has_param:
             return
-        # TODO: mean/sum?
-        # T = self.Go.shape[-1]
-        # Ai = self.Ai[perm].sum(-1)/T
-        # Go = self.Go[perm].sum(-1)/T
         Ais = self.Ais
         Gos = self.Gos
         if self.has_weight:
-            self.Ci.masked_scatter_(reinits, Ais)
-            self.Co.masked_scatter_(reinits, Gos)
+            self.Ci.masked_scatter_(reinits, Ais[perm])
+            self.Co.masked_scatter_(reinits, Gos[perm])
         if self.has_bias:
-            self.Cb.masked_scatter_(reinits, Gos)
+            self.Cb.masked_scatter_(reinits, Gos[perm])
 
     def _post_proc(self, Go0):
         module = self.module
@@ -452,10 +478,22 @@ class GlusterConv(GlusterModule):
                 padding=module.padding,
                 stride=module.stride, dilation=module.dilation)
         Go = Go0.reshape(Go0.shape[:-2]+(np.prod(Go0.shape[-2:]), ))
-        # TODO: mean/sum?
+        # mean/sum? sqrt(mean)
+        # TODO: overflow, try /T only for Ais
         T = Go.shape[-1]
-        self.Ais = Ai.sum(-1)/T
-        self.Gos = Go.sum(-1)/T
+        Ais = (Ai/np.sqrt(T)).sum(-1)
+        Gos = (Go/np.sqrt(T)).sum(-1)
+        if Ais.shape != self.Ais.shape:
+            self.Ais = torch.zeros_like(Ais).cuda()
+        if Gos.shape != self.Gos.shape:
+            self.Gos = torch.zeros_like(Gos).cuda()
+        self.Ais.copy_(Ais)
+        self.Gos.copy_(Gos)
+        if self.do_svd:
+            Dw = torch.einsum('bit,bot->bio', [Ai, Go])
+            if Dw.shape != self.Dw.shape:
+                self.Dw = torch.zeros_like(Dw).cuda()
+            self.Dw.copy_(Dw)
         return Ai, Go
 
     def get_centers(self):

@@ -23,9 +23,13 @@ def set_seed(seed):
     np.random.seed(seed)
 
 
-def print_stats(model, gluster, X, T, batch_size):
+def print_stats(model, gluster, X, T, batch_size, active_only=''):
     num = X.shape[0]
-    W = list([param for name, param in model.named_parameters()])
+    # TODO: bias
+    W = list([
+        param for name, param in model.named_parameters()
+        if (active_only == '' or name.startswith(active_only))
+        and 'bias' not in name])
     print(list([name for name, param in model.named_parameters()]))
 
     centers = gluster.get_centers()
@@ -128,7 +132,7 @@ def model_time(model, X, T, batch_size, niters):
 
 
 def test_gluster_online(model, batch_size, data, nclusters, beta, min_size,
-                        reinit_method, niters):
+                        reinit_method, niters, active_only=''):
     X, T, Xte, Yte = data
     train_size = X.shape[0]
     print('batch_size: %d' % batch_size)
@@ -141,7 +145,8 @@ def test_gluster_online(model, batch_size, data, nclusters, beta, min_size,
 
     modelg = copy.deepcopy(model)
     gluster = GradientClusterOnline(modelg, beta, min_size, reinit_method,
-                                    nclusters=nclusters)
+                                    nclusters=nclusters,
+                                    active_only=active_only)
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
@@ -163,7 +168,7 @@ def test_gluster_online(model, batch_size, data, nclusters, beta, min_size,
     print('assign:')
     print(assign_i)
     # use model to prevent C update
-    print_stats(model, gluster, Xte, Yte, batch_size)
+    print_stats(model, gluster, Xte, Yte, batch_size, active_only)
 
     model_tc = model_time(model, X, T, batch_size, niters)
 
@@ -194,7 +199,7 @@ class DataLoader(object):
 
 
 def test_gluster_batch(
-        model, batch_size, data, nclusters, min_size, citers):
+        model, batch_size, data, nclusters, min_size, citers, active_only=''):
     X, T, Xte, Yte = data
     train_size = X.shape[0]
     print('batch_size: %d' % batch_size)
@@ -230,7 +235,7 @@ def test_gluster_batch(
     print('assign:')
     print(assign_i)
     # use model to prevent C update
-    print_stats(model, gluster, Xte, Yte, batch_size)
+    print_stats(model, gluster, Xte, Yte, batch_size, active_only)
 
     tic = time.time()
     model_tc = model_time(model, X, T, batch_size, citers)
@@ -738,6 +743,20 @@ class TestGlusterConv(unittest.TestCase, ToyTests, MNISTTest):
         self.model.cuda()
         print('Model initialized.')
         self.prefix = '/u/faghri/dmom/code/notebooks/figs_gluster/cnn'
+
+    def test_more_iters_conv1(self):
+        model = self.model
+        # More iterations
+        data = data_unique_n(100, 5)
+        test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 100, 'conv1')
+        print(">>> Similar magnitude of normC, dists not small.")
+
+    def test_more_iters_conv2(self):
+        model = self.model
+        # More iterations
+        data = data_unique_n(100, 5)
+        test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 100, 'conv2')
+        print(">>> Similar magnitude of normC, dists small.")
 
 
 if __name__ == '__main__':
