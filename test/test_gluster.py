@@ -219,7 +219,7 @@ def test_gluster_batch(
     data_loader = DataLoader(X, T, batch_size)
     for i in range(citers):
         tic = time.time()
-        gluster.update_batch(data_loader, train_size)
+        gluster.update_batch(data_loader, train_size, ci=i, citers=citers)
         toc = time.time()
         gluster_tc[i] = (toc - tic)
 
@@ -309,7 +309,9 @@ def test_mnist(
     loss_i = 0
     for i in range(citers):
         tic = time.time()
-        stat = gluster.update_batch(train_loader, len(train_dataset))
+        stat = gluster.update_batch(
+                train_loader, len(train_dataset),
+                ci=i, citers=citers)
         if i > 0:
             assert pred_i.sum() == stat[3].sum(), 'predictions changed'
             assert loss_i.sum() == stat[4].sum(), 'loss changed'
@@ -330,7 +332,7 @@ def test_mnist(
 
 def test_mnist_online(
         model, batch_size, epochs, nclusters, beta, min_size,
-        reinit_method, figname):
+        reinit_method, figname, active_only=''):
     print('batch_size: %d' % batch_size)
     print('epochs    : %d' % epochs)
     print('nclusters : %d' % nclusters)
@@ -353,7 +355,8 @@ def test_mnist_online(
 
     modelg = copy.deepcopy(model)
     gluster = GradientClusterOnline(modelg, beta, min_size,
-                                    reinit_method, nclusters=nclusters)
+                                    reinit_method, nclusters=nclusters,
+                                    active_only=active_only)
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
@@ -647,25 +650,28 @@ class MNISTTest(object):
         figname = self.prefix+',nclusters_10,citers_10.pth.tar'
         test_mnist(model, 128, 2, nclusters, 10, citers, figname)
 
-    def test_mnist_online(self):
+    def test_mnist_online(self, active_only=''):
         model = self.model
         # Online gluster on MNIST
         epochs = 2
         nclusters = 10
-        beta = .999
-        min_size = 1
+        beta = .99  # .999 # .99 this for conv1
+        min_size = 50  # 1
         reinit_method = 'largest'
-        figname = self.prefix+',nclusters_10,online.pth.tar'
+        figname = (
+                self.prefix+',nclusters_10,online%s.pth.tar'
+                % ((',' if active_only != '' else '') + active_only))
         test_mnist_online(model, 128, epochs, nclusters,
-                          beta, min_size, reinit_method, figname)
+                          beta, min_size, reinit_method, figname,
+                          active_only=active_only)
 
     def test_mnist_online_delayed(self):
         model = self.model
         # Online gluster with delayed update
         epochs = 2
         nclusters = 10
-        beta = .999
-        min_size = 1
+        beta = .99
+        min_size = 20
         reinit_method = 'largest'
         delay = 10
         figname = (
@@ -679,8 +685,8 @@ class MNISTTest(object):
         model = self.model
         epochs = 2
         nclusters = 10
-        beta = .999
-        min_size = 1
+        beta = .9  # .999
+        min_size = 20  # 1
         reinit_method = 'largest'
         delay = 100
         figname = (
@@ -778,21 +784,33 @@ class TestGlusterConv(unittest.TestCase, ToyTests, MNISTTest):
 
     def test_mnist_citer10_fc2(self):
         model = self.model
+        nclusters = 10
         citers = 10
-        figname = None
-        test_mnist(model, 128, 2, 2, 10, citers, figname, active_only='fc2')
+        figname = self.prefix+',nclusters_10,citers_10,fc2.pth.tar'
+        test_mnist(
+                model, 128, 2, nclusters, 10, citers,
+                figname, active_only='fc2')
 
     def test_mnist_citer10_conv1(self):
         model = self.model
+        nclusters = 10
         citers = 10
-        figname = None
-        test_mnist(model, 128, 2, 2, 10, citers, figname, active_only='conv1')
+        figname = self.prefix+',nclusters_10,citers_10,conv1.pth.tar'
+        test_mnist(
+                model, 128, 2, nclusters, 10, citers, figname,
+                active_only='conv1')
 
     def test_mnist_citer10_conv2(self):
         model = self.model
+        nclusters = 10
         citers = 10
-        figname = None
-        test_mnist(model, 128, 2, 2, 10, citers, figname, active_only='conv2')
+        figname = self.prefix+',nclusters_10,citers_10,conv2.pth.tar'
+        test_mnist(
+                model, 128, 2, nclusters, 10, citers, figname,
+                active_only='conv2')
+
+    def test_mnist_online_conv1(self):
+        self.test_mnist_online('conv1')
 
 
 if __name__ == '__main__':

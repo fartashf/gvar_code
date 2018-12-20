@@ -212,7 +212,7 @@ class GradientClusterOnline(GradientCluster):
                  reinit_method='data', **kwargs):
         super(GradientClusterOnline, self).__init__(model, **kwargs)
         self.beta = beta  # cluster size decay factor
-        self.min_size = 1
+        self.min_size = min_size
         self.reinit_method = reinit_method  # 'data' or 'largest'
         self.cluster_size.fill_(self.min_size)
 
