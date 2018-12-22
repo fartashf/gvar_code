@@ -23,13 +23,26 @@ def set_seed(seed):
     np.random.seed(seed)
 
 
-def print_stats(model, gluster, X, T, batch_size, active_only=''):
+def proc_kwargs(**kwargs):
+    s = ''
+    for k, v in kwargs.items():
+        if isinstance(v, list) or isinstance(v, str):
+            s += ((',%s_%s' % (k, '_'.join(v)) if len(v) != 0 else ''))
+        else:
+            s += ',%s_%s' % (k, str(v))
+    return s
+
+
+def print_stats(
+        model, gluster, X, T, batch_size, active_only=[],
+        inactive_mods=[], **kwargs):
     num = X.shape[0]
     # TODO: bias
     W = list([
         param for name, param in model.named_parameters()
-        if (active_only == '' or name.startswith(active_only))
-        and 'bias' not in name])
+        if (len(active_only) == 0 or name.startswith(active_only[0]))
+        and 'bias' not in name
+        and (len(inactive_mods) == 0 or name not in inactive_mods)])
     print(list([name for name, param in model.named_parameters()]))
 
     centers = gluster.get_centers()
@@ -43,8 +56,6 @@ def print_stats(model, gluster, X, T, batch_size, active_only=''):
         t = Variable(T[i:i + 1]).cuda()
         model.zero_grad()
         y = model(x)
-        # TODO: dist to centers for Conv is not zero
-        # fix that, do all tests, move to sampling
         loss = F.nll_loss(y, t) / batch_size
         grad_params = torch.autograd.grad(loss, W)
         L = [(g - c.cuda()).pow(2).view(nclusters, -1).sum(1).cpu().numpy()
@@ -132,7 +143,7 @@ def model_time(model, X, T, batch_size, niters):
 
 
 def test_gluster_online(model, batch_size, data, nclusters, beta, min_size,
-                        reinit_method, niters, active_only=''):
+                        reinit_method, niters, **kwargs):
     X, T, Xte, Yte = data
     train_size = X.shape[0]
     print('batch_size: %d' % batch_size)
@@ -146,7 +157,7 @@ def test_gluster_online(model, batch_size, data, nclusters, beta, min_size,
     modelg = copy.deepcopy(model)
     gluster = GradientClusterOnline(modelg, beta, min_size, reinit_method,
                                     nclusters=nclusters,
-                                    active_only=active_only)
+                                    **kwargs)
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
@@ -168,7 +179,7 @@ def test_gluster_online(model, batch_size, data, nclusters, beta, min_size,
     print('assign:')
     print(assign_i)
     # use model to prevent C update
-    print_stats(model, gluster, Xte, Yte, batch_size, active_only)
+    print_stats(model, gluster, Xte, Yte, batch_size, **kwargs)
 
     model_tc = model_time(model, X, T, batch_size, niters)
 
@@ -198,8 +209,8 @@ class DataLoader(object):
         return self.X.shape[0]
 
 
-def test_gluster_batch(
-        model, batch_size, data, nclusters, min_size, citers, active_only=''):
+def test_toy_batch(
+        model, batch_size, data, nclusters, min_size, citers, **kwargs):
     X, T, Xte, Yte = data
     train_size = X.shape[0]
     print('batch_size: %d' % batch_size)
@@ -210,18 +221,27 @@ def test_gluster_batch(
 
     modelg = copy.deepcopy(model)
     gluster = GradientClusterBatch(
-            modelg, min_size, nclusters=nclusters,
-            active_only=active_only)
+            modelg, min_size, nclusters=nclusters, **kwargs)
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
     gluster_tc = np.zeros(citers)
+    total_dist = float('inf')
+    pred_i = 0
+    loss_i = 0
     data_loader = DataLoader(X, T, batch_size)
     for i in range(citers):
         tic = time.time()
-        gluster.update_batch(data_loader, train_size, ci=i, citers=citers)
+        stat = gluster.update_batch(
+                data_loader, train_size, ci=i, citers=citers)
         toc = time.time()
         gluster_tc[i] = (toc - tic)
+        if i > 0:
+            assert pred_i.sum() == stat[3].sum(), 'predictions changed'
+            assert loss_i.sum() == stat[4].sum(), 'loss changed'
+            assert stat[0].sum() <= total_dist.sum()+1e-5,\
+                'Total dists went up'
+        total_dist, assign_i, target_i, pred_i, loss_i, topk_i = stat
 
     # get test data assignments
     gluster.eval()  # gluster test mode
@@ -237,7 +257,7 @@ def test_gluster_batch(
     print('assign:')
     print(assign_i)
     # use model to prevent C update
-    print_stats(model, gluster, Xte, Yte, batch_size, active_only)
+    print_stats(model, gluster, Xte, Yte, batch_size, **kwargs)
 
     tic = time.time()
     model_tc = model_time(model, X, T, batch_size, citers)
@@ -266,9 +286,9 @@ def train(epoch, train_loader, model, optimizer):
                 loss=loss.item()))
 
 
-def test_mnist(
+def test_mnist_batch(
         model, batch_size, epochs, nclusters, min_size, citers, figname=None,
-        ignore_modules=[], no_grad=False, active_only=''):
+        **kwargs):
     print('batch_size: %d' % batch_size)
     print('epochs    : %d' % epochs)
     print('nclusters : %d' % nclusters)
@@ -298,8 +318,7 @@ def test_mnist(
     modelg = copy.deepcopy(model)
     # model's weight are not going to change, opt.step() is not called
     gluster = GradientClusterBatch(modelg, min_size, nclusters=nclusters,
-                                   ignore_modules=ignore_modules,
-                                   no_grad=no_grad, active_only=active_only)
+                                   **kwargs)
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
@@ -312,14 +331,15 @@ def test_mnist(
         stat = gluster.update_batch(
                 train_loader, len(train_dataset),
                 ci=i, citers=citers)
-        if i > 0:
-            assert pred_i.sum() == stat[3].sum(), 'predictions changed'
-            assert loss_i.sum() == stat[4].sum(), 'loss changed'
-            assert stat[0].sum() <= total_dist.sum(), 'Total dists went up'
-        total_dist, assign_i, target_i, pred_i, loss_i, topk_i = stat
         toc = time.time()
         gluster_tc[i] = (toc - tic)
         normC = gluster.print_stats()
+        if i > 0:
+            assert pred_i.sum() == stat[3].sum(), 'predictions changed'
+            assert loss_i.sum() == stat[4].sum(), 'loss changed'
+            assert stat[0].sum() <= total_dist.sum()+1e-5,\
+                'Total dists went up'
+        total_dist, assign_i, target_i, pred_i, loss_i, topk_i = stat
 
     print('%.4f +/- %.4f' % (gluster_tc.mean(), gluster_tc.std()))
     if figname is not None:
@@ -332,7 +352,7 @@ def test_mnist(
 
 def test_mnist_online(
         model, batch_size, epochs, nclusters, beta, min_size,
-        reinit_method, figname, active_only=''):
+        reinit_method, figname, **kwargs):
     print('batch_size: %d' % batch_size)
     print('epochs    : %d' % epochs)
     print('nclusters : %d' % nclusters)
@@ -356,7 +376,7 @@ def test_mnist_online(
     modelg = copy.deepcopy(model)
     gluster = GradientClusterOnline(modelg, beta, min_size,
                                     reinit_method, nclusters=nclusters,
-                                    active_only=active_only)
+                                    **kwargs)
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
@@ -389,11 +409,9 @@ def test_mnist_online(
             ai, batch_dist, iv = gluster.em_step()
             ai = ai.cpu().numpy()
             assign_i[idx] = ai
-            # TODO: multiple iv
-            if len(iv) > 0:
-                iv[0] = iv[0].cpu().numpy()
-                assign_i[assign_i == iv[0]] = -1
-                ai[ai == iv[0]] = -1
+            for ivi in iv:
+                assign_i[assign_i == ivi] = -1
+                ai[ai == ivi] = -1
             # optim
             optimizer.step()
             toc = time.time()
@@ -614,56 +632,65 @@ class ToyTests(object):
         test_gluster_online(model, 10, data, 2, .9, 1, 'data', 100)
         test_gluster_online(model, 10, data, 2, .9, 1, 'largest', 100)
 
-    def test_gluster_batch(self):
+    def test_toy_batch(self, **kwargs):
         model = self.model
         # gluster batch
         data = data_unique_n(100, 5)
-        test_gluster_batch(model, 10, data, 5, 1, 10)
+        test_toy_batch(model, 10, data, 5, 1, 10, **kwargs)
 
-    def test_gluster_batch_noise(self):
+    def test_toy_batch_noise(self, **kwargs):
         model = self.model
         # gluster batch noise
         data = data_unique_perc(100, [.9, .1])
         data = purturb_data(data, .01)
-        # TODO: seed 12345
-        test_gluster_batch(model, 10, data, 2, 1, 10)
+        set_seed(12345)
+        test_toy_batch(model, 10, data, 2, 1, 10, **kwargs)
 
 
 class MNISTTest(object):
-    def test_mnist_citer2(self):
+    def test_mnist_batch_citer2(self):
         model = self.model
         # MNIST
         citers = 2
         figname = self.prefix+',nclusters_2,citers_2.pth.tar'
-        test_mnist(model, 128, 2, 2, 10, citers, figname)
+        test_mnist_batch(model, 128, 2, 2, 10, citers, figname)
 
-    def test_mnist_citer10(self):
+    def test_mnist_batch_citer10(self, **kwargs):
         model = self.model
         citers = 10
-        figname = self.prefix+',nclusters_2,citers_10.pth.tar'
-        test_mnist(model, 128, 2, 2, 10, citers, figname)
+        figname = (
+                self.prefix+',nclusters_2,citers_10%s.pth.tar'
+                % proc_kwargs(**kwargs))
+        test_mnist_batch(
+                model, 128, 2, 2, 10, citers, figname,
+                **kwargs)
 
-    def test_mnist_nclusters10(self):
+    def test_mnist_batch_nclusters10(self, **kwargs):
         model = self.model
         nclusters = 10
         citers = 10
-        figname = self.prefix+',nclusters_10,citers_10.pth.tar'
-        test_mnist(model, 128, 2, nclusters, 10, citers, figname)
+        min_size = 10
+        figname = (
+                self.prefix+',nclusters_10,citers_10%s.pth.tar' %
+                proc_kwargs(**kwargs))
+        test_mnist_batch(
+                model, 128, 2, nclusters, min_size, citers, figname,
+                **kwargs)
 
-    def test_mnist_online(self, active_only=''):
+    def test_mnist_online(self, **kwargs):
         model = self.model
         # Online gluster on MNIST
         epochs = 2
         nclusters = 10
-        beta = .99  # .999 # .99 this for conv1
-        min_size = 50  # 1
+        beta = .999  # .999 # .99 this for conv1
+        min_size = 10  # 1
         reinit_method = 'largest'
         figname = (
                 self.prefix+',nclusters_10,online%s.pth.tar'
-                % ((',' if active_only != '' else '') + active_only))
+                % proc_kwargs(**kwargs))
         test_mnist_online(model, 128, epochs, nclusters,
                           beta, min_size, reinit_method, figname,
-                          active_only=active_only)
+                          **kwargs)
 
     def test_mnist_online_delayed(self):
         model = self.model
@@ -696,38 +723,36 @@ class MNISTTest(object):
                 128, epochs, nclusters, beta, min_size, reinit_method, delay,
                 figname)
 
-    def test_mnist_input(self):
+    def test_mnist_batch_input(self):
         model = self.model
         # Batch gluster layer 1, input only
         nclusters = 10
         citers = 10
         no_grad = True
-        ignore_modules = ['fc2', 'fc3', 'fc4']
         figname = self.prefix+',nclusters_10,input.pth.tar'
-        test_mnist(
+        test_mnist_batch(
                 model, 128, 2, nclusters, 10, citers, figname,
-                ignore_modules, no_grad=no_grad)
+                active_only='fc1', no_grad=no_grad)
 
-    def test_mnist_layer1(self):
+    def test_mnist_batch_layer1(self):
         model = self.model
         # Batch gluster layer 1
         nclusters = 10
         citers = 10
-        ignore_modules = ['fc2', 'fc3', 'fc4']
         figname = self.prefix+',nclusters_10,layer_1.pth.tar'
-        test_mnist(
+        test_mnist_batch(
                 model, 128, 2, nclusters, 10, citers,
-                figname, ignore_modules)
+                figname, active_only='fc1')
 
-    def test_mnist_layer4(self):
+    def test_mnist_batch_layer4(self):
         model = self.model
         # Batch gluster layer 4
         nclusters = 10
         citers = 10
-        ignore_modules = ['fc1', 'fc2', 'fc3']
         figname = self.prefix+',nclusters_10,layer_4.pth.tar'
-        test_mnist(model, 128, 2, nclusters, 10,
-                   citers, figname, ignore_modules)
+        test_mnist_batch(
+                model, 128, 2, nclusters, 10,
+                citers, figname, active_only='fc4')
 
 
 class TestGlusterMLP(unittest.TestCase, ToyTests, MNISTTest):
@@ -757,60 +782,61 @@ class TestGlusterConv(unittest.TestCase, ToyTests, MNISTTest):
         model = self.model
         # More iterations
         data = data_unique_n(100, 5)
-        test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 100, 'conv1')
+        test_gluster_online(
+                model, 10, data, 5, .9, 1, 'largest', 100,
+                active_only=['conv1'])
         print(">>> Similar magnitude of normC, dists not small.")
 
     def test_more_iters_conv2(self):
         model = self.model
         # More iterations
         data = data_unique_n(100, 5)
-        test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 100, 'conv2')
+        test_gluster_online(
+                model, 10, data, 5, .9, 1, 'largest', 100,
+                active_only=['conv2'])
         print(">>> Similar magnitude of normC, dists small.")
 
-    def test_gluster_batch_conv1(self):
-        # TODO: init challenge
+    def test_toy_batch_conv2(self):
+        # TODO: dist to centers is not zero with no svd and svd does not work
         model = self.model
         # gluster batch
         data = data_unique_n(100, 5)
-        set_seed(1)
-        test_gluster_batch(model, 10, data, 5, 1, 10, 'conv1')
-        print(">>> Init challenge.")
+        test_toy_batch(model, 10, data, 5, 1, 10, active_only=['conv2'])
 
-    def test_gluster_batch_conv2(self):
-        model = self.model
-        # gluster batch
-        data = data_unique_n(100, 5)
-        test_gluster_batch(model, 10, data, 5, 1, 10, 'conv2')
+    def test_mnist_batch_citer10_fc2(self):
+        self.test_mnist_batch_citer10(active_only=['fc2'])
 
-    def test_mnist_citer10_fc2(self):
-        model = self.model
-        nclusters = 10
-        citers = 10
-        figname = self.prefix+',nclusters_10,citers_10,fc2.pth.tar'
-        test_mnist(
-                model, 128, 2, nclusters, 10, citers,
-                figname, active_only='fc2')
+    def test_mnist_batch_citer10_conv1(self):
+        self.test_mnist_batch_citer10(active_only=['conv1'])
 
-    def test_mnist_citer10_conv1(self):
-        model = self.model
-        nclusters = 10
-        citers = 10
-        figname = self.prefix+',nclusters_10,citers_10,conv1.pth.tar'
-        test_mnist(
-                model, 128, 2, nclusters, 10, citers, figname,
-                active_only='conv1')
-
-    def test_mnist_citer10_conv2(self):
-        model = self.model
-        nclusters = 10
-        citers = 10
-        figname = self.prefix+',nclusters_10,citers_10,conv2.pth.tar'
-        test_mnist(
-                model, 128, 2, nclusters, 10, citers, figname,
-                active_only='conv2')
+    def test_mnist_batch_citer10_conv2(self):
+        self.test_mnist_batch_citer10(active_only=['conv2'])
 
     def test_mnist_online_conv1(self):
-        self.test_mnist_online('conv1')
+        self.test_mnist_online(active_only=['conv1'])
+
+    def test_mnist_batch_nclusters10_conv1(self):
+        # TODO: no svd, dist goes up, converges to zero clutsers if disabled
+        self.test_mnist_batch_nclusters10(active_only=['conv1'])
+
+    def test_mnist_batch_nclusters10_conv1_svd(self):
+        self.test_mnist_batch_nclusters10(active_only=['conv1'], do_svd=True)
+
+    def test_mnist_online_noconv1(self):
+        self.test_mnist_online(inactive_mods=['conv1'])
+
+    def test_toy_batch_conv1(self):
+        # TODO: init challenge
+        self.test_toy_batch(active_only=['conv1'])
+        print(">>> Init challenge.")
+
+    def test_toy_batch_conv1_svd(self):
+        # TODO: init challenge
+        self.test_toy_batch(active_only=['conv1'], do_svd=True)
+        print(">>> Init challenge.")
+
+    def test_toy_batch_conv2_svd(self):
+        self.test_toy_batch(active_only=['conv2'], do_svd=True)
 
 
 if __name__ == '__main__':

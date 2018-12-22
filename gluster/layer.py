@@ -18,7 +18,8 @@ def get_gluster_module(module):
 class GlusterModule(object):
     def __init__(
             self, module, eps, nclusters, no_grad=False,
-            ignore_modules=[], active_only='', name='', *args, **kwargs):
+            inactive_mods=[], active_only=[], name='', do_svd=False,
+            *args, **kwargs):
         self.module = module
         self.nclusters = nclusters
         self.eps = eps
@@ -26,27 +27,27 @@ class GlusterModule(object):
         self.is_active = True
         self.is_eval = False
         self.no_grad = no_grad  # grad=1 => clustring in the input space
-        self.ignore_modules = ignore_modules
+        self.inactive_mods = inactive_mods
         self.name = name
-        self.active_only = active_only
         # TODO: unnamed children
-        self.active_modules = [
-                (n, m) for n, m in module.named_children()
-                if n not in ignore_modules]
+        self.active_modules = [(n, m) for n, m in module.named_children()]
         self.children = OrderedDict()
         self.has_weight = hasattr(module, 'weight')
         self.has_bias = False  # TODO: hasattr(module, 'bias') # SVD
         self.has_param = (self.has_weight or self.has_bias)
         self.has_param = (
                 self.has_param and
-                (self.active_only == '' or self.active_only == self.name))
+                (len(active_only) == 0 or self.name in active_only)
+                and
+                (len(inactive_mods) == 0 or self.name not in inactive_mods))
         self.Ai0 = torch.Tensor(0)
         self.Ais = torch.Tensor(0)
         self.Gos = torch.Tensor(0)
-        self.Dw = torch.Tensor(0)
+        self.Dw_cur = torch.Tensor(0)
         # self.Go = torch.Tensor(0)
         self._register_hooks()
-        self.do_svd = False
+        self.do_svd = do_svd
+        self.count = 0
 
     def _register_hooks(self):
         if not self.has_param:
@@ -139,15 +140,25 @@ class GlusterModule(object):
         if self.has_weight:
             self.Ci_new.fill_(0)
             self.Co_new.fill_(0)
+            if self.do_svd:
+                self.Dw_acc.fill_(0)
         if self.has_bias:
             self.Cb_new.fill_(0)
 
     def update_batch(self, cluster_size):
         if not self.has_param:
             return
+        # if self.count == 2:
+        #     return
+        # self.count += 1
+        if self.do_svd:
+            self.centers_svd()
         if self.has_weight:
             self.Ci.copy_(self.Ci_new).div_(cluster_size.clamp(1))
-            self.Co.copy_(self.Co_new).div_(cluster_size.clamp(1))
+            self.Co.copy_(self.Co_new)
+            if not self.do_svd:
+                # self.Ci.div_(self.T)
+                self.Co.div_(cluster_size.clamp(1))
         if self.has_bias:
             self.Cb.copy_(self.Cb_new).div_(cluster_size.clamp(1))
 
@@ -166,11 +177,11 @@ class GlusterModule(object):
             return
         with torch.no_grad():
             if self.do_svd:
-                self.accum_new_centers_svd(assign_i)
+                self.accum_new_full(assign_i)
             else:
-                self.accum_new_centers_uncorr(assign_i)
+                self.accum_new_rank1(assign_i)
 
-    def accum_new_centers_uncorr(self, assign_i):
+    def accum_new_rank1(self, assign_i):
         Ais = self.Ais
         Gos = self.Gos
         # TODO: .7/5.5s overhead
@@ -180,14 +191,14 @@ class GlusterModule(object):
         if self.has_bias:
             self.Cb_new.scatter_add_(0, assign_i.expand_as(Gos), Gos)
 
-    def accum_new_centers_svd(self, assign_i):
+    def accum_new_full(self, assign_i):
+        self.Dw_acc.scatter_add_(
+                0, assign_i.unsqueeze(1).expand_as(self.Dw_cur), self.Dw_cur)
+
+    def centers_svd(self):
         # TODO: SVD
-        DwI = torch.zeros((self.nclusters, )+self.Dw.shape[1:]).cuda()
-        DwI.scatter_add_(
-                0, assign_i.unsqueeze(1).expand_as(self.Dw), self.Dw)
         for c in range(self.nclusters):
-            # N = (assign_i == c).sum().float().clamp(1)
-            U, S, V = torch.svd(DwI[c], some=True)
+            U, S, V = torch.svd(self.Dw_acc[c], some=True)
             s, si = S.max(0)
             if self.has_weight:
                 self.Ci_new[c].copy_(s*U[:, si])
@@ -209,7 +220,6 @@ class GlusterModule(object):
         """
         # reinit centers
         # X[ri] = is index_put_(ri, ...)
-        # TODO: figure out autograd with this copy
         if self.has_weight:
             self.Ci[ri] = self.Ci[li]
             self.Co[ri] = self.Co[li]
@@ -278,14 +288,17 @@ class GlusterLinear(GlusterModule):
         super(GlusterLinear, self).__init__(*args, **kwargs)
         weight = self.module.weight
         dout, din = weight.shape
-        # TODO: change init to 2/din
+        # TODO: change init to 2/din for relu
         C = self.nclusters
+        # any operation on C involves no grad
         with torch.no_grad():
             if self.has_weight:
                 self.Ci = torch.rand((C, din)).cuda()/(din+dout)*self.eps
                 self.Co = torch.rand((C, dout)).cuda()/(din+dout)*self.eps
                 self.Ci_new = torch.zeros_like(self.Ci)
                 self.Co_new = torch.zeros_like(self.Co)
+                if self.do_svd:
+                    self.Dw_acc = torch.zeros((C, din, dout)).cuda()
             if self.has_bias:
                 self.Cb = torch.rand((C, dout)).cuda()/dout*self.eps
                 self.Cb_new = torch.zeros_like(self.Cb)
@@ -345,9 +358,9 @@ class GlusterLinear(GlusterModule):
         self.Gos = Go0
         if self.do_svd:
             Dw = torch.einsum('bi,bo->bio', [self.Ai0, Go0])
-            if Dw.shape != self.Dw.shape:
-                self.Dw = torch.zeros_like(Dw).cuda()
-            self.Dw.copy_(Dw)
+            if self.Dw_cur.shape != Dw.shape:
+                self.Dw_cur = torch.zeros_like(Dw).cuda()
+            self.Dw_cur.copy_(Dw)
         return self.Ai0, Go0
 
     def get_centers(self):
@@ -375,12 +388,15 @@ class GlusterConv(GlusterModule):
         dout = self.param.shape[0]
         eps = self.eps
         C = self.nclusters
+        # any operation on C involves no grad
         with torch.no_grad():
             if self.has_weight:
                 self.Ci = torch.rand((C, din)).cuda()/(din+dout)*eps
                 self.Co = torch.rand((C, dout)).cuda()/(din+dout)*eps
                 self.Ci_new = torch.zeros_like(self.Ci)
                 self.Co_new = torch.zeros_like(self.Co)
+                if self.do_svd:
+                    self.Dw_acc = torch.zeros((C, din, dout)).cuda()
             if self.has_bias:
                 self.Cb = torch.rand((C, dout)).cuda()/dout*self.eps
                 self.Cb_new = torch.zeros_like(self.Cb)
@@ -449,6 +465,8 @@ class GlusterConv(GlusterModule):
             # CoGo = torch.matmul(Co.unsqueeze(1).unsqueeze(1), Go).squeeze(2)
             # mean/sum? sum
             CG = torch.einsum('kbt,kbt->kb', [CiAi, CoGo])  # /T
+            # if self.count == 2:
+            #     import ipdb; ipdb.set_trace()
         else:
             AiGo = torch.einsum('bit,bot->bio', [Ai, Go])
             # mean/sum? sum
@@ -487,8 +505,8 @@ class GlusterConv(GlusterModule):
         # mean/sum? sqrt(mean)
         # TODO: overflow, try /T only for Ais
         T = Go.shape[-1]
-        Ais = (Ai/np.sqrt(T)).sum(-1)
-        Gos = (Go/np.sqrt(T)).sum(-1)
+        Ais = (Ai/T/100).sum(-1)  # np.sqrt(T)
+        Gos = (Go*100).sum(-1)
         if Ais.shape != self.Ais.shape:
             self.Ais = torch.zeros_like(Ais).cuda()
         if Gos.shape != self.Gos.shape:
@@ -497,9 +515,9 @@ class GlusterConv(GlusterModule):
         self.Gos.copy_(Gos)
         if self.do_svd:
             Dw = torch.einsum('bit,bot->bio', [Ai, Go])
-            if Dw.shape != self.Dw.shape:
-                self.Dw = torch.zeros_like(Dw).cuda()
-            self.Dw.copy_(Dw)
+            if self.Dw_cur.shape != Dw.shape:
+                self.Dw_cur = torch.zeros_like(Dw).cuda()
+            self.Dw_cur.copy_(Dw)
         return Ai, Go
 
     def get_centers(self):
@@ -509,8 +527,9 @@ class GlusterConv(GlusterModule):
         dout = self.module.weight.shape[0]
         din = self.module.weight.shape[1:]
         centers = []
-        # TODO: dist to centers is bad, maybe because of /T and numerical prec
         if self.has_weight:
+            # print('normCi: %s' % str(self.Ci.pow(2).sum(-1).cpu().numpy()))
+            # print('normCo: %s' % str(self.Co.pow(2).sum(-1).cpu().numpy()))
             Cf = torch.matmul(self.Co.unsqueeze(-1), self.Ci.unsqueeze(1))
             assert Cf.shape == (C, dout, np.prod(din)), 'Cf: C x din x dout'
             Cf = Cf.reshape((C, ) + self.module.weight.shape)

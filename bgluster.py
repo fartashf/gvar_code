@@ -50,7 +50,7 @@ def test_batch(model, data_loader, opt, dataset):
         if i > 0:
             assert pred_i.sum() == stat[3].sum(), 'predictions changed'
             assert loss_i.sum() == stat[4].sum(), 'loss changed'
-            # assert stat[0].sum() <= total_dist.sum(), 'Total dists went up'
+            assert stat[0].sum() <= total_dist.sum(), 'Total dists went up'
         total_dist, assign_i, target_i, pred_i, loss_i, topk_i = stat
         toc = time.time()
         gluster_tc[i] = (toc - tic)
@@ -119,11 +119,9 @@ def test_online(model, data_loader, opt, dataset):
             ai, batch_dist, iv = gluster.em_step()
             ai = ai.cpu().numpy()
             assign_i[idx] = ai
-            # TODO: multiple iv
-            if len(iv) > 0:
-                iv[0] = iv[0].cpu().numpy()
-                assign_i[assign_i == iv[0]] = -1
-                ai[ai == iv[0]] = -1
+            for ivi in iv:
+                assign_i[assign_i == ivi] = -1
+                ai[ai == ivi] = -1
             toc = time.time()
             gluster_tc += [toc - tic]
             batch_time.update(time.time() - end)

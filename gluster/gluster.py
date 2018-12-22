@@ -128,8 +128,8 @@ class GradientClusterBatch(GradientCluster):
             # print([a.shape for a in A[-20:]])
             # import ipdb; ipdb.set_trace()
             ai, batch_dist = self.assign()
-            if not (batch_dist.max() < 1e10 and batch_dist.min() > -1e10):
-                raise Exception('Distortion out of bounds')
+            assert batch_dist.max() < 1e10 and batch_dist.min() > -1e10,\
+                'Distortion out of bounds'
             assign_i[idx] = ai
             total_dist.scatter_add_(0, ai, batch_dist)
             batch_time.update(time.time() - end)
@@ -289,7 +289,6 @@ class GradientClusterOnline(GradientCluster):
         _, ri = reinits.max(0)
         tdm = self.total_dist.masked_fill(
             self.cluster_size < self.min_size, float('-inf'))
-        # TODO: Ties should be broken deterministically
         _, li = tdm.max(0)
         self.G.reinit_from_largest(ri, li)
         self.cluster_size[ri] = self.cluster_size[li] / 2
@@ -297,5 +296,5 @@ class GradientClusterOnline(GradientCluster):
         # This is not exact, maybe add a multiple of cluster size
         self.total_dist[ri] = self.total_dist[li]  # -1e-5
         # print(self.cluster_size)
-        invalid_clusters = [ri]
+        invalid_clusters = [ri.item()]
         return invalid_clusters
