@@ -229,6 +229,7 @@ def test_toy_batch(
     total_dist = float('inf')
     pred_i = 0
     loss_i = 0
+    reinits = 0
     data_loader = DataLoader(X, T, batch_size)
     for i in range(citers):
         tic = time.time()
@@ -239,8 +240,14 @@ def test_toy_batch(
         if i > 0:
             assert pred_i.sum() == stat[3].sum(), 'predictions changed'
             assert loss_i.sum() == stat[4].sum(), 'loss changed'
-            assert stat[0].sum() <= total_dist.sum()+1e-5,\
-                'Total dists went up'
+            dt_down = stat[0].sum() <= total_dist.sum()+1e-5
+            reinits_new = gluster.reinits.sum().item()
+            if reinits_new > reinits:
+                if not dt_down:
+                    logging.info('^^^^ Total dists went up ^^^^')
+            else:
+                assert dt_down, 'Total dists went up'
+            reinits = reinits_new
         total_dist, assign_i, target_i, pred_i, loss_i, topk_i = stat
 
     # get test data assignments
@@ -766,6 +773,10 @@ class TestGlusterMLP(unittest.TestCase, ToyTests, MNISTTest):
         print('Model initialized.')
         self.prefix = '/u/faghri/dmom/code/notebooks/figs_gluster/mlp'
 
+    def test_toy_batch_input(self):
+        self.test_toy_batch(active_only=['fc1'], no_grad=True, do_svd=False)
+        print('Distance printed is not right bc no_grad')
+
 
 class TestGlusterConv(unittest.TestCase, ToyTests, MNISTTest):
     def setUp(self):
@@ -837,6 +848,13 @@ class TestGlusterConv(unittest.TestCase, ToyTests, MNISTTest):
 
     def test_toy_batch_conv2_svd(self):
         self.test_toy_batch(active_only=['conv2'], do_svd=True)
+
+    def test_mnist_batch_nclusters10_input(self):
+        self.test_mnist_batch_nclusters10(active_only=['conv1'], no_grad=True)
+
+    def test_toy_batch_input(self):
+        # TODO: init from dist doesn't work here
+        self.test_toy_batch(active_only=['conv1'], no_grad=True, do_svd=True)
 
 
 if __name__ == '__main__':

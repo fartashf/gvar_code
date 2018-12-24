@@ -304,6 +304,7 @@ class Profiler(object):
 
 
 def get_all_tensors():
+    # https://discuss.pytorch.org/t/how-to-debug-causes-of-gpu-memory-leaks/6741
     A = []
     for obj in gc.get_objects():
         try:

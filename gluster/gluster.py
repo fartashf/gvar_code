@@ -163,6 +163,9 @@ class GradientClusterBatch(GradientCluster):
             idx = torch.arange(assign_i.shape[0])[assign_i[:, 0] == j]
             assign_i[idx[torch.randperm(len(idx))[:len(idx)//2]]] = i
             self.reinits[i] += 1
+            logging.info(
+                    'Gluster reinit> %d -> %d (%d & %d)'
+                    % (i, j, (assign_i == i).sum(), (assign_i == j).sum()))
 
         logging.info(
                 'Gluster batch> Update cluster centers given the assignments')
@@ -265,6 +268,7 @@ class GradientClusterOnline(GradientCluster):
         nreinits = reinits.sum()
         self.reinits += reinits.long()
         # TODO: stop reinit or delay if too often
+        logging.info('Reinit: %d' % nreinits)
         if nreinits > 0:
             if self.reinit_method == 'data':
                 return self.reinit_from_data(reinits, batch_size)

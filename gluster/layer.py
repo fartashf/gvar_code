@@ -96,8 +96,6 @@ class GlusterModule(object):
             Ai, Go = self._post_proc(Go0)
             # del Go0
             # Go = self.Go
-            if self.no_grad:
-                Go.fill_(1.)  # /Go0.numel())
             # print('%s %s' % (Ai.shape, Ai.shape))
             O = []
             # s = 0
@@ -354,6 +352,8 @@ class GlusterLinear(GlusterModule):
             self.Cb.masked_scatter_(reinits, self.Gos[perm])
 
     def _post_proc(self, Go0):
+        if self.no_grad:
+            Go0.fill_(1e-3)  # /Go0.numel())
         self.Ais = self.Ai0
         self.Gos = Go0
         if self.do_svd:
@@ -496,6 +496,8 @@ class GlusterConv(GlusterModule):
             self.Cb.masked_scatter_(reinits, Gos[perm])
 
     def _post_proc(self, Go0):
+        if self.no_grad:
+            Go0.fill_(1e-3)  # /Go0.numel())
         module = self.module
         Ai = F.unfold(
                 self.Ai0, module.kernel_size,
@@ -528,8 +530,8 @@ class GlusterConv(GlusterModule):
         din = self.module.weight.shape[1:]
         centers = []
         if self.has_weight:
-            # print('normCi: %s' % str(self.Ci.pow(2).sum(-1).cpu().numpy()))
-            # print('normCo: %s' % str(self.Co.pow(2).sum(-1).cpu().numpy()))
+            print('normCi: %s' % str(self.Ci.pow(2).sum(-1).cpu().numpy()))
+            print('normCo: %s' % str(self.Co.pow(2).sum(-1).cpu().numpy()))
             Cf = torch.matmul(self.Co.unsqueeze(-1), self.Ci.unsqueeze(1))
             assert Cf.shape == (C, dout, np.prod(din)), 'Cf: C x din x dout'
             Cf = Cf.reshape((C, ) + self.module.weight.shape)

@@ -47,15 +47,15 @@ def test_batch(model, data_loader, opt, dataset):
         stat = gluster.update_batch(
                 data_loader, len(data_loader.dataset),
                 ci=i, citers=citers)
+        toc = time.time()
+        gluster_tc[i] = (toc - tic)
+        normC = gluster.print_stats()
+        logging.info('%.4f +/- %.4f' % (gluster_tc.mean(), gluster_tc.std()))
         if i > 0:
             assert pred_i.sum() == stat[3].sum(), 'predictions changed'
             assert loss_i.sum() == stat[4].sum(), 'loss changed'
             assert stat[0].sum() <= total_dist.sum(), 'Total dists went up'
         total_dist, assign_i, target_i, pred_i, loss_i, topk_i = stat
-        toc = time.time()
-        gluster_tc[i] = (toc - tic)
-        normC = gluster.print_stats()
-        logging.info('%.4f +/- %.4f' % (gluster_tc.mean(), gluster_tc.std()))
         torch.save({'assign': assign_i, 'target': target_i,
                     'pred': pred_i, 'loss': loss_i,
                     'topk': topk_i,
