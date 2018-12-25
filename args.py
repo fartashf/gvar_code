@@ -184,5 +184,7 @@ def add_args():
     parser.add_argument('--g_estim', default=argparse.SUPPRESS, type=str)
     parser.add_argument('--gvar_iter',
                         default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--epoch_iters',
+                        default=argparse.SUPPRESS, type=int)
     args = parser.parse_args()
     return args

@@ -520,36 +520,60 @@ class MinVarSampler(Sampler):
         return self.num_samples
 
 
+class InfiniteLoader(object):
+    def __init__(self, data_loader):
+        self.data_loader = data_loader
+
+    def __iter__(self):
+        self.data_iter = iter(self.data_loader)
+        return self
+
+    def __next__(self):
+        try:
+            data = next(self.data_iter)
+        except StopIteration:
+            self.data_iter = iter(self.data_loader)
+            data = next(self.data_iter)
+        return data
+
+    def next(self):
+        # for python2
+        return self.__next__()
+
+
 class GlusterSampler(Sampler):
-    def __init__(self, num_samples, opt):
-        self.num_samples = num_samples
+    def __init__(self, data_size, opt):
+        self.data_size = data_size
         self.opt = opt
         self.assign_i = None
-        self.nclusters = self.opt.g_nclusters
+        self.iters = None
+        self.num_samples = opt.epoch_iters * opt.batch_size
 
     def set_assign_i(self, assign_i):
         self.assign_i = assign_i
+        self.iters = []
+        for i in range(assign_i.max()):
+            I = np.where(self.assign_i == i)[1]
+            if len(I) != 0:
+                cluster_ids = [I[i] for i in torch.randperm(len(I))]
+                self.iters += [iter(InfiniteLoader(cluster_ids))]
 
     def __iter__(self):
         if self.assign_i is None:
-            for i in torch.randperm(self.num_samples):
+            for i in torch.randperm(self.data_size):
                 yield i
             return
-        iters = []
-        self.len = self.num_samples
-        for i in range(self.nclusters):
-            I = np.where(self.assign_i == i)
-            iters += [I[i] for i in torch.randperm(len(I))]
-            self.len = min(self.len, len(iters[-1]))
 
-        for i in range(self.len):
-            for j in range(self.nclusters):
-                yield iters[i][j]
+        cur_c = 0
+        for i in range(self.num_samples):
+            idx = next(self.iters[cur_c])
+            cur_c = (cur_c+1) % len(self.iters)
+            yield idx
 
     def __len__(self):
         if self.assign_i is None:
-            return self.num_samples
-        return self.len
+            return self.data_size
+        return self.num_samples
 
 
 def random_orthogonal_matrix(gain, shape):

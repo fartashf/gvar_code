@@ -12,16 +12,18 @@ import torch.nn
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
 import torch.nn.functional as F
+import torch.multiprocessing
 
 import utils
 import models
-from data import get_loaders
+from data import get_loaders, InfiniteLoader
 from args import add_args
 from gluster.gluster import GradientClusterBatch
 from log_utils import TBXWrapper
 from log_utils import AverageMeter, Profiler
 from log_utils import LogCollector
 tb_logger = TBXWrapper()
+torch.multiprocessing.set_sharing_strategy('file_system')
 
 
 class GradientEstimator(object):
@@ -37,17 +39,13 @@ class GradientEstimator(object):
 class SGDEstimator(GradientEstimator):
     def __init__(self, *args, **kwargs):
         super(SGDEstimator, self).__init__(*args, **kwargs)
-        # TODO: why so many open files?
-        self.data_iter = iter(self.train_loader)
+        # many open files? torch.multiprocessing sharing file_system
+        self.data_iter = iter(InfiniteLoader(self.train_loader))
 
     def get_grad(self, model):
-        try:
-            data = next(self.data_iter)
-        except StopIteration:
-            self.data_iter = iter(self.train_loader)
-            data = next(self.data_iter)
+        data = next(self.data_iter)
 
-        data, target, idx = data
+        data, target = data[0].cuda(), data[1].cuda()
         model.zero_grad()
         output = model(data)
         loss = F.nll_loss(output, target)
@@ -89,13 +87,14 @@ class SVRGEstimator(GradientEstimator):
     def __init__(self, *args, **kwargs):
         super(SVRGEstimator, self).__init__(*args, **kwargs)
         self.model = copy.deepcopy(self.model)
-        self.data_iter = iter(self.train_loader)
+        self.data_iter = iter(InfiniteLoader(self.train_loader))
         model = self.model
         self.mu = [torch.zeros_like(g) for g in model.parameters()]
         num = 0
         for batch_idx, (data, target, idx) in enumerate(self.train_loader):
             num += len(idx)
             model.eval()
+            data, target = data.cuda(), target.cuda()
             # model.train() # TODO: SVRG might have trouble with dropout
             model.zero_grad()
             output = model(data)
@@ -107,14 +106,10 @@ class SVRGEstimator(GradientEstimator):
             m /= num
 
     def get_grad(self, model_new):
-        try:
-            data = next(self.data_iter)
-        except StopIteration:
-            self.data_iter = iter(self.train_loader)
-            data = next(self.data_iter)
+        data = next(self.data_iter)
 
         model_old = self.model
-        data, target, idx = data
+        data, target = data[0].cuda(), data[1].cuda()
 
         # old grad
         model_old.zero_grad()
@@ -142,9 +137,10 @@ def test_gvar(tb_logger, model, train_loader, opt, niters):
         gest = SGDEstimator(model, train_loader, opt)
 
     # estimate grad var and bias
+    gviter = opt.gvar_iter
     Ege = [torch.zeros_like(g) for g in model.parameters()]
     Esgd = [torch.zeros_like(g) for g in model.parameters()]
-    for i in range(opt.gvar_iter):
+    for i in range(gviter):
         ge = gest.get_grad(model)
         for e, g in zip(Ege, ge):
             e += g
@@ -153,30 +149,28 @@ def test_gvar(tb_logger, model, train_loader, opt, niters):
         for e, g in zip(Esgd, g_sgd):
             e += g
     for e, g in zip(Ege, Esgd):
-        e /= opt.gvar_iter
-        g /= opt.gvar_iter
-    bias = np.sum([(ee-g).pow(2).sum().item() for ee, gg in zip(Ege, Esgd)])
-    tb_logger.log_value('grad_bias', bias, step=niters)
+        e /= gviter
+        g /= gviter
+    bias = np.sum([(ee-gg).pow(2).sum().item() for ee, gg in zip(Ege, Esgd)])
+    tb_logger.log_value('grad_bias', float(bias), step=niters)
+    nw = sum([w.numel() for w in model.parameters()])
     var_e = 0
     var_s = 0
-    nw = sum([w.numel() for w in model.parameters()])
-    for i in range(opt.gvar_iter):
+    for i in range(gviter):
         ge = gest.get_grad(model)
-        v = 0
-        for e, g in zip(Ege, ge):
-            v += (e-g).pow(2).sum()
+        v = sum([(ee-gg).pow(2).sum() for ee, gg in zip(Ege, ge)])
         var_e += v/nw
 
         g_sgd = sgd.get_grad(model)
-        v = 0
-        for e, g in zip(Esgd, g_sgd):
-            v += (e-g).pow(2).sum()
+        v = sum([(ee-gg).pow(2).sum() for ee, gg in zip(Esgd, g_sgd)])
         var_s += v/nw
-    var_e /= opt.gvar_iter
-    var_s /= opt.gvar_iter
-    tb_logger.log_value('sgd_var', bias, step=niters)
-    tb_logger.log_value('est_var', bias, step=niters)
-    return bias
+    var_e /= gviter
+    var_s /= gviter
+    tb_logger.log_value('est_var', float(var_e), step=niters)
+    tb_logger.log_value('sgd_var', float(var_s), step=niters)
+    logging.info(
+            'Gradient bias: %.8f\t sgd var: %.8f\t est var: %.8f'
+            % (bias, var_s, var_e))
 
 
 def test(tb_logger, model, test_loader,
@@ -221,10 +215,11 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
     end = time.time()
     epoch_iters = int(np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
     optimizer.logger.reset()
-    for batch_idx, (data, target, idx) in enumerate(train_loader):
+    # for batch_idx, (data, target, idx) in enumerate(train_loader):
+    data_iter = iter(InfiniteLoader(train_loader))
+    for batch_idx in range(opt.epoch_iters):
+        data, target, idx = next(data_iter)
         # train model
-        if optimizer.niters == opt.epochs*epoch_iters:
-            break
         model.train()
         optimizer.profiler.start()
         if opt.cuda:
@@ -269,8 +264,8 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
             tb_logger.log_value('loss', loss, step=niters)
             optimizer.logger.tb_log(tb_logger, step=niters)
 
-        # if optimizer.niters % epoch_iters == 0:
-        if True:
+        # if True:
+        if optimizer.niters % epoch_iters == 0:
             if opt.train_accuracy:
                 test(tb_logger,
                      model, train_test_loader, opt, optimizer.niters,
@@ -312,8 +307,10 @@ def main():
 
     train_loader, test_loader, train_test_loader = get_loaders(opt)
 
-    epoch_iters = int(np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
-    opt.maxiter = epoch_iters * opt.epochs
+    if opt.epoch_iters == 0:
+        opt.epoch_iters = int(
+                np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
+    opt.maxiter = opt.epoch_iters * opt.epochs
 
     model = models.init_model(opt)
     model.criterion = F.nll_loss
@@ -349,14 +346,14 @@ def main():
         else:
             print("=> no checkpoint found at '{}'".format(model_path))
 
-    while optimizer.niters < opt.epochs*epoch_iters:
+    while optimizer.niters < opt.epochs*opt.epoch_iters:
         optimizer.epoch = epoch
         if isinstance(opt.lr_decay_epoch, str):
             utils.adjust_learning_rate_multi(
-                    optimizer, optimizer.niters//epoch_iters, opt)
+                    optimizer, optimizer.niters//opt.epoch_iters, opt)
         else:
             utils.adjust_learning_rate(
-                    optimizer, optimizer.niters//epoch_iters, opt)
+                    optimizer, optimizer.niters//opt.epoch_iters, opt)
         ecode = train(tb_logger,
                       epoch, train_loader, model, optimizer, opt, test_loader,
                       save_checkpoint, train_test_loader)

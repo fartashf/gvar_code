@@ -113,11 +113,12 @@ class GradientClusterBatch(GradientCluster):
             # self.zero_data()
             output = self.model(data)
             pred_i[idx] = output.max(1, keepdim=True)[1].cpu().numpy()[:, 0]
-            _, pred = output.topk(5, 1, True, True)
-            pred = pred.t()
-            correct = pred.eq(target.view(1, -1).expand_as(pred))
-            topk_i[idx, 0] = correct[:1].float().sum(0).cpu().numpy()
-            topk_i[idx, 1] = correct.float().sum(0).cpu().numpy()
+            if output.shape[1] >= 5:
+                _, pred = output.topk(5, 1, True, True)
+                pred = pred.t()
+                correct = pred.eq(target.view(1, -1).expand_as(pred))
+                topk_i[idx, 0] = correct[:1].float().sum(0).cpu().numpy()
+                topk_i[idx, 1] = correct.float().sum(0).cpu().numpy()
             target_i[idx] = target.cpu().numpy()
             loss = F.nll_loss(output, target, reduction='none')
             loss_i[idx] = loss.detach().cpu().numpy()

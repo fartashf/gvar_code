@@ -75,3 +75,4 @@ g_reinit: largest
 gb_citers: 10
 g_estim: none
 gvar_iter: 10
+epoch_iters: 0
