@@ -35,6 +35,8 @@ def dataset_to_loaders(train_dataset, test_dataset, opt):
             train_sampler = DelayedSampler(len(idxdataset), opt)
     else:
         train_sampler = None
+    if opt.g_estim == 'gluster':
+        train_sampler = GlusterSampler(len(idxdataset), opt)
     train_loader = torch.utils.data.DataLoader(
         idxdataset,
         batch_size=opt.batch_size,
@@ -516,6 +518,38 @@ class MinVarSampler(Sampler):
         if self.training:
             return len(self.indices)
         return self.num_samples
+
+
+class GlusterSampler(Sampler):
+    def __init__(self, num_samples, opt):
+        self.num_samples = num_samples
+        self.opt = opt
+        self.assign_i = None
+        self.nclusters = self.opt.g_nclusters
+
+    def set_assign_i(self, assign_i):
+        self.assign_i = assign_i
+
+    def __iter__(self):
+        if self.assign_i is None:
+            for i in torch.randperm(self.num_samples):
+                yield i
+            return
+        iters = []
+        self.len = self.num_samples
+        for i in range(self.nclusters):
+            I = np.where(self.assign_i == i)
+            iters += [I[i] for i in torch.randperm(len(I))]
+            self.len = min(self.len, len(iters[-1]))
+
+        for i in range(self.len):
+            for j in range(self.nclusters):
+                yield iters[i][j]
+
+    def __len__(self):
+        if self.assign_i is None:
+            return self.num_samples
+        return self.len
 
 
 def random_orthogonal_matrix(gain, shape):

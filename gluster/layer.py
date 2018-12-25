@@ -353,7 +353,7 @@ class GlusterLinear(GlusterModule):
 
     def _post_proc(self, Go0):
         if self.no_grad:
-            Go0.fill_(1e-3)  # /Go0.numel())
+            Go0.fill_(1e-3)  # TODO: /Go0.numel())
         self.Ais = self.Ai0
         self.Gos = Go0
         if self.do_svd:
@@ -497,7 +497,7 @@ class GlusterConv(GlusterModule):
 
     def _post_proc(self, Go0):
         if self.no_grad:
-            Go0.fill_(1e-3)  # /Go0.numel())
+            Go0.fill_(1e-3)  # TODO: /Go0.numel())
         module = self.module
         Ai = F.unfold(
                 self.Ai0, module.kernel_size,

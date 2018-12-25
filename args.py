@@ -181,5 +181,8 @@ def add_args():
     parser.add_argument('--g_no_grad', action='store_true')
     parser.add_argument('--g_active_only', default='')
     parser.add_argument('--g_online', action='store_true')
+    parser.add_argument('--g_estim', default=argparse.SUPPRESS, type=str)
+    parser.add_argument('--gvar_iter',
+                        default=argparse.SUPPRESS, type=int)
     args = parser.parse_args()
     return args
