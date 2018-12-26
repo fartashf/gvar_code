@@ -1,3 +1,11 @@
+## Dec 26
+gvar
+```
+CUDA_VISIBLE_DEVICES=0 ipython --pdb -- main/gvar.py --dataset mnist --optim sgd --lr 0.1 --momentum 0.9   --logger_name runs/mnist --epochs 10 --g_estim svrg --gvar_estim_iter 10 --gvar_snap_iter 10 --log_interval 10 --gvar_log_iter 10
+CUDA_VISIBLE_DEVICES=0 ipython --pdb -- main/gvar.py --dataset mnist --optim sgd --lr 0.1 --momentum 0.9   --logger_name runs/mnist --epochs 10 --g_estim sgd --gvar_estim_iter 10 --gvar_snap_iter 10 --log_interval 10 --gvar_log_iter 10
+CUDA_VISIBLE_DEVICES=0 ipython --pdb -- main/gvar.py --dataset 5class --optim sgd --lr 0.1 --momentum 0.9   --logger_name runs/5class --epochs 10 --g_estim svrg --gvar_estim_iter 100 --gvar_snap_iter 10 --log_interval 10 --gvar_log_iter 10 --gb_citers 10
+```
+
 ## Dec 17
 gluster online
 ```

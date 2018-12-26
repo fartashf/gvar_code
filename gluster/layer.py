@@ -19,7 +19,7 @@ class GlusterModule(object):
     def __init__(
             self, module, eps, nclusters, no_grad=False,
             inactive_mods=[], active_only=[], name='', do_svd=False,
-            *args, **kwargs):
+            debug=True, *args, **kwargs):
         self.module = module
         self.nclusters = nclusters
         self.eps = eps
@@ -45,15 +45,18 @@ class GlusterModule(object):
         self.Gos = torch.Tensor(0)
         self.Dw_cur = torch.Tensor(0)
         # self.Go = torch.Tensor(0)
-        self._register_hooks()
         self.do_svd = do_svd
         self.count = 0
+        self.debug = debug
+        self._register_hooks()
 
     def _register_hooks(self):
         if not self.has_param:
             return
-        logging.info(
-                'Gluster> register hooks {} {}'.format(self.name, self.module))
+        if self.debug:
+            logging.info(
+                    'Gluster> register hooks {} {}'.format(
+                        self.name, self.module))
         # https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/blob/master/algo/kfac.py
         self.module.register_forward_pre_hook(self._save_input_hook)
         self.module.register_backward_hook(self._save_dist_hook)
@@ -452,7 +455,7 @@ class GlusterConv(GlusterModule):
         # TODO: multi-GPU
         self.cost1 = cost1 = C*din*B*T + C*dout*B*T + C*B*T
         self.cost2 = cost2 = B*din*T*dout + C*B*din*dout
-        if self.batch_dist is None:
+        if self.batch_dist is None and self.debug:
             logging.info(
                     'Cost ratio %s: %.4f'
                     % (self.name, 1.*self.cost1/self.cost2))

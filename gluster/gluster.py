@@ -9,7 +9,7 @@ import time
 
 
 class GradientCluster(object):
-    def __init__(self, model, nclusters=1, **kwargs):
+    def __init__(self, model, nclusters=1, debug=True, **kwargs):
         # Q: duplicates
         # TODO: challenge: how many C? memory? time?
 
@@ -21,8 +21,9 @@ class GradientCluster(object):
         self.reinits = torch.zeros(nclusters, 1).long().to(device)
         self.cluster_size = torch.zeros(nclusters, 1).to(device)
         self.total_dist = torch.zeros(self.nclusters, 1).to(device)
+        self.debug = debug
 
-        self.G = GlusterContainer(model, 1, nclusters, **kwargs)
+        self.G = GlusterContainer(model, 1, nclusters, debug=debug, **kwargs)
 
     def activate(self):
         self.G.activate()
@@ -54,11 +55,13 @@ class GradientCluster(object):
         L = [c.pow(2).view(nclusters, -1).sum(1).cpu().numpy()
              for c in centers]
         normC = np.sqrt(np.sum(L, 0))
-        logging.info('normC:')
-        logging.info(normC)
-        logging.info('Reinit count: %s' % str(self.reinits.cpu().numpy()))
-        logging.info('Cluster size: %s' % str(self.cluster_size.cpu().numpy()))
-        logging.info('Total dists: %s' % str(self.total_dist.cpu().numpy()))
+        logging.info('normC:\n%s' % str(normC))
+        logging.info(
+                'Reinit count:\n%s' % str(self.reinits.cpu().numpy()))
+        logging.info(
+                'Cluster size:\n%s' % str(self.cluster_size.cpu().numpy()))
+        logging.info(
+                'Total dists:\n%s' % str(self.total_dist.cpu().numpy()))
         return normC
 
 
@@ -97,9 +100,10 @@ class GradientClusterBatch(GradientCluster):
         total_dist = torch.zeros(self.nclusters, 1).to(device)
         self.cluster_size = torch.zeros(self.nclusters, 1).cuda()
 
-        logging.info(
-                'Gluster batch> Save distortions'
-                ' and assign data to clusters.')
+        if self.debug:
+            logging.info(
+                    'Gluster batch> Save distortions'
+                    ' and assign data to clusters.')
         batch_time = AverageMeter()
         end = time.time()
         for batch_idx, (data, target, idx) in enumerate(data_loader):
@@ -136,23 +140,25 @@ class GradientClusterBatch(GradientCluster):
             batch_time.update(time.time() - end)
             end = time.time()
             if batch_idx % 10 == 0:
-                logging.info(
-                        'Gluster> [{0}/{3}][Assign:0/2][{1}/{2}]\t'
-                        'Loss: {loss:.6f}\t'
-                        'Time: {batch_time.val: .3f}'
-                        '({batch_time.avg:.3f})'.format(
-                            ci, batch_idx, len(data_loader), citers,
-                            loss=loss.item(),
-                            batch_time=batch_time))
+                if self.debug:
+                    logging.info(
+                            'Gluster> [{0}/{3}][Assign:0/2][{1}/{2}]\t'
+                            'Loss: {loss:.6f}\t'
+                            'Time: {batch_time.val: .3f}'
+                            '({batch_time.avg:.3f})'.format(
+                                ci, batch_idx, len(data_loader), citers,
+                                loss=loss.item(),
+                                batch_time=batch_time))
                 torch.cuda.empty_cache()
                 # import gc
                 # gc.collect()
         total_dist.div_(self.cluster_size.clamp(1))
         td = total_dist.cpu().numpy()
         self.total_dist.copy_(total_dist)
-        logging.info(
-                'Gluster batch> total distortions: %f (negative is fine)'
-                % td.sum().item())
+        if self.debug:
+            logging.info(
+                    'Gluster batch> total distortions: %f (negative is fine)'
+                    % td.sum().item())
 
         # split the scattered cluster if the smallest cluster is small
         # More than one split: don't know the new dist after one split
@@ -164,12 +170,15 @@ class GradientClusterBatch(GradientCluster):
             idx = torch.arange(assign_i.shape[0])[assign_i[:, 0] == j]
             assign_i[idx[torch.randperm(len(idx))[:len(idx)//2]]] = i
             self.reinits[i] += 1
-            logging.info(
-                    'Gluster reinit> %d -> %d (%d & %d)'
-                    % (i, j, (assign_i == i).sum(), (assign_i == j).sum()))
+            if self.debug:
+                logging.info(
+                        'Gluster reinit> %d -> %d (%d & %d)'
+                        % (i, j, (assign_i == i).sum(), (assign_i == j).sum()))
 
-        logging.info(
-                'Gluster batch> Update cluster centers given the assignments')
+        if self.debug:
+            logging.info(
+                    'Gluster batch> '
+                    'Update cluster centers given the assignments')
         # self._init_centers(0)
         self.G.zero_new_centers()
         batch_time = AverageMeter()
@@ -193,14 +202,15 @@ class GradientClusterBatch(GradientCluster):
             batch_time.update(time.time() - end)
             end = time.time()
             if batch_idx % 10 == 0:
-                logging.info(
-                        'Gluster> [{0}/{3}][Update:1/2][{1}/{2}]\t'
-                        'Loss: {loss:.6f}\t'
-                        'Time: {batch_time.val: .3f}'
-                        '({batch_time.avg:.3f})'.format(
-                            ci, batch_idx, len(data_loader), citers,
-                            loss=loss.item(),
-                            batch_time=batch_time))
+                if self.debug:
+                    logging.info(
+                            'Gluster> [{0}/{3}][Update:1/2][{1}/{2}]\t'
+                            'Loss: {loss:.6f}\t'
+                            'Time: {batch_time.val: .3f}'
+                            '({batch_time.avg:.3f})'.format(
+                                ci, batch_idx, len(data_loader), citers,
+                                loss=loss.item(),
+                                batch_time=batch_time))
                 torch.cuda.empty_cache()
 
         self.cluster_size.fill_(0)
@@ -269,7 +279,8 @@ class GradientClusterOnline(GradientCluster):
         nreinits = reinits.sum()
         self.reinits += reinits.long()
         # TODO: stop reinit or delay if too often
-        logging.info('Reinit: %d' % nreinits)
+        if self.debug:
+            logging.info('Reinit: %d' % nreinits)
         if nreinits > 0:
             if self.reinit_method == 'data':
                 return self.reinit_from_data(reinits, batch_size)

@@ -111,7 +111,7 @@ class AverageMeter(object):
     def __str__(self):
         if self.count == 0:
             return '%d' % self.val
-        return '%.2E (%.2E)' % (self.val, self.avg)
+        return '%.4f (%.4f)' % (self.val, self.avg)
 
     def tb_log(self, tb_logger, name, step=None):
         tb_logger.log_value(name, self.val, step=step)

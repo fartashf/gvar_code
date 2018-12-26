@@ -182,9 +182,17 @@ def add_args():
     parser.add_argument('--g_active_only', default='')
     parser.add_argument('--g_online', action='store_true')
     parser.add_argument('--g_estim', default=argparse.SUPPRESS, type=str)
-    parser.add_argument('--gvar_iter',
-                        default=argparse.SUPPRESS, type=int)
     parser.add_argument('--epoch_iters',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--gvar_snap_iter',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--gvar_log_iter',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--gvar_estim_iter',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--g_debug',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--gvar_start',
                         default=argparse.SUPPRESS, type=int)
     args = parser.parse_args()
     return args

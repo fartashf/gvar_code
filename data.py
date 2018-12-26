@@ -57,6 +57,20 @@ def dataset_to_loaders(train_dataset, test_dataset, opt):
     return train_loader, test_loader, train_test_loader
 
 
+def get_gluster_loader(train_loader, opt):
+    kwargs = {'num_workers': opt.workers,
+              'pin_memory': True} if opt.cuda else {}
+    idxdataset = train_loader.dataset
+    train_sampler = GlusterSampler(len(idxdataset), opt)
+    train_loader = torch.utils.data.DataLoader(
+        idxdataset,
+        batch_size=opt.batch_size,
+        sampler=train_sampler,
+        shuffle=(train_sampler is None),
+        drop_last=True, **kwargs)
+    return train_loader
+
+
 class IndexedDataset(data.Dataset):
     def __init__(self, dataset, opt, train=False, cr_labels=None):
         np.random.seed(2222)
@@ -525,7 +539,7 @@ class InfiniteLoader(object):
         self.data_loader = data_loader
 
     def __iter__(self):
-        self.data_iter = iter(self.data_loader)
+        self.data_iter = iter([])
         return self
 
     def __next__(self):
@@ -540,6 +554,9 @@ class InfiniteLoader(object):
         # for python2
         return self.__next__()
 
+    def __len__(self):
+        return len(self.data_iter)
+
 
 class GlusterSampler(Sampler):
     def __init__(self, data_size, opt):
@@ -549,7 +566,10 @@ class GlusterSampler(Sampler):
         self.iters = None
         self.num_samples = opt.epoch_iters * opt.batch_size
 
-    def set_assign_i(self, assign_i):
+    def set_assign_i(self, assign_i=None):
+        if assign_i is None:
+            self.assign_i = None
+            return
         self.assign_i = assign_i
         self.iters = []
         for i in range(assign_i.max()):

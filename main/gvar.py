@@ -16,7 +16,7 @@ import torch.multiprocessing
 
 import utils
 import models
-from data import get_loaders, InfiniteLoader
+from data import get_loaders, InfiniteLoader, get_gluster_loader
 from args import add_args
 from gluster.gluster import GradientClusterBatch
 from log_utils import TBXWrapper
@@ -27,22 +27,48 @@ torch.multiprocessing.set_sharing_strategy('file_system')
 
 
 class GradientEstimator(object):
-    def __init__(self, model, train_loader, opt, *args, **kwargs):
+    def __init__(self, data_loader, opt, *args, **kwargs):
         self.opt = opt
-        self.model = model
-        self.train_loader = train_loader
+        self.model = None
+        self.data_loader = data_loader
 
-    def get_grad(self, model_new):
-        raise NotImplemented('get_grad not implemented')
+    def update_snapshot(self, model):
+        pass
+
+    def grad(self, model_new):
+        raise NotImplemented('grad not implemented')
+
+    def get_Ege_var(self, model):
+        gviter = self.opt.gvar_estim_iter
+
+        # estimate grad var and bias
+        Ege = [torch.zeros_like(g) for g in model.parameters()]
+        for i in range(gviter):
+            ge = self.grad(model)
+            for e, g in zip(Ege, ge):
+                e += g
+
+        for e in Ege:
+            e /= gviter
+        nw = sum([w.numel() for w in model.parameters()])
+        var_e = 0
+        for i in range(gviter):
+            ge = self.grad(model)
+            # TODO: is variance important?
+            v = sum([(ee-gg).pow(2).sum() for ee, gg in zip(Ege, ge)])
+            var_e += v/nw
+
+        var_e /= gviter
+        return Ege, var_e
 
 
 class SGDEstimator(GradientEstimator):
     def __init__(self, *args, **kwargs):
         super(SGDEstimator, self).__init__(*args, **kwargs)
         # many open files? torch.multiprocessing sharing file_system
-        self.data_iter = iter(InfiniteLoader(self.train_loader))
+        self.data_iter = iter(InfiniteLoader(self.data_loader))
 
-    def get_grad(self, model):
+    def grad(self, model):
         data = next(self.data_iter)
 
         data, target = data[0].cuda(), data[1].cuda()
@@ -55,43 +81,63 @@ class SGDEstimator(GradientEstimator):
 
 class GlusterEstimator(SGDEstimator):
     def __init__(self, *args, **kwargs):
-        # get_grad is the same as SGD
+        # grad is the same as SGD
         super(GlusterEstimator, self).__init__(*args, **kwargs)
-        opt = self.opt
-        model = self.model
-        self.gluster = GradientClusterBatch(
-                model, opt.g_min_size, nclusters=opt.g_nclusters,
-                no_grad=opt.g_no_grad, active_only=opt.g_active_only)
-        self.update()
+        self.gluster = None
+        self.data_loader = get_gluster_loader(self.data_loader, self.opt)
+        # self.data_iter = iter(InfiniteLoader(self.data_loader))
 
-    def update(self):
+    def update_snapshot(self, model):
+        # TODO: do we need this for batch?
+        # self.model = copy.deepcopy(self.model)
+        # model = self.model
+        opt = self.opt
+        if self.gluster is None:
+            self.gluster = GradientClusterBatch(
+                    model, opt.g_min_size, nclusters=opt.g_nclusters,
+                    no_grad=opt.g_no_grad, active_only=opt.g_active_only,
+                    debug=opt.g_debug)
+        else:
+            self.gluster.copy_(model)
         opt = self.opt
         citers = opt.gb_citers
-        gluster_tc = np.zeros(citers)
         # TODO: refactor this
         for i in range(citers):
-            tic = time.time()
             stat = self.gluster.update_batch(
-                    self.train_loader, len(self.train_loader.dataset),
+                    self.data_loader, len(self.data_loader.dataset),
                     ci=i, citers=citers)
-            toc = time.time()
-            gluster_tc[i] = (toc - tic)
-            self.gluster.print_stats()
-            logging.info(
-                    '%.4f +/- %.4f'
-                    % (gluster_tc.mean(), gluster_tc.std()))
-        self.train_loader.sampler.set_assign_i(stat[1])
+        self.cluster_size = self.gluster.cluster_size
+        self.gluster.print_stats()
+        self.assign_i = stat[1]
+        self.data_loader.sampler.set_assign_i(self.assign_i)
+        self.data_iter = iter(InfiniteLoader(self.data_loader))
+
+    def grad(self, model):
+        # TODO: multiply by the size of the cluster
+        data = next(self.data_iter)
+
+        idx = data[2]
+        ci = self.assign_i[idx]
+        cs = self.cluster_size[ci]
+        data, target = data[0].cuda(), data[1].cuda()
+        model.zero_grad()
+        output = model(data)
+        loss = F.nll_loss(output, target, reduction='none')
+        loss = (loss*cs).sum()/cs.sum()
+        g = torch.autograd.grad(loss, model.parameters())
+        return g
 
 
 class SVRGEstimator(GradientEstimator):
     def __init__(self, *args, **kwargs):
         super(SVRGEstimator, self).__init__(*args, **kwargs)
-        self.model = copy.deepcopy(self.model)
-        self.data_iter = iter(InfiniteLoader(self.train_loader))
-        model = self.model
+        self.data_iter = iter(InfiniteLoader(self.data_loader))
+
+    def update_snapshot(self, model):
+        self.model = model = copy.deepcopy(model)
         self.mu = [torch.zeros_like(g) for g in model.parameters()]
         num = 0
-        for batch_idx, (data, target, idx) in enumerate(self.train_loader):
+        for batch_idx, (data, target, idx) in enumerate(self.data_loader):
             num += len(idx)
             model.eval()
             data, target = data.cuda(), target.cuda()
@@ -105,7 +151,7 @@ class SVRGEstimator(GradientEstimator):
         for m in self.mu:
             m /= num
 
-    def get_grad(self, model_new):
+    def grad(self, model_new):
         data = next(self.data_iter)
 
         model_old = self.model
@@ -126,51 +172,39 @@ class SVRGEstimator(GradientEstimator):
         return ge
 
 
-def test_gvar(tb_logger, model, train_loader, opt, niters):
-    sgd = SGDEstimator(model, train_loader, opt)
-    # gluster or SVRG
-    if opt.g_estim == 'gluster':
-        gest = GlusterEstimator(model, train_loader, opt)
-    elif opt.g_estim == 'svrg':
-        gest = SVRGEstimator(model, train_loader, opt)
-    elif opt.g_estim == 'sgd':
-        gest = SGDEstimator(model, train_loader, opt)
+class GradientVariance(object):
+    def __init__(self, model, data_loader, opt, tb_logger):
+        sgd = SGDEstimator(data_loader, opt)
+        # gluster or SVRG
+        if opt.g_estim == 'gluster':
+            gest = GlusterEstimator(data_loader, opt)
+        elif opt.g_estim == 'svrg':
+            gest = SVRGEstimator(data_loader, opt)
+        elif opt.g_estim == 'sgd':
+            gest = SGDEstimator(data_loader, opt)
+        self.sgd = sgd
+        self.gest = gest
+        self.opt = opt
+        self.tb_logger = tb_logger
+        self.init_snapshot = False
 
-    # estimate grad var and bias
-    gviter = opt.gvar_iter
-    Ege = [torch.zeros_like(g) for g in model.parameters()]
-    Esgd = [torch.zeros_like(g) for g in model.parameters()]
-    for i in range(gviter):
-        ge = gest.get_grad(model)
-        for e, g in zip(Ege, ge):
-            e += g
+    def update_snapshot(self, model):
+        self.gest.update_snapshot(model)
+        self.init_snapshot = True
 
-        g_sgd = sgd.get_grad(model)
-        for e, g in zip(Esgd, g_sgd):
-            e += g
-    for e, g in zip(Ege, Esgd):
-        e /= gviter
-        g /= gviter
-    bias = np.sum([(ee-gg).pow(2).sum().item() for ee, gg in zip(Ege, Esgd)])
-    tb_logger.log_value('grad_bias', float(bias), step=niters)
-    nw = sum([w.numel() for w in model.parameters()])
-    var_e = 0
-    var_s = 0
-    for i in range(gviter):
-        ge = gest.get_grad(model)
-        v = sum([(ee-gg).pow(2).sum() for ee, gg in zip(Ege, ge)])
-        var_e += v/nw
-
-        g_sgd = sgd.get_grad(model)
-        v = sum([(ee-gg).pow(2).sum() for ee, gg in zip(Esgd, g_sgd)])
-        var_s += v/nw
-    var_e /= gviter
-    var_s /= gviter
-    tb_logger.log_value('est_var', float(var_e), step=niters)
-    tb_logger.log_value('sgd_var', float(var_s), step=niters)
-    logging.info(
-            'Gradient bias: %.8f\t sgd var: %.8f\t est var: %.8f'
-            % (bias, var_s, var_e))
+    def log_var(self, model, niters):
+        if not self.init_snapshot:
+            return ''
+        Ege, var_e = self.gest.get_Ege_var(model)
+        Esgd, var_s = self.sgd.get_Ege_var(model)
+        bias = np.sqrt(np.sum(
+                [(ee-gg).pow(2).sum().item() for ee, gg in zip(Ege, Esgd)]))
+        tb_logger.log_value('grad_bias', float(bias), step=niters)
+        tb_logger.log_value('est_var', float(var_e), step=niters)
+        tb_logger.log_value('sgd_var', float(var_s), step=niters)
+        # TODO average bias?
+        return 'G Bias: %.8f\t SGD Var: %.8f\t Est Var: %.8f' % (
+                bias, var_s, var_e)
 
 
 def test(tb_logger, model, test_loader,
@@ -208,51 +242,64 @@ def test(tb_logger, model, test_loader,
 
 
 def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
-          save_checkpoint, train_test_loader):
+          save_checkpoint, train_test_loader, gvar):
     batch_time = AverageMeter()
-    optimizer.profiler = Profiler()
     model.train()
+    profiler = Profiler()
     end = time.time()
     epoch_iters = int(np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
     optimizer.logger.reset()
     # for batch_idx, (data, target, idx) in enumerate(train_loader):
     data_iter = iter(InfiniteLoader(train_loader))
     for batch_idx in range(opt.epoch_iters):
+        profiler.start()
+        profiler.tic()
+        # snapshot
+        if (optimizer.niters % opt.gvar_snap_iter == 0
+                and optimizer.niters >= opt.gvar_start):
+            logging.info('Snapshot')
+            gvar.update_snapshot(model)
+            profiler.toc('snapshot')
+            logging.info('%s' % str(profiler))
+
+        # sgd step
         data, target, idx = next(data_iter)
-        # train model
         model.train()
-        optimizer.profiler.start()
         if opt.cuda:
             data, target = data.cuda(), target.cuda()
         optimizer.zero_grad()
         output = model(data)
-        optimizer.profiler.tic()
         loss = model.criterion(output, target)
-        optimizer.profiler.toc('forward')
         loss.backward()
-        optimizer.profiler.toc('backward')
-        # optim_log(optimizer, optimizer.logger)
         optimizer.step()
-        optimizer.profiler.toc('step')
         optimizer.niters += 1
-        optimizer.profiler.end()
+        profiler.toc('sgd')
+        profiler.end()
 
         batch_time.update(time.time() - end)
         end = time.time()
         niters = optimizer.niters
-        loss = loss.mean()
+
+        # if True:
         if batch_idx % opt.log_interval == 0:
+            gvar_log = ''
+            prof_log = ''
+            if batch_idx % opt.gvar_log_iter == 0:
+                gvar_log = '\t'+gvar.log_var(model, niters)
+            if opt.log_profiler:
+                prof_log = '\t'+str(profiler)
+
             logging.info(
                 'Epoch: [{0}][{1}/{2}]\t'
                 'Loss: {loss:.6f}\t'
                 'Time: {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                '{opt_log}'.format(
+                '{opt_log}{gvar_log}{prof_log}'.format(
                     epoch, batch_idx, len(train_loader),
                     loss=loss.item(),
                     batch_time=batch_time,
-                    opt_log=str(optimizer.logger)))
-            if opt.log_profiler:
-                logging.info(str(optimizer.profiler))
+                    opt_log=str(optimizer.logger),
+                    gvar_log=gvar_log,
+                    prof_log=prof_log))
         if batch_idx % opt.tblog_interval == 0:
             tb_logger.log_value('epoch', epoch, step=niters)
             lr = optimizer.param_groups[0]['lr']
@@ -263,8 +310,6 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
                                 step=niters)
             tb_logger.log_value('loss', loss, step=niters)
             optimizer.logger.tb_log(tb_logger, step=niters)
-
-        # if True:
         if optimizer.niters % epoch_iters == 0:
             if opt.train_accuracy:
                 test(tb_logger,
@@ -272,7 +317,6 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
                      'Train', 'T')
             prec1 = test(tb_logger,
                          model, test_loader, opt, optimizer.niters)
-            test_gvar(tb_logger, model, train_loader, opt, niters)
             save_checkpoint(model, float(prec1), opt, optimizer)
             tb_logger.save_log()
 
@@ -346,6 +390,7 @@ def main():
         else:
             print("=> no checkpoint found at '{}'".format(model_path))
 
+    gvar = GradientVariance(model, train_loader, opt, tb_logger)
     while optimizer.niters < opt.epochs*opt.epoch_iters:
         optimizer.epoch = epoch
         if isinstance(opt.lr_decay_epoch, str):
@@ -356,7 +401,7 @@ def main():
                     optimizer, optimizer.niters//opt.epoch_iters, opt)
         ecode = train(tb_logger,
                       epoch, train_loader, model, optimizer, opt, test_loader,
-                      save_checkpoint, train_test_loader)
+                      save_checkpoint, train_test_loader, gvar)
         if ecode == -1:
             break
         epoch += 1
