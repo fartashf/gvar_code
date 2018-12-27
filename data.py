@@ -546,7 +546,11 @@ class InfiniteLoader(object):
         try:
             data = next(self.data_iter)
         except StopIteration:
-            self.data_iter = iter(self.data_loader)
+            if isinstance(self.data_loader, list):
+                I = self.data_loader
+                self.data_iter = (I[i] for i in torch.randperm(len(I)))
+            else:
+                self.data_iter = iter(self.data_loader)
             data = next(self.data_iter)
         return data
 
@@ -572,11 +576,10 @@ class GlusterSampler(Sampler):
             return
         self.assign_i = assign_i
         self.iters = []
-        for i in range(assign_i.max()):
-            I = np.where(self.assign_i == i)[1]
+        for i in range(assign_i.max()+1):
+            I = list(np.where(self.assign_i.flat == i)[0])
             if len(I) != 0:
-                cluster_ids = [I[i] for i in torch.randperm(len(I))]
-                self.iters += [iter(InfiniteLoader(cluster_ids))]
+                self.iters += [iter(InfiniteLoader(I))]
 
     def __iter__(self):
         if self.assign_i is None:

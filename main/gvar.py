@@ -75,6 +75,8 @@ class SGDEstimator(GradientEstimator):
         model.zero_grad()
         output = model(data)
         loss = F.nll_loss(output, target)
+        # print(loss)
+        # import ipdb; ipdb.set_trace()
         g = torch.autograd.grad(loss, model.parameters())
         return g
 
@@ -113,17 +115,20 @@ class GlusterEstimator(SGDEstimator):
         self.data_iter = iter(InfiniteLoader(self.data_loader))
 
     def grad(self, model):
-        # TODO: multiply by the size of the cluster
         data = next(self.data_iter)
 
         idx = data[2]
-        ci = self.assign_i[idx]
-        cs = self.cluster_size[ci]
+        ci = self.assign_i[idx].flatten()
+        cs = self.cluster_size[ci].flatten()
         data, target = data[0].cuda(), data[1].cuda()
         model.zero_grad()
         output = model(data)
         loss = F.nll_loss(output, target, reduction='none')
-        loss = (loss*cs).sum()/cs.sum()
+        # multiply by the size of the cluster
+        cs = cs/cs.sum()*loss.numel()
+        loss = (loss*cs).mean()
+        # print(loss)
+        # import ipdb; ipdb.set_trace()
         g = torch.autograd.grad(loss, model.parameters())
         return g
 
@@ -139,9 +144,7 @@ class SVRGEstimator(GradientEstimator):
         num = 0
         for batch_idx, (data, target, idx) in enumerate(self.data_loader):
             num += len(idx)
-            model.eval()
             data, target = data.cuda(), target.cuda()
-            # model.train() # TODO: SVRG might have trouble with dropout
             model.zero_grad()
             output = model(data)
             loss = F.nll_loss(output, target, reduction='sum')
@@ -164,6 +167,7 @@ class SVRGEstimator(GradientEstimator):
         g_old = torch.autograd.grad(loss, model_old.parameters())
 
         # new grad
+        model_new.zero_grad()
         output = model_new(data)
         loss = F.nll_loss(output, target)
         g_new = torch.autograd.grad(loss, model_new.parameters())
@@ -189,16 +193,22 @@ class GradientVariance(object):
         self.init_snapshot = False
 
     def update_snapshot(self, model):
+        model.eval()
+        # model.train() # TODO: SVRG might have trouble with dropout
         self.gest.update_snapshot(model)
         self.init_snapshot = True
 
     def log_var(self, model, niters):
+        model.eval()
         if not self.init_snapshot:
             return ''
         Ege, var_e = self.gest.get_Ege_var(model)
         Esgd, var_s = self.sgd.get_Ege_var(model)
         bias = np.sqrt(np.sum(
                 [(ee-gg).pow(2).sum().item() for ee, gg in zip(Ege, Esgd)]))
+        # TODO: loss is different from sgd vs gluster run
+        # print(np.sum([ee.pow(2).sum().item() for ee in Esgd]))
+        # print(np.sum([gg.pow(2).sum().item() for ee in Ege]))
         tb_logger.log_value('grad_bias', float(bias), step=niters)
         tb_logger.log_value('est_var', float(var_e), step=niters)
         tb_logger.log_value('sgd_var', float(var_s), step=niters)
@@ -335,7 +345,12 @@ def main():
 
     opt.cuda = not opt.no_cuda and torch.cuda.is_available()
 
-    logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
+    logfname = os.path.join(opt.logger_name, 'log.txt')
+    logging.basicConfig(
+            filename=logfname,
+            format='%(asctime)s %(message)s', level=logging.INFO)
+    # write to stderr
+    logging.getLogger().addHandler(logging.StreamHandler())
     tb_logger.configure(opt.logger_name, flush_secs=5, opt=opt)
 
     logging.info(str(opt.d))
