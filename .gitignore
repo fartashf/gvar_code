@@ -1,4 +1,12 @@
 notebooks/*/
+data/
+jobs/
+kfac/cifar10/runs
+kfac/ptb_rnn/data/
+log.txt
+notebooks/data
+runs/
+test/data/
 
 # Swap
 [._]*.s[a-v][a-z]

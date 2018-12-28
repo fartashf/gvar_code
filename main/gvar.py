@@ -6,6 +6,7 @@ import os
 import time
 import glob
 import copy
+import sys
 
 import torch
 import torch.nn
@@ -38,10 +39,8 @@ class GradientEstimator(object):
     def grad(self, model_new):
         raise NotImplemented('grad not implemented')
 
-    def get_Ege_var(self, model):
-        gviter = self.opt.gvar_estim_iter
-
-        # estimate grad var and bias
+    def get_Ege_var(self, model, gviter):
+        # estimate grad mean and variance
         Ege = [torch.zeros_like(g) for g in model.parameters()]
         for i in range(gviter):
             ge = self.grad(model)
@@ -52,14 +51,22 @@ class GradientEstimator(object):
             e /= gviter
         nw = sum([w.numel() for w in model.parameters()])
         var_e = 0
+        Es = [torch.zeros_like(g) for g in model.parameters()]
+        En = [torch.zeros_like(g) for g in model.parameters()]
         for i in range(gviter):
             ge = self.grad(model)
             # TODO: is variance important?
-            v = sum([(ee-gg).pow(2).sum() for ee, gg in zip(Ege, ge)])
+            v = sum([(gg-ee).pow(2).sum() for ee, gg in zip(Ege, ge)])
+            for s, e, g, n in zip(Es, Ege, ge, En):
+                s += g.pow(2)
+                n += (e-g).pow(2)
             var_e += v/nw
 
         var_e /= gviter
-        return Ege, var_e
+        snr_e = sum(
+                [((ss+1e-20).log()-(nn+1e-20).log()).sum()
+                    for ss, nn in zip(Es, En)])/nw
+        return Ege, var_e, snr_e
 
 
 class SGDEstimator(GradientEstimator):
@@ -101,6 +108,8 @@ class GlusterEstimator(SGDEstimator):
                     debug=opt.g_debug)
         else:
             self.gluster.copy_(model)
+        # Batch Gluster is only active here
+        self.gluster.activate()
         opt = self.opt
         citers = opt.gb_citers
         # TODO: refactor this
@@ -113,6 +122,7 @@ class GlusterEstimator(SGDEstimator):
         self.assign_i = stat[1]
         self.data_loader.sampler.set_assign_i(self.assign_i)
         self.data_iter = iter(InfiniteLoader(self.data_loader))
+        self.gluster.deactivate()
 
     def grad(self, model):
         data = next(self.data_iter)
@@ -202,19 +212,23 @@ class GradientVariance(object):
         model.eval()
         if not self.init_snapshot:
             return ''
-        Ege, var_e = self.gest.get_Ege_var(model)
-        Esgd, var_s = self.sgd.get_Ege_var(model)
-        bias = np.sqrt(np.sum(
-                [(ee-gg).pow(2).sum().item() for ee, gg in zip(Ege, Esgd)]))
-        # TODO: loss is different from sgd vs gluster run
-        # print(np.sum([ee.pow(2).sum().item() for ee in Esgd]))
-        # print(np.sum([gg.pow(2).sum().item() for ee in Ege]))
+        gviter = self.opt.gvar_estim_iter
+        Ege, var_e, snr_e = self.gest.get_Ege_var(model, gviter)
+        # TODO: make this hyperparam
+        Esgd, var_s, snr_s = self.sgd.get_Ege_var(model, 100)
+        bias = torch.mean(torch.cat(
+            [(ee-gg).abs().flatten() for ee, gg in zip(Ege, Esgd)]))
+        print(np.sum([ee.pow(2).sum().item() for ee in Esgd]))
+        print(np.sum([gg.pow(2).sum().item() for gg in Ege]))
         tb_logger.log_value('grad_bias', float(bias), step=niters)
         tb_logger.log_value('est_var', float(var_e), step=niters)
         tb_logger.log_value('sgd_var', float(var_s), step=niters)
-        # TODO average bias?
-        return 'G Bias: %.8f\t SGD Var: %.8f\t Est Var: %.8f' % (
-                bias, var_s, var_e)
+        tb_logger.log_value('est_snr', float(snr_e), step=niters)
+        tb_logger.log_value('sgd_snr', float(snr_s), step=niters)
+        return ('G Bias: %.8f\t'
+                'SGD Var: %.8f\t Est Var: %.8f\t'
+                'SGD SNR: %.8f\t Est SNR: %.8f' % (
+                    bias, var_s, var_e, snr_s, snr_e))
 
 
 def test(tb_logger, model, test_loader,
@@ -264,14 +278,6 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
     for batch_idx in range(opt.epoch_iters):
         profiler.start()
         profiler.tic()
-        # snapshot
-        if (optimizer.niters % opt.gvar_snap_iter == 0
-                and optimizer.niters >= opt.gvar_start):
-            logging.info('Snapshot')
-            gvar.update_snapshot(model)
-            profiler.toc('snapshot')
-            logging.info('%s' % str(profiler))
-
         # sgd step
         data, target, idx = next(data_iter)
         model.train()
@@ -284,6 +290,14 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
         optimizer.step()
         optimizer.niters += 1
         profiler.toc('sgd')
+        # snapshot
+        if ((optimizer.niters-opt.gvar_start) % opt.gvar_snap_iter == 0
+                and optimizer.niters >= opt.gvar_start):
+            logging.info('Snapshot')
+            gvar.update_snapshot(model)
+            profiler.toc('snapshot')
+            profiler.end()
+            logging.info('%s' % str(profiler))
         profiler.end()
 
         batch_time.update(time.time() - end)
@@ -300,7 +314,7 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
                 prof_log = '\t'+str(profiler)
 
             logging.info(
-                'Epoch: [{0}][{1}/{2}]\t'
+                'Epoch: [{0}][{1}/{2}]({niters})\t'
                 'Loss: {loss:.6f}\t'
                 'Time: {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                 '{opt_log}{gvar_log}{prof_log}'.format(
@@ -309,7 +323,8 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
                     batch_time=batch_time,
                     opt_log=str(optimizer.logger),
                     gvar_log=gvar_log,
-                    prof_log=prof_log))
+                    prof_log=prof_log,
+                    niters=niters))
         if batch_idx % opt.tblog_interval == 0:
             tb_logger.log_value('epoch', epoch, step=niters)
             lr = optimizer.param_groups[0]['lr']
@@ -345,13 +360,12 @@ def main():
 
     opt.cuda = not opt.no_cuda and torch.cuda.is_available()
 
+    tb_logger.configure(opt.logger_name, flush_secs=5, opt=opt)
     logfname = os.path.join(opt.logger_name, 'log.txt')
     logging.basicConfig(
             filename=logfname,
             format='%(asctime)s %(message)s', level=logging.INFO)
-    # write to stderr
-    logging.getLogger().addHandler(logging.StreamHandler())
-    tb_logger.configure(opt.logger_name, flush_secs=5, opt=opt)
+    logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
     logging.info(str(opt.d))
 

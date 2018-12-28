@@ -533,8 +533,13 @@ class GlusterConv(GlusterModule):
         din = self.module.weight.shape[1:]
         centers = []
         if self.has_weight:
-            print('normCi: %s' % str(self.Ci.pow(2).sum(-1).cpu().numpy()))
-            print('normCo: %s' % str(self.Co.pow(2).sum(-1).cpu().numpy()))
+            if self.debug:
+                logging.info(
+                        'normCi:\t%s'
+                        % str(self.Ci.pow(2).sum(-1).cpu().numpy()))
+                logging.info(
+                        'normCo:\t%s'
+                        % str(self.Co.pow(2).sum(-1).cpu().numpy()))
             Cf = torch.matmul(self.Co.unsqueeze(-1), self.Ci.unsqueeze(1))
             assert Cf.shape == (C, dout, np.prod(din)), 'Cf: C x din x dout'
             Cf = Cf.reshape((C, ) + self.module.weight.shape)

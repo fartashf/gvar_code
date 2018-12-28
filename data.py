@@ -103,7 +103,7 @@ class IndexedDataset(data.Dataset):
         if index >= len(self.ds):
             subindex = self.dup_ids[(index-len(self.ds))/self.dup_cnt]
         img, target = self.ds[subindex]
-        if index in self.cr_ids:
+        if int(index) in self.cr_ids:
             target = torch.tensor(self.cr_labels[index])
         return img, target, index
 
@@ -619,7 +619,7 @@ class LinearDataset(data.Dataset):
         X = np.zeros((C.shape[0], num))
         Y = np.zeros((num,))
         for i in range(num_class):
-            n = num / num_class
+            n = num // num_class
             e = np.random.normal(0.0, 1.0, (dim, n))
             X[:, i * n:(i + 1) * n] = np.dot(D[:, :, i], e) + C[:, i:i + 1]
             Y[i * n:(i + 1) * n] = i
