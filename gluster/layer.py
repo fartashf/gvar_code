@@ -338,7 +338,10 @@ class GlusterLinear(GlusterModule):
         CoCo = (Co*Co).view(Co.shape[0], -1).sum(1)
         CC = ((CiCi)*(CoCo)).unsqueeze(-1)
         assert CC.shape == (C, 1), 'CC: C x 1.'
-        O = CC-2*CG
+        GG = 0
+        # GG = (CG/(CC+1e-7)).mean(0, keepdim=True)
+        # assert GG.shape == (1, B), 'GG: 1 x B.'
+        O = CC-2*CG+GG
         assert O.shape == (C, B), 'O: C x B.'
         return O
 
@@ -479,7 +482,10 @@ class GlusterConv(GlusterModule):
         CoCo = (Co*Co).view(Co.shape[0], -1).sum(1)
         CC = ((CiCi)*(CoCo)).unsqueeze(-1)
         assert CC.shape == (C, 1), 'CC: C x 1.'
-        O = CC-2*CG
+        GG = 0
+        # GG = (CG/(CC+1e-7)).mean(0, keepdim=True)
+        # assert GG.shape == (1, B), 'GG: 1 x B.'
+        O = CC-2*CG+GG
         assert O.shape == (C, B), 'O: C x B.'
         # if self.Ai.max() > 10000:
         #     # TODO: seed 1 this happens, try toy tests

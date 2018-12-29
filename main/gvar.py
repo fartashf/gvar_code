@@ -129,14 +129,16 @@ class GlusterEstimator(SGDEstimator):
 
         idx = data[2]
         ci = self.assign_i[idx].flatten()
-        cs = self.cluster_size[ci].flatten()
+        M = (self.cluster_size > 0).sum()
+        Nk = self.cluster_size[ci].flatten()
+        N = self.cluster_size.sum()
         data, target = data[0].cuda(), data[1].cuda()
         model.zero_grad()
         output = model(data)
         loss = F.nll_loss(output, target, reduction='none')
         # multiply by the size of the cluster
-        cs = cs/cs.sum()*loss.numel()
-        loss = (loss*cs).mean()
+        w = 1.*M*Nk/N
+        loss = (loss*w).mean()
         # print(loss)
         # import ipdb; ipdb.set_trace()
         g = torch.autograd.grad(loss, model.parameters())
@@ -215,7 +217,7 @@ class GradientVariance(object):
         gviter = self.opt.gvar_estim_iter
         Ege, var_e, snr_e = self.gest.get_Ege_var(model, gviter)
         # TODO: make this hyperparam
-        Esgd, var_s, snr_s = self.sgd.get_Ege_var(model, 100)
+        Esgd, var_s, snr_s = self.sgd.get_Ege_var(model, gviter)
         bias = torch.mean(torch.cat(
             [(ee-gg).abs().flatten() for ee, gg in zip(Ege, Esgd)]))
         print(np.sum([ee.pow(2).sum().item() for ee in Esgd]))

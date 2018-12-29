@@ -79,6 +79,7 @@ class GradientClusterBatch(GradientCluster):
         """
         batch_dist = self.G.get_dist()
         total_dist = torch.stack(batch_dist).sum(0)
+        # total_dist.mul_(self.cluster_size.clamp(1).pow(2))
         batch_dist, assign_i = total_dist.min(0)
         assign_i = assign_i.unsqueeze(1)
         batch_dist = batch_dist.unsqueeze(1)
@@ -246,6 +247,7 @@ class GradientClusterOnline(GradientCluster):
         #        = argmin_c CC-2gC
         batch_dist = self.G.get_dist()
         total_dist = torch.stack(batch_dist).sum(0)
+        # total_dist.mul_(self.cluster_size.clamp(1).pow(2))
         batch_dist, assign_i = total_dist.min(0)
         assign_i = assign_i.unsqueeze(1)
         batch_dist = batch_dist.unsqueeze(1)
@@ -279,9 +281,9 @@ class GradientClusterOnline(GradientCluster):
         nreinits = reinits.sum()
         self.reinits += reinits.long()
         # TODO: stop reinit or delay if too often
-        if self.debug:
-            logging.info('Reinit: %d' % nreinits)
         if nreinits > 0:
+            if self.debug:
+                logging.info('Reinit: %d' % nreinits)
             if self.reinit_method == 'data':
                 return self.reinit_from_data(reinits, batch_size)
             elif self.reinit_method == 'largest':
