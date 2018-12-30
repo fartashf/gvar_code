@@ -9,7 +9,7 @@ import time
 
 
 class GradientCluster(object):
-    def __init__(self, model, nclusters=1, debug=True, **kwargs):
+    def __init__(self, model, nclusters=1, debug=True, mul_Nk=False, **kwargs):
         # Q: duplicates
         # TODO: challenge: how many C? memory? time?
 
@@ -22,6 +22,7 @@ class GradientCluster(object):
         self.cluster_size = torch.zeros(nclusters, 1).to(device)
         self.total_dist = torch.zeros(self.nclusters, 1).to(device)
         self.debug = debug
+        self.mul_Nk = mul_Nk
 
         self.G = GlusterContainer(model, 1, nclusters, debug=debug, **kwargs)
 
@@ -79,7 +80,8 @@ class GradientClusterBatch(GradientCluster):
         """
         batch_dist = self.G.get_dist()
         total_dist = torch.stack(batch_dist).sum(0)
-        # total_dist.mul_(self.cluster_size.clamp(1).pow(2))
+        if self.mul_Nk:
+            total_dist.mul_(self.cluster_size.clamp(1))
         batch_dist, assign_i = total_dist.min(0)
         assign_i = assign_i.unsqueeze(1)
         batch_dist = batch_dist.unsqueeze(1)
@@ -153,7 +155,8 @@ class GradientClusterBatch(GradientCluster):
                 torch.cuda.empty_cache()
                 # import gc
                 # gc.collect()
-        total_dist.div_(self.cluster_size.clamp(1))
+        # TODO: this should never happen?
+        # total_dist.div_(self.cluster_size.clamp(1))
         td = total_dist.cpu().numpy()
         self.total_dist.copy_(total_dist)
         if self.debug:
@@ -247,7 +250,8 @@ class GradientClusterOnline(GradientCluster):
         #        = argmin_c CC-2gC
         batch_dist = self.G.get_dist()
         total_dist = torch.stack(batch_dist).sum(0)
-        # total_dist.mul_(self.cluster_size.clamp(1).pow(2))
+        if self.mul_Nk:
+            total_dist.mul_(self.cluster_size.clamp(1))
         batch_dist, assign_i = total_dist.min(0)
         assign_i = assign_i.unsqueeze(1)
         batch_dist = batch_dist.unsqueeze(1)
@@ -262,8 +266,10 @@ class GradientClusterOnline(GradientCluster):
         counts.scatter_add_(0, assign_i, torch.ones(assign_i.shape).cuda())
         self.cluster_size.mul_(beta).add_(counts)  # no *(1-beta)
         pre_size = self.cluster_size-counts
-        self.total_dist.mul_(pre_size).scatter_add_(
-            0, assign_i, batch_dist).div_(self.cluster_size)
+        # TODO: this should be indep of batch size?
+        # self.total_dist.mul_(pre_size).scatter_add_(
+        #     0, assign_i, batch_dist).div_(self.cluster_size)
+        self.total_dist.mul_(beta).scatter_add_(0, assign_i, batch_dist)
 
         self.G.zero_new_centers()
         self.G.accum_new_centers(assign_i)

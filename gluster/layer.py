@@ -338,7 +338,10 @@ class GlusterLinear(GlusterModule):
         CoCo = (Co*Co).view(Co.shape[0], -1).sum(1)
         CC = ((CiCi)*(CoCo)).unsqueeze(-1)
         assert CC.shape == (C, 1), 'CC: C x 1.'
-        GG = 0
+        AiAi = (Ai/100).pow(2).sum(1)
+        GoGo = (Go*100).pow(2).sum(1)
+        GG = (AiAi*GoGo).view(1, -1)
+        assert GG.shape == (1, B), 'GG: 1 x B.'
         # GG = (CG/(CC+1e-7)).mean(0, keepdim=True)
         # assert GG.shape == (1, B), 'GG: 1 x B.'
         O = CC-2*CG+GG
@@ -456,33 +459,14 @@ class GlusterConv(GlusterModule):
         assert Co.shape == (C, dout), 'Co: C x dout'
         # Ci = Ci.reshape((C, -1))
         # TODO: multi-GPU
-        self.cost1 = cost1 = C*din*B*T + C*dout*B*T + C*B*T
-        self.cost2 = cost2 = B*din*T*dout + C*B*din*dout
-        if self.batch_dist is None and self.debug:
-            logging.info(
-                    'Cost ratio %s: %.4f'
-                    % (self.name, 1.*self.cost1/self.cost2))
-        if cost1 < cost2:
-            CiAi = torch.einsum('ki,bit->kbt', [Ci, Ai])
-            CoGo = torch.einsum('ko,bot->kbt', [Co, Go])
-            # worse in memory, maybe because of its internal cache
-            # batch matmul matchs from the end of tensor2 backwards
-            # CiAi = torch.matmul(Ci.unsqueeze(1).unsqueeze(1), Ai).squeeze(2)
-            # CoGo = torch.matmul(Co.unsqueeze(1).unsqueeze(1), Go).squeeze(2)
-            # mean/sum? sum
-            CG = torch.einsum('kbt,kbt->kb', [CiAi, CoGo])  # /T
-            # if self.count == 2:
-            #     import ipdb; ipdb.set_trace()
-        else:
-            AiGo = torch.einsum('bit,bot->bio', [Ai, Go])
-            # mean/sum? sum
-            CG = torch.einsum('ki,bio,ko->kb', [Ci, AiGo, Co])  # /T
+        CG = self._conv_dot(Ci, Ai, Co, Go)
         assert CG.shape == (C, B), 'CG: C x B.'
         CiCi = (Ci*Ci).view(Ci.shape[0], -1).sum(1)
         CoCo = (Co*Co).view(Co.shape[0], -1).sum(1)
         CC = ((CiCi)*(CoCo)).unsqueeze(-1)
         assert CC.shape == (C, 1), 'CC: C x 1.'
-        GG = 0
+        GG = self._gnorm(Ai, Go).view(1, -1)
+        assert GG.shape == (1, B), 'GG: 1 x B.'
         # GG = (CG/(CC+1e-7)).mean(0, keepdim=True)
         # assert GG.shape == (1, B), 'GG: 1 x B.'
         O = CC-2*CG+GG
@@ -492,6 +476,66 @@ class GlusterConv(GlusterModule):
         #     import ipdb; ipdb.set_trace()
 
         return O
+
+    def _conv_dot(self, Ci, Ai, Co, Go):
+        C, din = Ci.shape
+        B, dout, T = Go.shape
+        self.cost1 = cost1 = C*din*B*T + C*dout*B*T + C*B*T
+        self.cost2 = cost2 = B*din*T*dout + C*B*din*dout
+        if self.batch_dist is None and self.debug:
+            logging.info(
+                    'CG Cost ratio %s: %.4f'
+                    % (self.name, 1.*self.cost1/self.cost2))
+        if cost1 < cost2:
+            CG = self._conv_dot_type1(Ci, Ai, Co, Go)
+        else:
+            CG = self._conv_dot_type2(Ci, Ai, Co, Go)
+        return CG
+
+    def _conv_dot_type1(self, Ci, Ai, Co, Go):
+        CiAi = torch.einsum('ki,bit->kbt', [Ci, Ai])
+        CoGo = torch.einsum('ko,bot->kbt', [Co, Go])
+        # worse in memory, maybe because of its internal cache
+        # batch matmul matchs from the end of tensor2 backwards
+        # CiAi = torch.matmul(Ci.unsqueeze(1).unsqueeze(1), Ai).squeeze(2)
+        # CoGo = torch.matmul(Co.unsqueeze(1).unsqueeze(1), Go).squeeze(2)
+        # mean/sum? sum
+        CG = torch.einsum('kbt,kbt->kb', [CiAi, CoGo])  # /T
+        # if self.count == 2:
+        #     import ipdb; ipdb.set_trace()
+        return CG
+
+    def _conv_dot_type2(self, Ci, Ai, Co, Go):
+        AiGo = torch.einsum('bit,bot->bio', [Ai, Go])
+        # mean/sum? sum
+        CG = torch.einsum('ki,bio,ko->kb', [Ci, AiGo, Co])  # /T
+        return CG
+
+    def _gnorm(self, Ai, Go):
+        B, din, T = Ai.shape
+        B, dout, T = Go.shape
+        self.cost1 = cost1 = B*din*T + B*dout*T + B*T*T
+        self.cost2 = cost2 = B*din*dout*T + B*din*dout
+        if self.batch_dist is None and self.debug:
+            logging.info(
+                    'GG Cost ratio %s: %.4f'
+                    % (self.name, 1.*self.cost1/self.cost2))
+        if cost1 < cost2:
+            GG = self._gnorm_type1(Ai, Go)
+        else:
+            GG = self._gnorm_type2(Ai, Go)
+        return GG
+
+    def _gnorm_type1(self, Ai, Go):
+        AiAi = torch.einsum('bit,bit->bt', [Ai, Ai])
+        GoGo = torch.einsum('bot,bot->bt', [Go, Go])
+        GG = torch.einsum('bs,bt->b', [AiAi, GoGo])
+        return GG
+
+    def _gnorm_type2(self, Ai, Go):
+        AiGo = torch.einsum('bit,bot->bio', [Ai, Go])
+        GG = torch.einsum('bio,bio->b', [AiGo, AiGo])
+        return GG
 
     def reinit_from_data(self, reinits, perm):
         if not self.has_param:

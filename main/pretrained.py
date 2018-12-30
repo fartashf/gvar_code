@@ -42,6 +42,8 @@ def test_batch(model, data_loader, opt, dataset):
     total_dist = []
     pred_i = 0
     loss_i = 0
+    reinits = 0
+    reinited = False
     for i in range(citers):
         tic = time.time()
         stat = gluster.update_batch(
@@ -54,7 +56,15 @@ def test_batch(model, data_loader, opt, dataset):
         if i > 0:
             assert pred_i.sum() == stat[3].sum(), 'predictions changed'
             assert loss_i.sum() == stat[4].sum(), 'loss changed'
-            assert stat[0].sum() <= total_dist.sum(), 'Total dists went up'
+            dt_down = stat[0].sum() <= total_dist.sum()+1e-5
+            if reinited:
+                if not dt_down:
+                    logging.info('^^^^ Total dists went up ^^^^')
+            else:
+                assert dt_down, 'Total dists went up'
+        reinits_new = gluster.reinits.sum().item()
+        reinited = (reinits_new > reinits)
+        reinits = reinits_new
         total_dist, assign_i, target_i, pred_i, loss_i, topk_i = stat
         torch.save({'assign': assign_i, 'target': target_i,
                     'pred': pred_i, 'loss': loss_i,

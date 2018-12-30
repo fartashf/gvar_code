@@ -230,6 +230,7 @@ def test_toy_batch(
     pred_i = 0
     loss_i = 0
     reinits = 0
+    reinited = False
     data_loader = DataLoader(X, T, batch_size)
     for i in range(citers):
         tic = time.time()
@@ -241,12 +242,13 @@ def test_toy_batch(
             assert pred_i.sum() == stat[3].sum(), 'predictions changed'
             assert loss_i.sum() == stat[4].sum(), 'loss changed'
             dt_down = stat[0].sum() <= total_dist.sum()+1e-5
-            reinits_new = gluster.reinits.sum().item()
-            if reinits_new > reinits:
+            if reinited:
                 if not dt_down:
                     logging.info('^^^^ Total dists went up ^^^^')
             else:
                 assert dt_down, 'Total dists went up'
+            reinits_new = gluster.reinits.sum().item()
+            reinited = (reinits_new > reinits)
             reinits = reinits_new
         total_dist, assign_i, target_i, pred_i, loss_i, topk_i = stat
 
