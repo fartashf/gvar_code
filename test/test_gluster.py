@@ -230,6 +230,7 @@ def test_toy_batch(
     pred_i = 0
     loss_i = 0
     reinits = 0
+    GG_i = []
     reinited = False
     data_loader = DataLoader(X, T, batch_size)
     for i in range(citers):
@@ -250,7 +251,8 @@ def test_toy_batch(
             reinits_new = gluster.reinits.sum().item()
             reinited = (reinits_new > reinits)
             reinits = reinits_new
-        total_dist, assign_i, target_i, pred_i, loss_i, topk_i = stat
+            assert np.abs(GG_i-stat[6]).sum() < 1e-5, 'GG changed'
+        total_dist, assign_i, target_i, pred_i, loss_i, topk_i, GG_i = stat
 
     # get test data assignments
     gluster.eval()  # gluster test mode
@@ -335,6 +337,7 @@ def test_mnist_batch(
     total_dist = float('inf')
     pred_i = 0
     loss_i = 0
+    GG_i = []
     for i in range(citers):
         tic = time.time()
         stat = gluster.update_batch(
@@ -348,7 +351,11 @@ def test_mnist_batch(
             assert loss_i.sum() == stat[4].sum(), 'loss changed'
             assert stat[0].sum() <= total_dist.sum()+1e-5,\
                 'Total dists went up'
-        total_dist, assign_i, target_i, pred_i, loss_i, topk_i = stat
+            # if np.abs(GG_i-stat[6]).sum() > 1e-5:
+            #     print(np.sort(np.abs(GG_i-stat[6])))
+            #     print(np.where(np.abs(GG_i-stat[6]) > 1e-5))
+            # assert np.abs(GG_i-stat[6]).sum() < 1e-5, 'GG changed'
+        total_dist, assign_i, target_i, pred_i, loss_i, topk_i, GG_i = stat
 
     print('%.4f +/- %.4f' % (gluster_tc.mean(), gluster_tc.std()))
     if figname is not None:

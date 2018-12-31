@@ -43,6 +43,7 @@ def test_batch(model, data_loader, opt, dataset):
     pred_i = 0
     loss_i = 0
     reinits = 0
+    GG_i = 0
     reinited = False
     for i in range(citers):
         tic = time.time()
@@ -65,13 +66,13 @@ def test_batch(model, data_loader, opt, dataset):
         reinits_new = gluster.reinits.sum().item()
         reinited = (reinits_new > reinits)
         reinits = reinits_new
-        total_dist, assign_i, target_i, pred_i, loss_i, topk_i = stat
+        total_dist, assign_i, target_i, pred_i, loss_i, topk_i, GG_i = stat
         torch.save({'assign': assign_i, 'target': target_i,
                     'pred': pred_i, 'loss': loss_i,
                     'topk': topk_i,
                     'normC': normC, 'gtime': gluster_tc,
                     'opt': opt.d, 'dataset': dataset,
-                    'total_dist': total_dist},
+                    'total_dist': total_dist, 'GG': GG_i},
                    gb_fname)
 
 

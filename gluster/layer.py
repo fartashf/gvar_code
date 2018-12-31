@@ -305,6 +305,7 @@ class GlusterLinear(GlusterModule):
                 self.Cb_new = torch.zeros_like(self.Cb)
 
     def _save_dist_hook_bias(self, Ai, Go):
+        raise Exception('not implemented')
         C = self.nclusters
         B = Ai.shape[0]
 
@@ -338,15 +339,25 @@ class GlusterLinear(GlusterModule):
         CoCo = (Co*Co).view(Co.shape[0], -1).sum(1)
         CC = ((CiCi)*(CoCo)).unsqueeze(-1)
         assert CC.shape == (C, 1), 'CC: C x 1.'
-        AiAi = (Ai/100).pow(2).sum(1)
-        GoGo = (Go*100).pow(2).sum(1)
+        # type1
+        # (Ai*Ai).sum(1)
+        # (Go*Go).sum(1)
+        # TODO: einsum is most exact but still 2e-4 error in GoGo,
+        # test_mnist_batch
+        # pow(2) is the worst
+        AiAi = torch.einsum('bi,bi->b', [Ai, Ai])
+        GoGo = torch.einsum('bo,bo->b', [Go, Go])
         GG = (AiAi*GoGo).view(1, -1)
+        # type2
+        # Gw = torch.einsum('bi,bo->bio', [Ai, Go])
+        # GG = Gw.pow(2).sum(2).sum(1).view(1, -1)
         assert GG.shape == (1, B), 'GG: 1 x B.'
         # GG = (CG/(CC+1e-7)).mean(0, keepdim=True)
         # assert GG.shape == (1, B), 'GG: 1 x B.'
-        O = CC-2*CG+GG
-        assert O.shape == (C, B), 'O: C x B.'
-        return O
+        # Not summing here because of floating point precision
+        # O = CC-2*CG+GG
+        # assert O.shape == (C, B), 'O: C x B.'
+        return CC, CG, GG
 
     def reinit_from_data(self, reinits, perm):
         if not self.has_param:
@@ -409,6 +420,8 @@ class GlusterConv(GlusterModule):
             if self.has_bias:
                 self.Cb = torch.rand((C, dout)).cuda()/dout*self.eps
                 self.Cb_new = torch.zeros_like(self.Cb)
+        self._gnorm = None
+        self._conv_dot = None
 
     def _post_proc_Ai(self, Ai0):
         module = self.module
@@ -423,6 +436,7 @@ class GlusterConv(GlusterModule):
         return Go
 
     def _save_dist_hook_bias(self, Ai, Go):
+        raise Exception('not implemented')
         C = self.nclusters
         B = Ai.shape[0]
         # T = Go.shape[-1]
@@ -459,25 +473,29 @@ class GlusterConv(GlusterModule):
         assert Co.shape == (C, dout), 'Co: C x dout'
         # Ci = Ci.reshape((C, -1))
         # TODO: multi-GPU
+        if self._conv_dot is None:
+            self._conv_dot = self._conv_dot_choose(Ci, Ai, Co, Go)
         CG = self._conv_dot(Ci, Ai, Co, Go)
         assert CG.shape == (C, B), 'CG: C x B.'
         CiCi = (Ci*Ci).view(Ci.shape[0], -1).sum(1)
         CoCo = (Co*Co).view(Co.shape[0], -1).sum(1)
         CC = ((CiCi)*(CoCo)).unsqueeze(-1)
         assert CC.shape == (C, 1), 'CC: C x 1.'
+        if self._gnorm is None:
+            self._gnorm = self._gnorm_choose(Ai, Go)
         GG = self._gnorm(Ai, Go).view(1, -1)
         assert GG.shape == (1, B), 'GG: 1 x B.'
         # GG = (CG/(CC+1e-7)).mean(0, keepdim=True)
         # assert GG.shape == (1, B), 'GG: 1 x B.'
-        O = CC-2*CG+GG
-        assert O.shape == (C, B), 'O: C x B.'
+        # O = CC-2*CG+GG
+        # assert O.shape == (C, B), 'O: C x B.'
         # if self.Ai.max() > 10000:
         #     # TODO: seed 1 this happens, try toy tests
         #     import ipdb; ipdb.set_trace()
 
-        return O
+        return CC, CG, GG
 
-    def _conv_dot(self, Ci, Ai, Co, Go):
+    def _conv_dot_choose(self, Ci, Ai, Co, Go):
         C, din = Ci.shape
         B, dout, T = Go.shape
         self.cost1 = cost1 = C*din*B*T + C*dout*B*T + C*B*T
@@ -486,11 +504,14 @@ class GlusterConv(GlusterModule):
             logging.info(
                     'CG Cost ratio %s: %.4f'
                     % (self.name, 1.*self.cost1/self.cost2))
+        # if cost1 < cost2:
+        #     CG = self._conv_dot_type1(Ci, Ai, Co, Go)
+        # else:
+        #     CG = self._conv_dot_type2(Ci, Ai, Co, Go)
+        # return CG
         if cost1 < cost2:
-            CG = self._conv_dot_type1(Ci, Ai, Co, Go)
-        else:
-            CG = self._conv_dot_type2(Ci, Ai, Co, Go)
-        return CG
+            return self._conv_dot_type1
+        return self._conv_dot_type2
 
     def _conv_dot_type1(self, Ci, Ai, Co, Go):
         CiAi = torch.einsum('ki,bit->kbt', [Ci, Ai])
@@ -511,7 +532,7 @@ class GlusterConv(GlusterModule):
         CG = torch.einsum('ki,bio,ko->kb', [Ci, AiGo, Co])  # /T
         return CG
 
-    def _gnorm(self, Ai, Go):
+    def _gnorm_choose(self, Ai, Go):
         B, din, T = Ai.shape
         B, dout, T = Go.shape
         self.cost1 = cost1 = B*din*T + B*dout*T + B*T*T
@@ -520,11 +541,14 @@ class GlusterConv(GlusterModule):
             logging.info(
                     'GG Cost ratio %s: %.4f'
                     % (self.name, 1.*self.cost1/self.cost2))
+        # if cost1 < cost2:
+        #     GG = self._gnorm_type1(Ai, Go)
+        # else:
+        #     GG = self._gnorm_type2(Ai, Go)
+        # return GG
         if cost1 < cost2:
-            GG = self._gnorm_type1(Ai, Go)
-        else:
-            GG = self._gnorm_type2(Ai, Go)
-        return GG
+            return self._gnorm_type1
+        return self._gnorm_type2
 
     def _gnorm_type1(self, Ai, Go):
         AiAi = torch.einsum('bit,bit->bt', [Ai, Ai])

@@ -79,7 +79,9 @@ class GradientClusterBatch(GradientCluster):
         = argmin_c CC-2gC
         """
         batch_dist = self.G.get_dist()
-        total_dist = torch.stack(batch_dist).sum(0)
+        # total_dist = torch.stack(batch_dist).sum(0)
+        CC, CG, GG = [torch.stack(x).sum(0) for x in zip(*batch_dist)]
+        total_dist = CC-2*CG+GG
         if self.mul_Nk:
             total_dist.mul_(self.cluster_size.clamp(1))
         batch_dist, assign_i = total_dist.min(0)
@@ -89,7 +91,7 @@ class GradientClusterBatch(GradientCluster):
             counts = torch.zeros(self.nclusters, 1).cuda()
             counts.scatter_add_(0, assign_i, torch.ones_like(assign_i).float())
             self.cluster_size.add_(counts)
-        return assign_i, batch_dist
+        return assign_i, batch_dist, GG
 
     def update_batch(self, data_loader, train_size, ci=0, citers=0):
         model = self.model
@@ -99,6 +101,7 @@ class GradientClusterBatch(GradientCluster):
         pred_i = np.zeros(train_size)
         loss_i = np.zeros(train_size)
         target_i = np.zeros(train_size)
+        GG_i = np.zeros(train_size)
         topk_i = np.zeros((train_size, 2))
         total_dist = torch.zeros(self.nclusters, 1).to(device)
         self.cluster_size = torch.zeros(self.nclusters, 1).cuda()
@@ -135,10 +138,11 @@ class GradientClusterBatch(GradientCluster):
             # A = get_all_tensors()
             # print([a.shape for a in A[-20:]])
             # import ipdb; ipdb.set_trace()
-            ai, batch_dist = self.assign()
+            ai, batch_dist, gg = self.assign()
             assert batch_dist.max() < 1e10 and batch_dist.min() > -1e10,\
                 'Distortion out of bounds'
             assign_i[idx] = ai
+            GG_i[idx] = gg
             total_dist.scatter_add_(0, ai, batch_dist)
             batch_time.update(time.time() - end)
             end = time.time()
@@ -222,7 +226,9 @@ class GradientClusterBatch(GradientCluster):
                                        torch.ones_like(assign_i).float())
         self.G.update_batch(self.cluster_size)
         # td before E step, we have to do another loop for td after E step
-        return td, assign_i.cpu().numpy(), target_i, pred_i, loss_i, topk_i
+        return (
+                td, assign_i.cpu().numpy(), target_i, pred_i, loss_i, topk_i,
+                GG_i)
 
 
 class GradientClusterOnline(GradientCluster):
@@ -249,7 +255,9 @@ class GradientClusterOnline(GradientCluster):
         #        = argmin_c gg+CC-2*gC
         #        = argmin_c CC-2gC
         batch_dist = self.G.get_dist()
-        total_dist = torch.stack(batch_dist).sum(0)
+        # total_dist = torch.stack(batch_dist).sum(0)
+        CC, CG, GG = [torch.stack(x).sum(0) for x in zip(*batch_dist)]
+        total_dist = CC-2*CG+GG
         if self.mul_Nk:
             total_dist.mul_(self.cluster_size.clamp(1))
         batch_dist, assign_i = total_dist.min(0)
