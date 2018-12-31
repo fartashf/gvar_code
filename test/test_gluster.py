@@ -233,6 +233,8 @@ def test_toy_batch(
     GG_i = []
     reinited = False
     data_loader = DataLoader(X, T, batch_size)
+    model.eval()
+    modelg.eval()
     for i in range(citers):
         tic = time.time()
         stat = gluster.update_batch(
@@ -299,7 +301,7 @@ def train(epoch, train_loader, model, optimizer):
 
 def test_mnist_batch(
         model, batch_size, epochs, nclusters, min_size, citers, figname=None,
-        **kwargs):
+        add_GG=False, **kwargs):
     print('batch_size: %d' % batch_size)
     print('epochs    : %d' % epochs)
     print('nclusters : %d' % nclusters)
@@ -338,6 +340,8 @@ def test_mnist_batch(
     pred_i = 0
     loss_i = 0
     GG_i = []
+    model.eval()
+    modelg.eval()
     for i in range(citers):
         tic = time.time()
         stat = gluster.update_batch(
@@ -349,8 +353,10 @@ def test_mnist_batch(
         if i > 0:
             assert pred_i.sum() == stat[3].sum(), 'predictions changed'
             assert loss_i.sum() == stat[4].sum(), 'loss changed'
-            assert stat[0].sum() <= total_dist.sum()+1e-5,\
-                'Total dists went up'
+            if not add_GG:
+                assert stat[0].sum() <= total_dist.sum()+1e-5,\
+                    'Total dists went up'
+            # TODO: GG is not deterministic, because Ai and Go are not
             # if np.abs(GG_i-stat[6]).sum() > 1e-5:
             #     print(np.sort(np.abs(GG_i-stat[6])))
             #     print(np.where(np.abs(GG_i-stat[6]) > 1e-5))
@@ -455,7 +461,7 @@ def test_mnist_online(
 
 def test_mnist_online_delayed(
         model, batch_size, epochs, nclusters, beta, min_size,
-        reinit_method, delay, figname):
+        reinit_method, delay, figname, **kwargs):
     print('batch_size: %d' % batch_size)
     print('epochs    : %d' % epochs)
     print('nclusters : %d' % nclusters)
@@ -481,7 +487,8 @@ def test_mnist_online_delayed(
     model.cuda()
     modelg = copy.deepcopy(model)
     gluster = GradientClusterOnline(modelg, beta, min_size,
-                                    reinit_method, nclusters=nclusters)
+                                    reinit_method, nclusters=nclusters,
+                                    **kwargs)
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
@@ -576,86 +583,101 @@ def test_mnist_online_delayed(
 
 
 class ToyTests(object):
-    def test_few_iters(self):
+    def test_few_iters(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         # Few iterations
         data = data_unique_n(100, 5)
-        test_gluster_online(model, 10, data, 5, .9, 1, 'data', 10)
+        test_gluster_online(model, 10, data, 5, .9, 1, 'data', 10, **kwargs)
         print(">>> One cluster still hasn't converged?")
-        test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 10)
+        test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 10, **kwargs)
         print(">>> But the init with largest takes longer")
 
-    def test_more_iters(self):
+    def test_more_iters(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         # More iterations
         data = data_unique_n(100, 5)
-        test_gluster_online(model, 10, data, 5, .9, 1, 'data', 100)
+        test_gluster_online(model, 10, data, 5, .9, 1, 'data', 100, **kwargs)
         print(">>> This has now converged.")
-        test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 100)
+        test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 100,
+                            **kwargs)
         print(">>> centers should match input based on Dist")
 
-    def test_more_data(self):
+    def test_more_data(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         # More unique data than centers
         data = data_unique_n(100, 10)
-        test_gluster_online(model, 10, data, 5, .9, 1, 'data', 100)
-        test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 100)
+        test_gluster_online(model, 10, data, 5, .9, 1, 'data', 100, **kwargs)
+        test_gluster_online(model, 10, data, 5, .9, 1, 'largest', 100,
+                            **kwargs)
         print(
                 "*** Clusters should get about the same "
                 "number of data points, but they don't, why?***")
 
-    def test_more_centers(self):
+    def test_more_centers(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         # More centers than data
         # TODO: stop reinit if more centers
         data = data_unique_n(100, 5)
-        test_gluster_online(model, 10, data, 10, .9, 1, 'data', 100)
+        test_gluster_online(model, 10, data, 10, .9, 1, 'data', 100, **kwargs)
         print(
                 "*** 5 centers are reinited > 30 "
                 "times but first 5 are stable ***")
-        test_gluster_online(model, 10, data, 10, .9, 1, 'largest', 100)
+        test_gluster_online(model, 10, data, 10, .9, 1, 'largest', 100,
+                            **kwargs)
 
-    def test_imbalance(self):
+    def test_imbalance(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         # Imbalance data
         data = data_unique_perc(100, [.9, .1])
-        test_gluster_online(model, 10, data, 2, .9, 1, 'data', 10)
-        test_gluster_online(model, 10, data, 2, .9, 1, 'largest', 10)
+        test_gluster_online(model, 10, data, 2, .9, 1, 'data', 10, **kwargs)
+        test_gluster_online(model, 10, data, 2, .9, 1, 'largest', 10, **kwargs)
         print(
                 "***  finds 2 clusters in 1 reinit "
                 "but hasn't converged in 10 ***")
 
-    def test_imbalance_more_iters(self):
+    def test_imbalance_more_iters(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         # More iterations
         data = data_unique_perc(100, [.9, .1])
-        test_gluster_online(model, 10, data, 2, .9, 1, 'data', 100)
-        test_gluster_online(model, 10, data, 2, .9, 1, 'largest', 100)
+        test_gluster_online(model, 10, data, 2, .9, 1, 'data', 100, **kwargs)
+        test_gluster_online(model, 10, data, 2, .9, 1, 'largest', 100,
+                            **kwargs)
         print("***  converged now ***")
 
-    def test_time(self):
+    def test_time(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         # Time test
         data = data_unique_perc(1000, [.9, .1])
-        test_gluster_online(model, 128, data, 2, .9, 1, 'data', 100)
+        test_gluster_online(model, 128, data, 2, .9, 1, 'data', 100, **kwargs)
         print("2-3x solwer")
 
-    def test_noise(self):
+    def test_noise(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         # noise
         data = data_unique_perc(100, [.9, .1])
         data = purturb_data(data, .01)
-        test_gluster_online(model, 10, data, 2, .9, 1, 'data', 100)
-        test_gluster_online(model, 10, data, 2, .9, 1, 'largest', 100)
+        test_gluster_online(model, 10, data, 2, .9, 1, 'data', 100, **kwargs)
+        test_gluster_online(model, 10, data, 2, .9, 1, 'largest', 100,
+                            **kwargs)
 
     def test_toy_batch(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         # gluster batch
         data = data_unique_n(100, 5)
         test_toy_batch(model, 10, data, 5, 1, 10, **kwargs)
 
     def test_toy_batch_noise(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         # gluster batch noise
         data = data_unique_perc(100, [.9, .1])
         data = purturb_data(data, .01)
@@ -664,15 +686,17 @@ class ToyTests(object):
 
 
 class MNISTTest(object):
-    def test_mnist_batch_citer2(self):
+    def test_mnist_batch_citer2(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         # MNIST
         citers = 2
         figname = self.prefix+',nclusters_2,citers_2.pth.tar'
-        test_mnist_batch(model, 128, 2, 2, 10, citers, figname)
+        test_mnist_batch(model, 128, 2, 2, 10, citers, figname, **kwargs)
 
     def test_mnist_batch_citer10(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         citers = 10
         figname = (
                 self.prefix+',nclusters_2,citers_10%s.pth.tar'
@@ -683,6 +707,7 @@ class MNISTTest(object):
 
     def test_mnist_batch_nclusters10(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         nclusters = 10
         citers = 10
         min_size = 10
@@ -695,6 +720,7 @@ class MNISTTest(object):
 
     def test_mnist_online(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         # Online gluster on MNIST
         epochs = 2
         nclusters = 10
@@ -708,8 +734,10 @@ class MNISTTest(object):
                           beta, min_size, reinit_method, figname,
                           **kwargs)
 
-    def test_mnist_online_delayed(self):
+    def test_mnist_online_delayed(self, delay=10, beta=.99, min_size=20,
+                                  **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         # Online gluster with delayed update
         epochs = 2
         nclusters = 10
@@ -718,29 +746,21 @@ class MNISTTest(object):
         reinit_method = 'largest'
         delay = 10
         figname = (
-            self.prefix+',nclusters_10,online,delay_10.pth.tar')
+            self.prefix+',nclusters_10,online,delay_%d%s.pth.tar'
+            % (delay, proc_kwargs(**kwargs)))
         test_mnist_online_delayed(
                 model,
                 128, epochs, nclusters, beta, min_size, reinit_method, delay,
-                figname)
+                figname, **kwargs)
 
-    def test_mnist_online_delay100(self):
-        model = self.model
-        epochs = 2
-        nclusters = 10
+    def test_mnist_online_delay100(self, **kwargs):
         beta = .9  # .999
         min_size = 20  # 1
-        reinit_method = 'largest'
-        delay = 100
-        figname = (
-            self.prefix+',nclusters_10,online,delay_100.pth.tar')
-        test_mnist_online_delayed(
-                model,
-                128, epochs, nclusters, beta, min_size, reinit_method, delay,
-                figname)
+        self.test_mnist_online_delayed(delay=100, beta=beta, min_size=min_size)
 
-    def test_mnist_batch_input(self):
+    def test_mnist_batch_input(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         # Batch gluster layer 1, input only
         nclusters = 10
         citers = 10
@@ -748,27 +768,29 @@ class MNISTTest(object):
         figname = self.prefix+',nclusters_10,input.pth.tar'
         test_mnist_batch(
                 model, 128, 2, nclusters, 10, citers, figname,
-                active_only='fc1', no_grad=no_grad)
+                active_only='fc1', no_grad=no_grad, **kwargs)
 
-    def test_mnist_batch_layer1(self):
+    def test_mnist_batch_layer1(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         # Batch gluster layer 1
         nclusters = 10
         citers = 10
         figname = self.prefix+',nclusters_10,layer_1.pth.tar'
         test_mnist_batch(
                 model, 128, 2, nclusters, 10, citers,
-                figname, active_only='fc1')
+                figname, active_only='fc1', **kwargs)
 
-    def test_mnist_batch_layer4(self):
+    def test_mnist_batch_layer4(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         # Batch gluster layer 4
         nclusters = 10
         citers = 10
         figname = self.prefix+',nclusters_10,layer_4.pth.tar'
         test_mnist_batch(
                 model, 128, 2, nclusters, 10,
-                citers, figname, active_only='fc4')
+                citers, figname, active_only='fc4', **kwargs)
 
 
 class TestGlusterMLP(unittest.TestCase, ToyTests, MNISTTest):
@@ -781,6 +803,7 @@ class TestGlusterMLP(unittest.TestCase, ToyTests, MNISTTest):
         self.model.cuda()
         print('Model initialized.')
         self.prefix = '/u/faghri/dmom/code/notebooks/figs_gluster/mlp'
+        self.kwargs = {}
 
     def test_toy_batch_input(self):
         self.test_toy_batch(active_only=['fc1'], no_grad=True, do_svd=False)
@@ -797,31 +820,36 @@ class TestGlusterConv(unittest.TestCase, ToyTests, MNISTTest):
         self.model.cuda()
         print('Model initialized.')
         self.prefix = '/u/faghri/dmom/code/notebooks/figs_gluster/cnn'
+        self.kwargs = {}
 
-    def test_more_iters_conv1(self):
+    def test_more_iters_conv1(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         # More iterations
         data = data_unique_n(100, 5)
         test_gluster_online(
                 model, 10, data, 5, .9, 1, 'largest', 100,
-                active_only=['conv1'])
+                active_only=['conv1'], **kwargs)
         print(">>> Similar magnitude of normC, dists not small.")
 
-    def test_more_iters_conv2(self):
+    def test_more_iters_conv2(self, **kwargs):
         model = self.model
+        kwargs.update(self.kwargs)
         # More iterations
         data = data_unique_n(100, 5)
         test_gluster_online(
                 model, 10, data, 5, .9, 1, 'largest', 100,
-                active_only=['conv2'])
+                active_only=['conv2'], **kwargs)
         print(">>> Similar magnitude of normC, dists small.")
 
-    def test_toy_batch_conv2(self):
+    def test_toy_batch_conv2(self, **kwargs):
         # TODO: dist to centers is not zero with no svd and svd does not work
         model = self.model
+        kwargs.update(self.kwargs)
         # gluster batch
         data = data_unique_n(100, 5)
-        test_toy_batch(model, 10, data, 5, 1, 10, active_only=['conv2'])
+        test_toy_batch(model, 10, data, 5, 1, 10, active_only=['conv2'],
+                       **kwargs)
 
     def test_mnist_batch_citer10_fc2(self):
         self.test_mnist_batch_citer10(active_only=['fc2'])
@@ -864,6 +892,18 @@ class TestGlusterConv(unittest.TestCase, ToyTests, MNISTTest):
     def test_toy_batch_input(self):
         # TODO: init from dist doesn't work here
         self.test_toy_batch(active_only=['conv1'], no_grad=True, do_svd=True)
+
+
+class TestGlusterMLPNk(TestGlusterMLP):
+    def setUp(self):
+        super(TestGlusterMLPNk, self).setUp()
+        self.kwargs = {'mul_Nk': True, 'add_GG': True}
+
+
+class TestGlusterConvNk(TestGlusterConv):
+    def setUp(self):
+        super(TestGlusterConvNk, self).setUp()
+        self.kwargs = {'mul_Nk': True, 'add_GG': True}
 
 
 if __name__ == '__main__':

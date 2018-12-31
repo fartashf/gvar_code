@@ -9,7 +9,8 @@ import time
 
 
 class GradientCluster(object):
-    def __init__(self, model, nclusters=1, debug=True, mul_Nk=False, **kwargs):
+    def __init__(self, model, nclusters=1, debug=True, mul_Nk=False,
+                 add_GG=False, **kwargs):
         # Q: duplicates
         # TODO: challenge: how many C? memory? time?
 
@@ -23,8 +24,11 @@ class GradientCluster(object):
         self.total_dist = torch.zeros(self.nclusters, 1).to(device)
         self.debug = debug
         self.mul_Nk = mul_Nk
+        self.add_GG = (mul_Nk or add_GG)
 
-        self.G = GlusterContainer(model, 1, nclusters, debug=debug, **kwargs)
+        self.G = GlusterContainer(
+                model, 1, nclusters, debug=debug,
+                add_GG=(mul_Nk or add_GG), **kwargs)
 
     def activate(self):
         self.G.activate()
@@ -65,6 +69,17 @@ class GradientCluster(object):
                 'Total dists:\n%s' % str(self.total_dist.cpu().numpy()))
         return normC
 
+    def get_dist(self):
+        batch_dist = self.G.get_dist()
+        # total_dist = torch.stack(batch_dist).sum(0)
+        CC, CG, GG = [torch.stack(x).sum(0) for x in zip(*batch_dist)]
+        total_dist = CC-2*CG
+        if self.add_GG or self.mul_Nk:
+            total_dist += GG
+        if self.mul_Nk:
+            total_dist.mul_(self.cluster_size.clamp(1))
+        return total_dist, GG
+
 
 class GradientClusterBatch(GradientCluster):
     def __init__(self, model, min_size, **kwargs):
@@ -78,12 +93,7 @@ class GradientClusterBatch(GradientCluster):
         = argmin_c gg+CC-2*gC
         = argmin_c CC-2gC
         """
-        batch_dist = self.G.get_dist()
-        # total_dist = torch.stack(batch_dist).sum(0)
-        CC, CG, GG = [torch.stack(x).sum(0) for x in zip(*batch_dist)]
-        total_dist = CC-2*CG+GG
-        if self.mul_Nk:
-            total_dist.mul_(self.cluster_size.clamp(1))
+        total_dist, GG = self.get_dist()
         batch_dist, assign_i = total_dist.min(0)
         assign_i = assign_i.unsqueeze(1)
         batch_dist = batch_dist.unsqueeze(1)
@@ -254,12 +264,7 @@ class GradientClusterOnline(GradientCluster):
         # M: a_i = argmin_c(|g_i-C_c|^2)
         #        = argmin_c gg+CC-2*gC
         #        = argmin_c CC-2gC
-        batch_dist = self.G.get_dist()
-        # total_dist = torch.stack(batch_dist).sum(0)
-        CC, CG, GG = [torch.stack(x).sum(0) for x in zip(*batch_dist)]
-        total_dist = CC-2*CG+GG
-        if self.mul_Nk:
-            total_dist.mul_(self.cluster_size.clamp(1))
+        total_dist, GG = self.get_dist()
         batch_dist, assign_i = total_dist.min(0)
         assign_i = assign_i.unsqueeze(1)
         batch_dist = batch_dist.unsqueeze(1)

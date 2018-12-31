@@ -19,7 +19,7 @@ class GlusterModule(object):
     def __init__(
             self, module, eps, nclusters, no_grad=False,
             inactive_mods=[], active_only=[], name='', do_svd=False,
-            debug=True, *args, **kwargs):
+            debug=True, add_GG=False, *args, **kwargs):
         self.module = module
         self.nclusters = nclusters
         self.eps = eps
@@ -48,6 +48,7 @@ class GlusterModule(object):
         self.do_svd = do_svd
         self.count = 0
         self.debug = debug
+        self.add_GG = add_GG
         self._register_hooks()
 
     def _register_hooks(self):
@@ -339,21 +340,24 @@ class GlusterLinear(GlusterModule):
         CoCo = (Co*Co).view(Co.shape[0], -1).sum(1)
         CC = ((CiCi)*(CoCo)).unsqueeze(-1)
         assert CC.shape == (C, 1), 'CC: C x 1.'
-        # type1
-        # (Ai*Ai).sum(1)
-        # (Go*Go).sum(1)
-        # TODO: einsum is most exact but still 2e-4 error in GoGo,
-        # test_mnist_batch
-        # pow(2) is the worst
-        AiAi = torch.einsum('bi,bi->b', [Ai, Ai])
-        GoGo = torch.einsum('bo,bo->b', [Go, Go])
-        GG = (AiAi*GoGo).view(1, -1)
-        # type2
-        # Gw = torch.einsum('bi,bo->bio', [Ai, Go])
-        # GG = Gw.pow(2).sum(2).sum(1).view(1, -1)
-        assert GG.shape == (1, B), 'GG: 1 x B.'
-        # GG = (CG/(CC+1e-7)).mean(0, keepdim=True)
-        # assert GG.shape == (1, B), 'GG: 1 x B.'
+        GG = torch.tensor(0)
+        if self.add_GG:
+            # GG = (CG/(CC+1e-7)).mean(0, keepdim=True)
+            # assert GG.shape == (1, B), 'GG: 1 x B.'
+            # type1
+            # (Ai*Ai).sum(1)
+            # (Go*Go).sum(1)
+            # TODO: einsum is most exact
+            # 1e-4 change in Ai and 1e-2 change in Go
+            # test_mnist_batch
+            # pow(2) is the worst
+            AiAi = torch.einsum('bi,bi->b', [Ai, Ai])
+            GoGo = torch.einsum('bo,bo->b', [Go, Go])
+            GG = (AiAi*GoGo).view(1, -1)
+            # type2
+            # Gw = torch.einsum('bi,bo->bio', [Ai, Go])
+            # GG = Gw.pow(2).sum(2).sum(1).view(1, -1)
+            assert GG.shape == (1, B), 'GG: 1 x B.'
         # Not summing here because of floating point precision
         # O = CC-2*CG+GG
         # assert O.shape == (C, B), 'O: C x B.'
@@ -481,12 +485,14 @@ class GlusterConv(GlusterModule):
         CoCo = (Co*Co).view(Co.shape[0], -1).sum(1)
         CC = ((CiCi)*(CoCo)).unsqueeze(-1)
         assert CC.shape == (C, 1), 'CC: C x 1.'
-        if self._gnorm is None:
-            self._gnorm = self._gnorm_choose(Ai, Go)
-        GG = self._gnorm(Ai, Go).view(1, -1)
-        assert GG.shape == (1, B), 'GG: 1 x B.'
-        # GG = (CG/(CC+1e-7)).mean(0, keepdim=True)
-        # assert GG.shape == (1, B), 'GG: 1 x B.'
+        GG = torch.tensor(0)
+        if self.add_GG:
+            # GG = (CG/(CC+1e-7)).mean(0, keepdim=True)
+            # assert GG.shape == (1, B), 'GG: 1 x B.'
+            if self._gnorm is None:
+                self._gnorm = self._gnorm_choose(Ai, Go)
+            GG = self._gnorm(Ai, Go).view(1, -1)
+            assert GG.shape == (1, B), 'GG: 1 x B.'
         # O = CC-2*CG+GG
         # assert O.shape == (C, B), 'O: C x B.'
         # if self.Ai.max() > 10000:
