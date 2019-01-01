@@ -878,9 +878,9 @@ class TestGlusterConv(unittest.TestCase, ToyTests, MNISTTest):
         self.test_mnist_online(inactive_mods=['conv1'])
 
     def test_toy_batch_conv1(self):
-        # TODO: init challenge
+        # TODO: init challenge not with mul_Nk
         self.test_toy_batch(active_only=['conv1'])
-        print(">>> Init challenge.")
+        print(">>> Init challenge not with mul_Nk.")
 
     def test_toy_batch_conv1_svd(self):
         # TODO: init challenge
@@ -894,8 +894,9 @@ class TestGlusterConv(unittest.TestCase, ToyTests, MNISTTest):
         self.test_mnist_batch_nclusters10(active_only=['conv1'], no_grad=True)
 
     def test_toy_batch_input(self):
-        # TODO: init from dist doesn't work here
+        # TODO: init from dist doesn't work here when not mul_Nk
         self.test_toy_batch(active_only=['conv1'], no_grad=True, do_svd=True)
+        print(">>> init from dist doesn't work here when not mul_Nk")
 
 
 class TestGlusterMLPNk(TestGlusterMLP):

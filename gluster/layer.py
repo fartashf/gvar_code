@@ -541,7 +541,7 @@ class GlusterConv(GlusterModule):
     def _gnorm_choose(self, Ai, Go):
         B, din, T = Ai.shape
         B, dout, T = Go.shape
-        self.cost1 = cost1 = B*din*T + B*dout*T + B*T*T
+        self.cost1 = cost1 = B*din*T*T + B*dout*T*T + B*T*T
         self.cost2 = cost2 = B*din*dout*T + B*din*dout
         if self.batch_dist is None and self.debug:
             logging.info(
@@ -557,9 +557,9 @@ class GlusterConv(GlusterModule):
         return self._gnorm_type2
 
     def _gnorm_type1(self, Ai, Go):
-        AiAi = torch.einsum('bit,bit->bt', [Ai, Ai])
-        GoGo = torch.einsum('bot,bot->bt', [Go, Go])
-        GG = torch.einsum('bs,bt->b', [AiAi, GoGo])
+        AiAi = torch.einsum('bis,bit->bst', [Ai, Ai])
+        GoGo = torch.einsum('bos,bot->bst', [Go, Go])
+        GG = torch.einsum('bst,bst->b', [AiAi, GoGo])
         return GG
 
     def _gnorm_type2(self, Ai, Go):
