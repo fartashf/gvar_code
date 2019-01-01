@@ -152,7 +152,7 @@ class GradientClusterBatch(GradientCluster):
             assert batch_dist.max() < 1e10 and batch_dist.min() > -1e10,\
                 'Distortion out of bounds'
             assign_i[idx] = ai
-            GG_i[idx] = gg
+            GG_i[idx] = gg.cpu().numpy()
             total_dist.scatter_add_(0, ai, batch_dist)
             batch_time.update(time.time() - end)
             end = time.time()
@@ -169,8 +169,10 @@ class GradientClusterBatch(GradientCluster):
                 torch.cuda.empty_cache()
                 # import gc
                 # gc.collect()
-        # TODO: this should never happen?
-        # total_dist.div_(self.cluster_size.clamp(1))
+        if not self.add_GG:
+            # TODO: this should never happen? only to pass
+            # test_gluster.TestGlusterMLP.test_toy_batch
+            total_dist.div_(self.cluster_size.clamp(1))
         td = total_dist.cpu().numpy()
         self.total_dist.copy_(total_dist)
         if self.debug:
@@ -281,9 +283,13 @@ class GradientClusterOnline(GradientCluster):
         pre_size = self.cluster_size-counts
         # TODO: this should be indep of batch size?
         if self.add_GG:
-            self.total_dist.mul_(beta).scatter_add_(0, assign_i, batch_dist)
+            tddec = pre_size/self.cluster_size.clamp(1)
+            td_new = torch.zeros_like(self.total_dist).scatter_add_(
+                    0, assign_i, batch_dist)
+            self.total_dist.mul_(tddec).add_(td_new.mul_(1-tddec))
         else:
-            # only to pass the tests, reinit largest is not good with no addg
+            # TODO: reinit largest is not good with no addg
+            # do this to pass TestGlusterMLP.test_more_iters
             self.total_dist.mul_(pre_size).scatter_add_(
                 0, assign_i, batch_dist).div_(self.cluster_size)
 

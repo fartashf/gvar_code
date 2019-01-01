@@ -246,7 +246,7 @@ def test_toy_batch(
             assert pred_i.sum() == stat[3].sum(), 'predictions changed'
             assert loss_i.sum() == stat[4].sum(), 'loss changed'
             dt_down = stat[0].sum() <= total_dist.sum()+1e-5
-            if reinited:
+            if reinited or gluster.add_GG:
                 if not dt_down:
                     logging.info('^^^^ Total dists went up ^^^^')
             else:
@@ -615,7 +615,8 @@ class ToyTests(object):
                             **kwargs)
         print(
                 "*** Clusters should get about the same "
-                "number of data points, but they don't, why?***")
+                "number of data points, but they don't, why? A: They get with"
+                " mul_Nk (has add_GG)***")
 
     def test_more_centers(self, **kwargs):
         model = self.model
@@ -675,6 +676,7 @@ class ToyTests(object):
         # gluster batch
         data = data_unique_n(100, 5)
         test_toy_batch(model, 10, data, 5, 1, 10, **kwargs)
+        print(">>> distortions should be about the same and zero for mul_Nk")
 
     def test_toy_batch_noise(self, **kwargs):
         model = self.model
@@ -684,6 +686,7 @@ class ToyTests(object):
         data = purturb_data(data, .01)
         set_seed(12345)
         test_toy_batch(model, 10, data, 2, 1, 10, **kwargs)
+        print(">>> mul_Nk should have 30x more distortion for one cluster.")
 
 
 class MNISTTest(object):
