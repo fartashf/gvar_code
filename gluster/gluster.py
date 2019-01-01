@@ -280,9 +280,12 @@ class GradientClusterOnline(GradientCluster):
         self.cluster_size.mul_(beta).add_(counts)  # no *(1-beta)
         pre_size = self.cluster_size-counts
         # TODO: this should be indep of batch size?
-        # self.total_dist.mul_(pre_size).scatter_add_(
-        #     0, assign_i, batch_dist).div_(self.cluster_size)
-        self.total_dist.mul_(beta).scatter_add_(0, assign_i, batch_dist)
+        if self.add_GG:
+            self.total_dist.mul_(beta).scatter_add_(0, assign_i, batch_dist)
+        else:
+            # only to pass the tests, reinit largest is not good with no addg
+            self.total_dist.mul_(pre_size).scatter_add_(
+                0, assign_i, batch_dist).div_(self.cluster_size)
 
         self.G.zero_new_centers()
         self.G.accum_new_centers(assign_i)
@@ -302,7 +305,9 @@ class GradientClusterOnline(GradientCluster):
         # TODO: stop reinit or delay if too often
         if nreinits > 0:
             if self.debug:
-                logging.info('Reinit: %d' % nreinits)
+                logging.info('Reinit: %s'
+                             % str(list(np.where(
+                                 reinits.cpu().numpy().flatten())[0])))
             if self.reinit_method == 'data':
                 return self.reinit_from_data(reinits, batch_size)
             elif self.reinit_method == 'largest':

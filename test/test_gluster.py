@@ -75,6 +75,7 @@ def print_stats(
     print(normC)
     print('Reinit count: %s' % str(gluster.reinits.cpu().numpy()))
     print('Cluster size: %s' % str(gluster.cluster_size.cpu().numpy()))
+    print('Total dist: %s' % str(gluster.total_dist.cpu().numpy()))
 
 
 def data_unique_n(train_size, nunique):
