@@ -13,6 +13,7 @@ sys.path.append('../')
 from models.mnist import MLP, Convnet  # NOQA
 from gluster.gluster import GradientClusterOnline  # NOQA
 from gluster.gluster import GradientClusterBatch  # NOQA
+from gluster.gluster import GlusterBatchAssert  # NOQA
 
 
 def set_seed(seed):
@@ -226,13 +227,8 @@ def test_toy_batch(
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
+    gb_assert = GlusterBatchAssert(gluster)
     gluster_tc = np.zeros(citers)
-    total_dist = float('inf')
-    pred_i = 0
-    loss_i = 0
-    reinits = 0
-    GG_i = []
-    reinited = False
     data_loader = DataLoader(X, T, batch_size)
     model.eval()
     modelg.eval()
@@ -240,22 +236,11 @@ def test_toy_batch(
         tic = time.time()
         stat = gluster.update_batch(
                 data_loader, train_size, ci=i, citers=citers)
+        gb_assert.do_assert(stat)
         toc = time.time()
         gluster_tc[i] = (toc - tic)
-        if i > 0:
-            assert pred_i.sum() == stat[3].sum(), 'predictions changed'
-            assert loss_i.sum() == stat[4].sum(), 'loss changed'
-            dt_down = stat[0].sum() <= total_dist.sum()+1e-5
-            if reinited or gluster.add_GG:
-                if not dt_down:
-                    logging.info('^^^^ Total dists went up ^^^^')
-            else:
-                assert dt_down, 'Total dists went up'
-            reinits_new = gluster.reinits.sum().item()
-            reinited = (reinits_new > reinits)
-            reinits = reinits_new
-            assert np.abs(GG_i-stat[6]).sum() < 1e-5, 'GG changed'
         total_dist, assign_i, target_i, pred_i, loss_i, topk_i, GG_i = stat
+        print_stats(model, gluster, Xte, Yte, batch_size, **kwargs)
 
     # get test data assignments
     gluster.eval()  # gluster test mode
@@ -336,11 +321,8 @@ def test_mnist_batch(
     # Test if Gluster can be disabled
     # gluster.deactivate()
 
+    gb_assert = GlusterBatchAssert(gluster)
     gluster_tc = np.zeros(citers)
-    total_dist = float('inf')
-    pred_i = 0
-    loss_i = 0
-    GG_i = []
     model.eval()
     modelg.eval()
     for i in range(citers):
@@ -351,17 +333,7 @@ def test_mnist_batch(
         toc = time.time()
         gluster_tc[i] = (toc - tic)
         normC = gluster.print_stats()
-        if i > 0:
-            assert pred_i.sum() == stat[3].sum(), 'predictions changed'
-            assert loss_i.sum() == stat[4].sum(), 'loss changed'
-            if not add_GG:
-                assert stat[0].sum() <= total_dist.sum()+1e-5,\
-                    'Total dists went up'
-            # TODO: GG is not deterministic, because Ai and Go are not
-            # if np.abs(GG_i-stat[6]).sum() > 1e-5:
-            #     print(np.sort(np.abs(GG_i-stat[6])))
-            #     print(np.where(np.abs(GG_i-stat[6]) > 1e-5))
-            # assert np.abs(GG_i-stat[6]).sum() < 1e-5, 'GG changed'
+        gb_assert.do_assert(stat)
         total_dist, assign_i, target_i, pred_i, loss_i, topk_i, GG_i = stat
 
     print('%.4f +/- %.4f' % (gluster_tc.mean(), gluster_tc.std()))
@@ -695,7 +667,9 @@ class MNISTTest(object):
         kwargs.update(self.kwargs)
         # MNIST
         citers = 2
-        figname = self.prefix+',nclusters_2,citers_2.pth.tar'
+        figname = (
+                self.prefix+',nclusters_2,citers_2%s.pth.tar'
+                % proc_kwargs(**kwargs))
         test_mnist_batch(model, 128, 2, 2, 10, citers, figname, **kwargs)
 
     def test_mnist_batch_citer10(self, **kwargs):
@@ -769,7 +743,9 @@ class MNISTTest(object):
         nclusters = 10
         citers = 10
         no_grad = True
-        figname = self.prefix+',nclusters_10,input.pth.tar'
+        figname = (
+                self.prefix+',nclusters_10,input%s.pth.tar'
+                % proc_kwargs(**kwargs))
         test_mnist_batch(
                 model, 128, 2, nclusters, 10, citers, figname,
                 active_only='fc1', no_grad=no_grad, **kwargs)
@@ -780,7 +756,9 @@ class MNISTTest(object):
         # Batch gluster layer 1
         nclusters = 10
         citers = 10
-        figname = self.prefix+',nclusters_10,layer_1.pth.tar'
+        figname = (
+                self.prefix+',nclusters_10,layer_1%s.pth.tar'
+                % proc_kwargs(**kwargs))
         test_mnist_batch(
                 model, 128, 2, nclusters, 10, citers,
                 figname, active_only='fc1', **kwargs)
@@ -791,7 +769,9 @@ class MNISTTest(object):
         # Batch gluster layer 4
         nclusters = 10
         citers = 10
-        figname = self.prefix+',nclusters_10,layer_4.pth.tar'
+        figname = (
+                self.prefix+',nclusters_10,layer_4%s.pth.tar'
+                % proc_kwargs(**kwargs))
         test_mnist_batch(
                 model, 128, 2, nclusters, 10,
                 citers, figname, active_only='fc4', **kwargs)
@@ -902,13 +882,13 @@ class TestGlusterConv(unittest.TestCase, ToyTests, MNISTTest):
 class TestGlusterMLPNk(TestGlusterMLP):
     def setUp(self):
         super(TestGlusterMLPNk, self).setUp()
-        self.kwargs = {'mul_Nk': True, 'add_GG': True}
+        self.kwargs = {'mul_Nk': True}
 
 
 class TestGlusterConvNk(TestGlusterConv):
     def setUp(self):
         super(TestGlusterConvNk, self).setUp()
-        self.kwargs = {'mul_Nk': True, 'add_GG': True}
+        self.kwargs = {'mul_Nk': True}
 
 
 if __name__ == '__main__':

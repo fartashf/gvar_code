@@ -77,6 +77,7 @@ class GradientCluster(object):
         if self.add_GG or self.mul_Nk:
             total_dist += GG
         if self.mul_Nk:
+            # cluster_size should be correct and fixed for assignment step
             total_dist.mul_(self.cluster_size.clamp(1))
         return total_dist, GG
 
@@ -98,6 +99,7 @@ class GradientClusterBatch(GradientCluster):
         assign_i = assign_i.unsqueeze(1)
         batch_dist = batch_dist.unsqueeze(1)
         if not self.G.is_eval:
+            # TODO: approximate cluster size for mul_Nk
             counts = torch.zeros(self.nclusters, 1).cuda()
             counts.scatter_add_(0, assign_i, torch.ones_like(assign_i).float())
             self.cluster_size.add_(counts)
@@ -346,3 +348,44 @@ class GradientClusterOnline(GradientCluster):
         # print(self.cluster_size)
         invalid_clusters = [ri.item()]
         return invalid_clusters
+
+
+class GlusterBatchAssert(object):
+    def __init__(self, gluster):
+        self.total_dist = float('inf')
+        self.pred_i = 0
+        self.loss_i = 0
+        self.reinits = 0
+        self.GG_i = []
+        self.reinited = False
+        self.gluster = gluster
+        self.citer = 0
+
+    def do_assert(self, stat):
+        self.citer += 1
+        if self.citer == 1:
+            self._update(stat)
+            return
+        assert self.pred_i.sum() == stat[3].sum(), 'predictions changed'
+        assert self.loss_i.sum() == stat[4].sum(), 'loss changed'
+        dt_down = stat[0].sum() <= self.total_dist.sum()+1e-5
+        if self.reinited or self.gluster.add_GG:
+            if not dt_down:
+                logging.info('^^^^ Total dists went up. Prob GG changed.^^^^')
+        else:
+            assert dt_down, 'Total dists went up'
+        reinits_new = self.gluster.reinits.sum().item()
+        self.reinited = (reinits_new > self.reinits)
+        self.reinits = reinits_new
+        # # TODO: GG is not deterministic, because Ai and Go are not
+        # if np.abs(self.GG_i-stat[6]).sum() > 1e-5:
+        #     print(np.sort(np.abs(self.GG_i-stat[6])))
+        #     print(np.where(np.abs(self.GG_i-stat[6]) > 1e-5))
+        # assert np.abs(self.GG_i-stat[6]).sum() < 1e-5, 'GG changed'
+        if np.abs(self.GG_i-stat[6]).sum() > 1e-5:
+            logging.info('^^^^ GG changed ^^^^')
+        self._update(stat)
+
+    def _update(self, stat):
+        (self.total_dist, self.assign_i, self.target_i, self.pred_i,
+            self.loss_i, self.topk_i, self.GG_i) = stat
