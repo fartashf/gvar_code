@@ -240,7 +240,6 @@ def test_toy_batch(
         toc = time.time()
         gluster_tc[i] = (toc - tic)
         total_dist, assign_i, target_i, pred_i, loss_i, topk_i, GG_i = stat
-        print_stats(model, gluster, Xte, Yte, batch_size, **kwargs)
 
     # get test data assignments
     gluster.eval()  # gluster test mode
@@ -719,10 +718,7 @@ class MNISTTest(object):
         # Online gluster with delayed update
         epochs = 2
         nclusters = 10
-        beta = .99
-        min_size = 20
         reinit_method = 'largest'
-        delay = 10
         figname = (
             self.prefix+',nclusters_10,online,delay_%d%s.pth.tar'
             % (delay, proc_kwargs(**kwargs)))

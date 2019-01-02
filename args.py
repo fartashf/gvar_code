@@ -194,5 +194,7 @@ def add_args():
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--gvar_start',
                         default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--g_noMulNk',
+                        default=argparse.SUPPRESS, action='store_true')
     args = parser.parse_args()
     return args

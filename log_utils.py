@@ -86,6 +86,12 @@ class TBXWrapper(object):
     def log_obj(self, name, val):
         self.logobj[name] = val
 
+    def log_vector(self, name, val, step=None):
+        name += '_v'
+        if step is None:
+            step = len(self.logobj[name])
+        self.logobj[name] += [(time.time(), step, list(val.flatten()))]
+
     def close(self):
         self.writer.close()
 

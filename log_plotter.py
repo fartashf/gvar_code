@@ -115,6 +115,10 @@ def get_data_pth(logdir, run_names, tag_names, batch_size=None):
                 js[np.isnan(js)] = 100
                 js[np.isinf(js)] = 100
                 d[tag_name] = np.histogram(js, bins=100)
+            elif tag_name.endswith('_v'):
+                d[tag_name] = (
+                        np.array([x[1] for x in js]),
+                        np.array([x[2] for x in js]))
             else:
                 d[tag_name] = np.array([[x[j] for x in js]
                                         for j in range(1, 3)])
@@ -185,7 +189,9 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'slossC_h': '# Classes',
               'activeC_h': '# of Actives', 'snoozeC_h': '# of Snoozed',
               'Tloss_f': '# Examples', 'Vloss_f': '# Examples',
-              'Tnormg_f': '# Examples', 'Vnormg_f': '# Examples'}
+              'Tnormg_f': '# Examples', 'Vnormg_f': '# Examples',
+              'grad_bias': 'Gradient Diff norm', 'est_var': 'Mean variance',
+              'est_snr': 'Mean SNR'}
     titles = {'Tacc': 'Training Accuracy', 'Terror': 'Training Error',
               'train/accuracy': 'Training Accuracy',
               'Vacc': 'Test Accuracy', 'Verror': 'Test Error',
@@ -222,7 +228,10 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'Tloss_f': 'Histogram of loss (train set, postcomp)',
               'Vloss_f': 'Histogram of loss (val set, postcomp)',
               'Tnormg_f': 'Histogram of $\|g\|$ (train set, postcomp)',
-              'Vnormg_f': 'Histogram of $\|g\|$ (val set, postcomp)'}
+              'Vnormg_f': 'Histogram of $\|g\|$ (val set, postcomp)',
+              'grad_bias': 'Gradient Estimator Bias',
+              'est_var': 'Gradient Estimator Variance',
+              'est_snr': 'Gradient Estimator SNR'}
     yscale_log = ['Tloss', 'Vloss', 'tau']
     yscale_base = ['tau']
     plot_fs = {'Tacc': plot_f, 'Vacc': plot_f,

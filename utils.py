@@ -1,5 +1,6 @@
 import shutil
 import torch
+import numpy as np
 
 
 class DictWrapper(object):
@@ -62,7 +63,7 @@ def adjust_learning_rate(optimizer, epoch, opt):
 
 def adjust_learning_rate_multi(optimizer, epoch, opt):
     """Sets the learning rate to the initial LR decayed by 10"""
-    lr_decay_epoch = np.array(map(int, opt.lr_decay_epoch.split(',')))
+    lr_decay_epoch = np.array(list(map(int, opt.lr_decay_epoch.split(','))))
     if len(lr_decay_epoch) == 1:
         return adjust_learning_rate(optimizer, epoch, opt)
     el = (epoch // lr_decay_epoch)

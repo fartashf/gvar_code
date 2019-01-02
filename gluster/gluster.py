@@ -52,7 +52,7 @@ class GradientCluster(object):
     def get_centers(self):
         return self.G.get_centers()
 
-    def print_stats(self):
+    def get_center_norms(self):
         centers = self.get_centers()
         nclusters = centers[0].shape[0]
 
@@ -60,6 +60,10 @@ class GradientCluster(object):
         L = [c.pow(2).view(nclusters, -1).sum(1).cpu().numpy()
              for c in centers]
         normC = np.sqrt(np.sum(L, 0))
+        return normC
+
+    def print_stats(self):
+        normC = self.get_center_norms()
         logging.info('normC:\n%s' % str(normC))
         logging.info(
                 'Reinit count:\n%s' % str(self.reinits.cpu().numpy()))

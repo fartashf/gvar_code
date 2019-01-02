@@ -75,3 +75,4 @@ gvar_log_iter: 10
 gvar_estim_iter: 10
 g_debug: False
 gvar_start: 0
+g_noMulNk: False

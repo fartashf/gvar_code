@@ -4,13 +4,14 @@ from collections import OrderedDict
 
 
 class RunSingle(object):
-    def __init__(self, log_dir):
+    def __init__(self, log_dir, module_name):
         self.log_dir = log_dir
         self.num = 0
+        self.module_name = module_name
 
     def __call__(self, args):
         logger_name = 'runs/%s/%02d_' % (self.log_dir, self.num)
-        cmd = ['python main.py']
+        cmd = ['python -m {}'.format(self.module_name)]
         self.num += 1
         for k, v in args:
             if v is not None:
@@ -2279,8 +2280,48 @@ def imagenet_diff(args):
     return args, log_dir
 
 
+def mnist_gvar(args):
+    dataset = 'mnist'
+    module_name = 'main.gvar'
+    log_dir = 'runs_%s_gvar' % dataset
+    shared_args = [('dataset', dataset),
+                   # ('lr', [.1, .05, .02, .01]),
+                   ('lr', .02),
+                   ('epochs', [
+                       # (100, OrderedDict([('lr_decay_epoch', 100)])),
+                       (30, OrderedDict([('lr_decay_epoch', 30)])),
+                   ]),
+                   # ('exp_lr', ''),
+                   ('arch', ['cnn', 'mlp']),
+                   # ('arch', 'bigcnn', 'ssmlp'),
+                   ('optim', ['sgd']),
+                   # ('optim', [('sgd', OrderedDict([('lr', .02)])),
+                   #            ('adam', OrderedDict([('lr', .05)]))
+                   #            ]),
+                   # ('log_stats', ''),
+                   ('gvar_estim_iter', 1000),
+                   ('gvar_log_iter', 100),
+                   ('gvar_start', 468),
+                   ('gvar_snap_iter', 468),
+                   ]
+    # TODO: duplicate data
+    # TODO: regularization
+    # TODO: corrupt data
+    args_1 = [('g_estim', ['sgd', 'svrg'])]
+    args += [OrderedDict(shared_args+args_1)]
+
+    args_2 = [('g_estim', 'gluster'),
+              ('gb_citers', 10),
+              ('g_nclusters', [2, 10]),
+              ('g_debug', ''),
+              ]
+    args += [OrderedDict(shared_args+args_2)]
+    return args, log_dir, module_name
+
+
 if __name__ == '__main__':
     args = []
+    # module_name ='zerol.main'
     # args, log_dir = cifar10_resnet_explr(args)
     # args, log_dir = mnist_explr(args)
     # args, log_dir = svhn_ggbar(args)
@@ -2312,7 +2353,8 @@ if __name__ == '__main__':
     # args, log_dir = mnist_genlztn(args)
     # args, log_dir = mnist_duplicate(args)
     # args, log_dir = mnist_diff(args)
-    args, log_dir = imagenet_diff(args)
+    # args, log_dir = imagenet_diff(args)
+    args, log_dir, module_name = mnist_gvar(args)
     # jobs_0 = ['bolt0_gpu0,1,2,3', 'bolt1_gpu0,1,2,3']
     # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2',
     #           'bolt1_gpu0,1', 'bolt1_gpu2,3',
@@ -2321,18 +2363,18 @@ if __name__ == '__main__':
     #           'bolt1_gpu0,1', 'bolt1_gpu2,3',
     #           ]
     jobs_0 = ['bolt2_gpu0', 'bolt2_gpu1', 'bolt2_gpu2', 'bolt2_gpu3',
-              'bolt1_gpu0', 'bolt1_gpu1', 'bolt1_gpu2', 'bolt1_gpu3',
+              # 'bolt1_gpu0', 'bolt1_gpu1', 'bolt1_gpu2', 'bolt1_gpu3',
               # 'bolt0_gpu0', 'bolt0_gpu1', 'bolt0_gpu2', 'bolt0_gpu3'
               ]
     # njobs = [3] * 4 + [2] * 4  # validate start.sh
-    njobs = [1]*8
+    njobs = [2]*4
     jobs = []
     for s, n in zip(jobs_0, njobs):
         jobs += ['%s_job%d' % (s, i) for i in range(n)]
         # jobs += ['%s_job%d' % (s, i) for s in jobs_0]
 
-    run_single = RunSingle(log_dir)
-    run_single.num = 1
+    run_single = RunSingle(log_dir, module_name)
+    # run_single.num = 1
 
     # args = OrderedDict([('lr', [1, 2]), ('batch_size', [10, 20])])
     # args = OrderedDict([('lr', [(1, OrderedDict([('batch_size', [10])])),

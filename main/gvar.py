@@ -105,7 +105,7 @@ class GlusterEstimator(SGDEstimator):
             self.gluster = GradientClusterBatch(
                     model, opt.g_min_size, nclusters=opt.g_nclusters,
                     no_grad=opt.g_no_grad, active_only=opt.g_active_only,
-                    debug=opt.g_debug)
+                    debug=opt.g_debug, mul_Nk=(not opt.g_noMulNk))
         else:
             self.gluster.copy_(model)
         # Batch Gluster is only active here
@@ -113,10 +113,26 @@ class GlusterEstimator(SGDEstimator):
         opt = self.opt
         citers = opt.gb_citers
         # TODO: refactor this
+        nclusters = self.gluster.nclusters
         for i in range(citers):
             stat = self.gluster.update_batch(
                     self.data_loader, len(self.data_loader.dataset),
                     ci=i, citers=citers)
+            normC = self.gluster.get_center_norms()
+            total_dist, assign_i, target_i, pred_i, loss_i, topk_i, GG_i = stat
+            correct = topk_i[:, 0]
+            ls = np.zeros(nclusters)
+            acc = np.zeros(nclusters)
+            cs = np.zeros(nclusters)
+            for c in range(nclusters):
+                idx, _ = np.where(assign_i == c)
+                ls[c] = loss_i[idx].sum()/max(1, len(idx))
+                acc[c] = (correct[idx]*100.).mean()
+                cs[c] = len(idx)
+            tb_logger.log_vector('gb_norm', normC)
+            tb_logger.log_vector('gb_size', cs)
+            tb_logger.log_vector('gb_loss', ls)
+            tb_logger.log_vector('gb_acc', acc)
         self.cluster_size = self.gluster.cluster_size
         self.gluster.print_stats()
         self.assign_i = stat[1]
@@ -220,8 +236,8 @@ class GradientVariance(object):
         Esgd, var_s, snr_s = self.sgd.get_Ege_var(model, gviter)
         bias = torch.mean(torch.cat(
             [(ee-gg).abs().flatten() for ee, gg in zip(Ege, Esgd)]))
-        print(np.sum([ee.pow(2).sum().item() for ee in Esgd]))
-        print(np.sum([gg.pow(2).sum().item() for gg in Ege]))
+        # print(np.sum([ee.pow(2).sum().item() for ee in Esgd]))
+        # print(np.sum([gg.pow(2).sum().item() for gg in Ege]))
         tb_logger.log_value('grad_bias', float(bias), step=niters)
         tb_logger.log_value('est_var', float(var_e), step=niters)
         tb_logger.log_value('sgd_var', float(var_s), step=niters)
