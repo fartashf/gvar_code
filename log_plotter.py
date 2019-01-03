@@ -191,7 +191,7 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'Tloss_f': '# Examples', 'Vloss_f': '# Examples',
               'Tnormg_f': '# Examples', 'Vnormg_f': '# Examples',
               'grad_bias': 'Gradient Diff norm', 'est_var': 'Mean variance',
-              'est_snr': 'Mean SNR'}
+              'est_snr': 'Mean SNR', 'gb_td': 'Total distortion'}
     titles = {'Tacc': 'Training Accuracy', 'Terror': 'Training Error',
               'train/accuracy': 'Training Accuracy',
               'Vacc': 'Test Accuracy', 'Verror': 'Test Error',
@@ -231,7 +231,8 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'Vnormg_f': 'Histogram of $\|g\|$ (val set, postcomp)',
               'grad_bias': 'Gradient Estimator Bias',
               'est_var': 'Gradient Estimator Variance',
-              'est_snr': 'Gradient Estimator SNR'}
+              'est_snr': 'Gradient Estimator SNR',
+              'gb_td': 'Total distortion of the Gluster objective.'}
     yscale_log = ['Tloss', 'Vloss', 'tau']
     yscale_base = ['tau']
     plot_fs = {'Tacc': plot_f, 'Vacc': plot_f,

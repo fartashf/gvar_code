@@ -33,7 +33,7 @@ class GradientEstimator(object):
         self.model = None
         self.data_loader = data_loader
 
-    def update_snapshot(self, model):
+    def update_snapshot(self, model, niters):
         pass
 
     def grad(self, model_new):
@@ -96,7 +96,7 @@ class GlusterEstimator(SGDEstimator):
         self.data_loader = get_gluster_loader(self.data_loader, self.opt)
         # self.data_iter = iter(InfiniteLoader(self.data_loader))
 
-    def update_snapshot(self, model):
+    def update_snapshot(self, model, niters):
         # TODO: do we need this for batch?
         # self.model = copy.deepcopy(self.model)
         # model = self.model
@@ -133,12 +133,14 @@ class GlusterEstimator(SGDEstimator):
             tb_logger.log_vector('gb_size', cs)
             tb_logger.log_vector('gb_loss', ls)
             tb_logger.log_vector('gb_acc', acc)
+            tb_logger.log_vector('gb_td_i', total_dist)
         self.cluster_size = self.gluster.cluster_size
         self.gluster.print_stats()
         self.assign_i = stat[1]
         self.data_loader.sampler.set_assign_i(self.assign_i)
         self.data_iter = iter(InfiniteLoader(self.data_loader))
         self.gluster.deactivate()
+        tb_logger.log_value('gb_td', total_dist.sum().item(), step=niters)
 
     def grad(self, model):
         data = next(self.data_iter)
@@ -166,7 +168,7 @@ class SVRGEstimator(GradientEstimator):
         super(SVRGEstimator, self).__init__(*args, **kwargs)
         self.data_iter = iter(InfiniteLoader(self.data_loader))
 
-    def update_snapshot(self, model):
+    def update_snapshot(self, model, niters):
         self.model = model = copy.deepcopy(model)
         self.mu = [torch.zeros_like(g) for g in model.parameters()]
         num = 0
@@ -220,10 +222,10 @@ class GradientVariance(object):
         self.tb_logger = tb_logger
         self.init_snapshot = False
 
-    def update_snapshot(self, model):
+    def update_snapshot(self, model, niters):
         model.eval()
         # model.train() # TODO: SVRG might have trouble with dropout
-        self.gest.update_snapshot(model)
+        self.gest.update_snapshot(model, niters)
         self.init_snapshot = True
 
     def log_var(self, model, niters):
@@ -312,7 +314,7 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
         if ((optimizer.niters-opt.gvar_start) % opt.gvar_snap_iter == 0
                 and optimizer.niters >= opt.gvar_start):
             logging.info('Snapshot')
-            gvar.update_snapshot(model)
+            gvar.update_snapshot(model, optimizer.niters)
             profiler.toc('snapshot')
             profiler.end()
             logging.info('%s' % str(profiler))
