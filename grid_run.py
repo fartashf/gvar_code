@@ -2304,6 +2304,7 @@ def mnist_gvar(args):
     shared_args += [('gvar_estim_iter', 1000),
                     ('gvar_log_iter', 100),
                     ('gvar_start', 2*epoch_iters),
+                    ('g_bsnap_iter', 2*epoch_iters)
                     ]
     # TODO: duplicate data
     # TODO: regularization
@@ -2311,10 +2312,8 @@ def mnist_gvar(args):
     args_sgd = [('g_estim', ['sgd'])]
     args += [OrderedDict(shared_args+args_sgd)]
 
-    snap_args = [('g_bsnap_iter', 2*epoch_iters)]
-
     args_svrg = [('g_estim', ['svrg'])]
-    args += [OrderedDict(shared_args+snap_args+args_svrg)]
+    args += [OrderedDict(shared_args+args_svrg)]
 
     gluster_args = [
             ('g_estim', 'gluster'),
@@ -2322,14 +2321,14 @@ def mnist_gvar(args):
             ('g_debug', '')]
 
     args_3 = [('gb_citers', 10)]
-    args += [OrderedDict(shared_args+snap_args+gluster_args+args_3)]
+    args += [OrderedDict(shared_args+gluster_args+args_3)]
     args_4 = [('g_online', ''),
               ('g_osnap_iter', 10),
               ('g_beta', .99),
               ('g_min_size', 10),
               ('g_reinit', 'largest')
               ]
-    args += [OrderedDict(shared_args+snap_args+gluster_args+args_4)]
+    args += [OrderedDict(shared_args+gluster_args+args_4)]
     return args, log_dir, module_name
 
 
@@ -2339,10 +2338,10 @@ def imagenet_pretrained_gvar(args):
     log_dir = 'runs_%s_gvar' % dataset
     shared_args = [('dataset', dataset),
                    # ('optim', 'sgd'),  # 'sgd', 'adam'
-                   # ('arch', 'resnet18'),
+                   ('arch', 'resnet18'),
                    # ('arch', 'resnet34'),
-                   ('arch', 'resnet50'),
-                   ('batch_size', 64),
+                   # ('arch', 'resnet50'),
+                   ('batch_size', 128),
                    # ('test_batch_size', 64),
                    #  ### pretrained
                    ('pretrained', ['']),
@@ -2354,14 +2353,13 @@ def imagenet_pretrained_gvar(args):
     shared_args += [('gvar_estim_iter', 100),
                     ('gvar_log_iter', 100),
                     ('gvar_start', 1000),
+                    ('g_bsnap_iter', 10000)
                     ]
     args_sgd = [('g_estim', ['sgd'])]
     args += [OrderedDict(shared_args+args_sgd)]
 
-    snap_args = [('g_bsnap_iter', 4000)]
-
     args_svrg = [('g_estim', ['svrg'])]
-    args += [OrderedDict(shared_args+snap_args+args_svrg)]
+    args += [OrderedDict(shared_args+args_svrg)]
 
     gluster_args = [
             ('g_estim', 'gluster'),
@@ -2376,7 +2374,7 @@ def imagenet_pretrained_gvar(args):
               ('g_min_size', 10),
               # ('g_reinit', 'largest')  # default
               ]
-    args += [OrderedDict(shared_args+snap_args+gluster_args+args_4)]
+    args += [OrderedDict(shared_args+gluster_args+args_4)]
     return args, log_dir, module_name
 
 

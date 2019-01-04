@@ -198,6 +198,10 @@ def add_args():
                         default=argparse.SUPPRESS, type=int)
     parser.add_argument('--g_osnap_iter',
                         default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--g_optim',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--g_optim_start',
+                        default=argparse.SUPPRESS, type=int)
     args = parser.parse_args()
     return args
 

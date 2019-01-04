@@ -77,3 +77,5 @@ gvar_start: 0
 g_noMulNk: False
 g_bsnap_iter: 100
 g_osnap_iter: 10
+g_optim: False
+g_optim_start: 1
