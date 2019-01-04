@@ -141,18 +141,22 @@ def plot_smooth_o1(x, y, *args, **kwargs):
     plot_smooth(x, y, 100, 1, *args, **kwargs)
 
 
-def get_legend(lg_tags, run_name):
+def get_legend(lg_tags, run_name, lg_replace=[]):
     lg = ""
     for lgt in lg_tags:
         res = ".*?($|,)" if ',' not in lgt and '$' not in lgt else ''
         mg = re.search(lgt + res, run_name)
         if mg:
             lg += mg.group(0)
+    lg = lg.replace('_,', ',')
+    lg = lg.strip(',')
+    for a, b in lg_replace:
+        lg = lg.replace(a, b)
     return lg
 
 
 def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
-             ncolor=None):
+             ncolor=None, lg_replace=[]):
     xlabel = {'visits_h': '# Visits',
               'count_h': '# Wait Iterations',
               'Tloss_h': 'Loss',
@@ -294,7 +298,7 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
     for i in range(len(data)):
         if tag_name not in data[i]:
             continue
-        legends += [get_legend(lg_tags, run_names[i])]
+        legends += [get_legend(lg_tags, run_names[i], lg_replace)]
         if isinstance(data[i][tag_name], tuple):
             # plt.hist(data[i][tag_name][0], data[i][tag_name][1],
             #          color=color[i])
@@ -330,7 +334,7 @@ def ticks(y, pos):
 
 def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
                        fig_name, lg_tags, ylim, batch_size=None, sep_h=True,
-                       ncolor=None, save_single=False):
+                       ncolor=None, save_single=False, lg_replace=[]):
     run_names = get_run_names(logdir, patterns)
     data = get_data_f(logdir, run_names, tag_names, batch_size)
     if len(data) == 0:
@@ -372,7 +376,8 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
                 if not save_single:
                     plt.subplot(height, width, fi)
                 plot_tag(data[j], plot_f, run_names[j],
-                         tag_names[i], lg_tags, yl, color0=j, ncolor=ncolor)
+                         tag_names[i], lg_tags, yl, color0=j, ncolor=ncolor,
+                         lg_replace=lg_replace)
                 if save_single:
                     plt.savefig('%s/%d.png' % (fig_dir, fi),
                                 dpi=100, bbox_inches='tight')
@@ -384,7 +389,7 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
             if not save_single:
                 plt.subplot(height, width, fi)
             plot_tag(data, plot_f, run_names, tag_names[i], lg_tags, yl,
-                     ncolor=ncolor)
+                     ncolor=ncolor, lg_replace=lg_replace)
             if save_single:
                 plt.savefig('%s/%d.png' % (fig_dir, fi),
                             dpi=100, bbox_inches='tight')

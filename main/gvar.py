@@ -18,8 +18,8 @@ import torch.multiprocessing
 import utils
 import models
 from data import get_loaders, InfiniteLoader, get_gluster_loader
-from args import add_args
-from gluster.gluster import GradientClusterBatch
+from args import add_args, opt_to_gluster_kwargs
+from gluster.gluster import GradientClusterBatch, GradientClusterOnline
 from log_utils import TBXWrapper
 from log_utils import AverageMeter, Profiler
 from log_utils import LogCollector
@@ -33,7 +33,13 @@ class GradientEstimator(object):
         self.model = None
         self.data_loader = data_loader
 
-    def update_snapshot(self, model, niters):
+    def snap_batch(self, model, niters):
+        pass
+
+    def update_sampler(self):
+        pass
+
+    def snap_online(self, model, niters):
         pass
 
     def grad(self, model_new):
@@ -88,87 +94,12 @@ class SGDEstimator(GradientEstimator):
         return g
 
 
-class GlusterEstimator(SGDEstimator):
-    def __init__(self, *args, **kwargs):
-        # grad is the same as SGD
-        super(GlusterEstimator, self).__init__(*args, **kwargs)
-        self.gluster = None
-        self.data_loader = get_gluster_loader(self.data_loader, self.opt)
-        # self.data_iter = iter(InfiniteLoader(self.data_loader))
-
-    def update_snapshot(self, model, niters):
-        # TODO: do we need this for batch?
-        # self.model = copy.deepcopy(self.model)
-        # model = self.model
-        opt = self.opt
-        if self.gluster is None:
-            self.gluster = GradientClusterBatch(
-                    model, opt.g_min_size, nclusters=opt.g_nclusters,
-                    no_grad=opt.g_no_grad, active_only=opt.g_active_only,
-                    debug=opt.g_debug, mul_Nk=(not opt.g_noMulNk))
-        else:
-            self.gluster.copy_(model)
-        # Batch Gluster is only active here
-        self.gluster.activate()
-        opt = self.opt
-        citers = opt.gb_citers
-        # TODO: refactor this
-        nclusters = self.gluster.nclusters
-        for i in range(citers):
-            stat = self.gluster.update_batch(
-                    self.data_loader, len(self.data_loader.dataset),
-                    ci=i, citers=citers)
-            normC = self.gluster.get_center_norms()
-            total_dist, assign_i, target_i, pred_i, loss_i, topk_i, GG_i = stat
-            correct = topk_i[:, 0]
-            ls = np.zeros(nclusters)
-            acc = np.zeros(nclusters)
-            cs = np.zeros(nclusters)
-            for c in range(nclusters):
-                idx, _ = np.where(assign_i == c)
-                ls[c] = loss_i[idx].sum()/max(1, len(idx))
-                acc[c] = (correct[idx]*100.).mean()
-                cs[c] = len(idx)
-            tb_logger.log_vector('gb_norm', normC)
-            tb_logger.log_vector('gb_size', cs)
-            tb_logger.log_vector('gb_loss', ls)
-            tb_logger.log_vector('gb_acc', acc)
-            tb_logger.log_vector('gb_td_i', total_dist)
-        self.cluster_size = self.gluster.cluster_size
-        self.gluster.print_stats()
-        self.assign_i = stat[1]
-        self.data_loader.sampler.set_assign_i(self.assign_i)
-        self.data_iter = iter(InfiniteLoader(self.data_loader))
-        self.gluster.deactivate()
-        tb_logger.log_value('gb_td', total_dist.sum().item(), step=niters)
-
-    def grad(self, model):
-        data = next(self.data_iter)
-
-        idx = data[2]
-        ci = self.assign_i[idx].flatten()
-        M = (self.cluster_size > 0).sum()
-        Nk = self.cluster_size[ci].flatten()
-        N = self.cluster_size.sum()
-        data, target = data[0].cuda(), data[1].cuda()
-        model.zero_grad()
-        output = model(data)
-        loss = F.nll_loss(output, target, reduction='none')
-        # multiply by the size of the cluster
-        w = 1.*M*Nk/N
-        loss = (loss*w).mean()
-        # print(loss)
-        # import ipdb; ipdb.set_trace()
-        g = torch.autograd.grad(loss, model.parameters())
-        return g
-
-
 class SVRGEstimator(GradientEstimator):
     def __init__(self, *args, **kwargs):
         super(SVRGEstimator, self).__init__(*args, **kwargs)
         self.data_iter = iter(InfiniteLoader(self.data_loader))
 
-    def update_snapshot(self, model, niters):
+    def snap_batch(self, model, niters):
         self.model = model = copy.deepcopy(model)
         self.mu = [torch.zeros_like(g) for g in model.parameters()]
         num = 0
@@ -206,12 +137,156 @@ class SVRGEstimator(GradientEstimator):
         return ge
 
 
+class GlusterEstimator(SGDEstimator):
+    def __init__(self, *args, **kwargs):
+        super(GlusterEstimator, self).__init__(*args, **kwargs)
+        self.gluster = None
+        self.raw_loader, self.data_loader, self.sampler = get_gluster_loader(
+                self.data_loader, self.opt)
+        # self.data_iter = iter(InfiniteLoader(self.data_loader))
+
+    def update_sampler(self, assign_i, cluster_size):
+        self.data_loader.sampler.set_assign_i(assign_i, cluster_size)
+        self.data_iter = iter(InfiniteLoader(self.data_loader))
+
+    def grad(self, model):
+        data = next(self.data_iter)
+
+        assign_i = self.sampler.assign_i
+        cluster_size = self.sampler.cluster_size
+        idx = data[2]
+        ci = assign_i[idx].flatten()
+        M = (cluster_size > 0).sum()
+        Nk = cluster_size[ci].flatten()
+        N = cluster_size.sum()
+
+        data, target = data[0].cuda(), data[1].cuda()
+        model.zero_grad()
+        output = model(data)
+        loss = F.nll_loss(output, target, reduction='none')
+        # multiply by the size of the cluster
+        w = 1.*M*Nk/N
+        loss = (loss*w).mean()
+        # print(loss)
+        # import ipdb; ipdb.set_trace()
+        g = torch.autograd.grad(loss, model.parameters())
+        return g
+
+
+class GlusterBatchEstimator(GlusterEstimator):
+    def __init__(self, *args, **kwargs):
+        super(GlusterBatchEstimator, self).__init__(*args, **kwargs)
+
+    def snap_batch(self, model, niters):
+        # TODO: do we need this for batch?
+        # self.model = copy.deepcopy(self.model)
+        # model = self.model
+        opt = self.opt
+        if self.gluster is None:
+            self.gluster = GradientClusterBatch(
+                    model, **opt_to_gluster_kwargs(opt))
+            self.gluster.deactivate()
+        else:
+            self.gluster.copy_(model)
+        # Batch Gluster is only active here
+        self.gluster.activate()
+        opt = self.opt
+        citers = opt.gb_citers
+        # TODO: refactor this
+        nclusters = self.gluster.nclusters
+        for i in range(citers):
+            stat = self.gluster.update_batch(
+                    self.raw_loader, len(self.raw_loader.dataset),
+                    ci=i, citers=citers)
+            normC = self.gluster.get_center_norms()
+            total_dist, assign_i, target_i, pred_i, loss_i, topk_i, GG_i = stat
+            correct = topk_i[:, 0]
+            ls = np.zeros(nclusters)
+            acc = np.zeros(nclusters)
+            cs = np.zeros(nclusters)
+            for c in range(nclusters):
+                idx, _ = np.where(assign_i == c)
+                ls[c] = loss_i[idx].sum()/max(1, len(idx))
+                acc[c] = (correct[idx]*100.).mean()
+                cs[c] = len(idx)
+            tb_logger.log_vector('gb_norm', normC)
+            tb_logger.log_vector('gb_size', cs)
+            tb_logger.log_vector('gb_loss', ls)
+            tb_logger.log_vector('gb_acc', acc)
+            tb_logger.log_vector('gb_td_i', total_dist)
+        cluster_size = self.gluster.cluster_size
+        self.gluster.print_stats()
+        assign_i = stat[1]
+        self.gluster.deactivate()
+        tb_logger.log_value('gb_td', total_dist.sum().item(), step=niters)
+        self.update_sampler(assign_i, cluster_size)
+
+
+class GlusterOnlineEstimator(GlusterEstimator):
+    def __init__(self, *args, **kwargs):
+        super(GlusterOnlineEstimator, self).__init__(*args, **kwargs)
+
+    def snap_online(self, model, niters):
+        opt = self.opt
+        if self.gluster is None:
+            self.gluster = GradientClusterOnline(
+                    model, **opt_to_gluster_kwargs(opt))
+            self.gluster.deactivate()
+        # Online Gluster is only fully active here
+        self.gluster.activate()
+        data = next(self.data_iter)
+        data, target = data[0].cuda(), data[1].cuda()
+        model.zero_grad()
+        output = model(data)
+        loss = F.nll_loss(output, target)
+        loss.backward()
+        ai, batch_dist, iv = self.gluster.em_step()
+        # for ivi in iv:
+        #     self.assign_i[self.assign_i == ivi] = -1
+        #     ai[ai == ivi] = -1
+        self.gluster.deactivate()
+
+        tb_logger.log_vector('go_bd_i', batch_dist.cpu().numpy())
+        total_dist = self.gluster.total_dist
+        tb_logger.log_value('gb_td', total_dist.sum().item(), step=niters)
+
+    def snap_batch(self, model, niters):
+        raw_loader = self.raw_loader
+        train_size = len(raw_loader.dataset)
+        assign_i = -np.ones(train_size)
+
+        self.gluster.eval()
+        for batch_idx, (data, target, idx) in enumerate(raw_loader):
+            data, target = data.cuda(), target.cuda()
+            model.zero_grad()
+            output = model(data)
+            loss = F.nll_loss(output, target)
+            loss.backward()
+            ai, batch_dist = self.gluster.em_step()
+            assign_i[idx] = ai.cpu().numpy().flat
+            if batch_idx % 10 == 0:
+                u, c = np.unique(assign_i, return_counts=True)
+                logging.info('Assignment: [{0}/{1}]: {2}\t{3}'.format(
+                    batch_idx, len(raw_loader), str(list(u)), str(list(c))))
+        u, c = np.unique(assign_i, return_counts=True)
+        self.gluster.deactivate()
+
+        assign_i = np.array(assign_i, dtype='int')
+        assert 0 <= assign_i.min() and assign_i.max() < self.gluster.nclusters
+        cluster_size = torch.zeros_like(self.gluster.cluster_size)
+        cluster_size[u, 0] = torch.from_numpy(c).cuda().float()
+        self.update_sampler(assign_i, cluster_size)
+
+
 class GradientVariance(object):
     def __init__(self, model, data_loader, opt, tb_logger):
         sgd = SGDEstimator(data_loader, opt)
         # gluster or SVRG
         if opt.g_estim == 'gluster':
-            gest = GlusterEstimator(data_loader, opt)
+            if opt.g_online:
+                gest = GlusterOnlineEstimator(data_loader, opt)
+            else:
+                gest = GlusterBatchEstimator(data_loader, opt)
         elif opt.g_estim == 'svrg':
             gest = SVRGEstimator(data_loader, opt)
         elif opt.g_estim == 'sgd':
@@ -222,11 +297,15 @@ class GradientVariance(object):
         self.tb_logger = tb_logger
         self.init_snapshot = False
 
-    def update_snapshot(self, model, niters):
+    def snap_batch(self, model, niters):
         model.eval()
         # model.train() # TODO: SVRG might have trouble with dropout
-        self.gest.update_snapshot(model, niters)
+        self.gest.snap_batch(model, niters)
         self.init_snapshot = True
+
+    def snap_online(self, model, niters):
+        model.eval()  # TODO: keep train
+        self.gest.snap_online(model, niters)
 
     def log_var(self, model, niters):
         model.eval()
@@ -311,11 +390,16 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
         optimizer.niters += 1
         profiler.toc('sgd')
         # snapshot
-        if ((optimizer.niters-opt.gvar_start) % opt.gvar_snap_iter == 0
+        if optimizer.niters % opt.g_osnap_iter == 0:
+            # Frequent snaps
+            gvar.snap_online(model, optimizer.niters)
+            profiler.toc('snap_online')
+        if ((optimizer.niters-opt.gvar_start) % opt.g_bsnap_iter == 0
                 and optimizer.niters >= opt.gvar_start):
-            logging.info('Snapshot')
-            gvar.update_snapshot(model, optimizer.niters)
-            profiler.toc('snapshot')
+            # Rare snaps
+            logging.info('Batch Snapshot')
+            gvar.snap_batch(model, optimizer.niters)
+            profiler.toc('snap_batch')
             profiler.end()
             logging.info('%s' % str(profiler))
         profiler.end()

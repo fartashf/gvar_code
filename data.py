@@ -62,13 +62,18 @@ def get_gluster_loader(train_loader, opt):
               'pin_memory': True} if opt.cuda else {}
     idxdataset = train_loader.dataset
     train_sampler = GlusterSampler(len(idxdataset), opt)
+    raw_loader = torch.utils.data.DataLoader(
+        idxdataset,
+        batch_size=opt.batch_size,
+        shuffle=True,
+        drop_last=False, **kwargs)
     train_loader = torch.utils.data.DataLoader(
         idxdataset,
         batch_size=opt.batch_size,
         sampler=train_sampler,
         shuffle=(train_sampler is None),
-        drop_last=True, **kwargs)
-    return train_loader
+        drop_last=False, **kwargs)
+    return raw_loader, train_loader, train_sampler
 
 
 class IndexedDataset(data.Dataset):
@@ -567,14 +572,16 @@ class GlusterSampler(Sampler):
         self.data_size = data_size
         self.opt = opt
         self.assign_i = None
+        self.cluster_size = None
         self.iters = None
         self.num_samples = opt.epoch_iters * opt.batch_size
 
-    def set_assign_i(self, assign_i=None):
+    def set_assign_i(self, assign_i=None, cluster_size=None):
         if assign_i is None:
             self.assign_i = None
             return
         self.assign_i = assign_i
+        self.cluster_size = cluster_size
         self.iters = []
         for i in range(assign_i.max()+1):
             I = list(np.where(self.assign_i.flat == i)[0])

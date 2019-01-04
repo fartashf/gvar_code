@@ -2284,6 +2284,7 @@ def mnist_gvar(args):
     dataset = 'mnist'
     module_name = 'main.gvar'
     log_dir = 'runs_%s_gvar' % dataset
+    epoch_iters = 468
     shared_args = [('dataset', dataset),
                    # ('lr', [.1, .05, .02, .01]),
                    ('lr', .02),
@@ -2292,7 +2293,7 @@ def mnist_gvar(args):
                        (30, OrderedDict([('lr_decay_epoch', 30)])),
                    ]),
                    # ('exp_lr', ''),
-                   ('arch', ['cnn', 'mlp']),
+                   ('arch', ['mlp', 'cnn']),
                    # ('arch', 'bigcnn', 'ssmlp'),
                    ('optim', ['sgd']),
                    # ('optim', [('sgd', OrderedDict([('lr', .02)])),
@@ -2301,21 +2302,33 @@ def mnist_gvar(args):
                    # ('log_stats', ''),
                    ('gvar_estim_iter', 1000),
                    ('gvar_log_iter', 100),
-                   ('gvar_start', 468),
-                   ('gvar_snap_iter', 468),
+                   ('gvar_start', 2*epoch_iters),
                    ]
     # TODO: duplicate data
     # TODO: regularization
     # TODO: corrupt data
-    args_1 = [('g_estim', ['sgd', 'svrg'])]
-    args += [OrderedDict(shared_args+args_1)]
+    # args_sgd = [('g_estim', ['sgd'])]
+    # args += [OrderedDict(shared_args+args_sgd)]
 
-    args_2 = [('g_estim', 'gluster'),
-              ('gb_citers', 10),
-              ('g_nclusters', [2, 10]),
-              ('g_debug', ''),
+    snap_args = [('g_bsnap_iter', 2*epoch_iters)]
+
+    # args_svrg = [('g_estim', ['svrg'])]
+    # args += [OrderedDict(shared_args+snap_args+args_svrg)]
+
+    gluster_args = [
+            ('g_estim', 'gluster'),
+            ('g_nclusters', [2, 10, 100]),
+            ('g_debug', '')]
+
+    # args_3 = [('gb_citers', 10)]
+    # args += [OrderedDict(shared_args+snap_args+gluster_args+args_3)]
+    args_4 = [('g_online', ''),
+              ('g_osnap_iter', 10),
+              ('g_beta', .99),
+              ('g_min_size', 10),
+              ('g_reinit', 'largest')
               ]
-    args += [OrderedDict(shared_args+args_2)]
+    args += [OrderedDict(shared_args+snap_args+gluster_args+args_4)]
     return args, log_dir, module_name
 
 
@@ -2374,7 +2387,7 @@ if __name__ == '__main__':
         # jobs += ['%s_job%d' % (s, i) for s in jobs_0]
 
     run_single = RunSingle(log_dir, module_name)
-    # run_single.num = 1
+    run_single.num = 16
 
     # args = OrderedDict([('lr', [1, 2]), ('batch_size', [10, 20])])
     # args = OrderedDict([('lr', [(1, OrderedDict([('batch_size', [10])])),

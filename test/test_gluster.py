@@ -425,6 +425,8 @@ def test_mnist_online(
     u, c = np.unique(assign_i, return_counts=True)
     print(u)
     print(c)
+    # not counting data prep time
+    print('Train and Gluster update time: %.4fs' % np.sum(gluster_tc))
     torch.save({'assign': assign_i, 'target': target_i,
                 'pred': pred_i, 'loss': loss_i,
                 'normC': normC},
@@ -457,12 +459,13 @@ def test_mnist_online_delayed(
 
     model = MLP(dropout=False)
     model.cuda()
-    modelg = copy.deepcopy(model)
+    # modelg = copy.deepcopy(model)
+    modelg = model
     gluster = GradientClusterOnline(modelg, beta, min_size,
                                     reinit_method, nclusters=nclusters,
                                     **kwargs)
-    # Test if Gluster can be disabled
-    # gluster.deactivate()
+    # Gluster is deactive by default unless update iteration
+    gluster.deactivate()
 
     optimizer = optim.SGD(model.parameters(),
                           lr=.01, momentum=0.9,
@@ -488,8 +491,9 @@ def test_mnist_online_delayed(
             niter += 1
             if niter % delay == 0:
                 tic = time.time()
-                modelg.train()
-                gluster.copy_(model)
+                gluster.activate()
+                # modelg.train()
+                # gluster.copy_(model)
                 # modelg.zero_grad()
                 # gluster.zero_data()
                 output = modelg(data)
@@ -497,6 +501,7 @@ def test_mnist_online_delayed(
                 loss.backward()
                 ret = gluster.em_step()
                 toc = time.time()
+                gluster.deactivate()
                 gluster_tc += [toc - tic]
                 if ret is not None:
                     ai, batch_dist, _ = ret
@@ -517,7 +522,7 @@ def test_mnist_online_delayed(
     loss_i = np.zeros(train_size)
     target_i = np.zeros(train_size)
     gluster.eval()
-    gluster.copy_(model)
+    # gluster.copy_(model)
     normC = gluster.print_stats()
     gluster_eval_tc = []
     for batch_idx, (data, target, idx) in enumerate(train_loader):
@@ -726,6 +731,7 @@ class MNISTTest(object):
                 model,
                 128, epochs, nclusters, beta, min_size, reinit_method, delay,
                 figname, **kwargs)
+        print(">>> Model is not copied, should match no delayed.")
 
     def test_mnist_online_delay100(self, **kwargs):
         beta = .9  # .999

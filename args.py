@@ -184,8 +184,6 @@ def add_args():
     parser.add_argument('--g_estim', default=argparse.SUPPRESS, type=str)
     parser.add_argument('--epoch_iters',
                         default=argparse.SUPPRESS, type=int)
-    parser.add_argument('--gvar_snap_iter',
-                        default=argparse.SUPPRESS, type=int)
     parser.add_argument('--gvar_log_iter',
                         default=argparse.SUPPRESS, type=int)
     parser.add_argument('--gvar_estim_iter',
@@ -196,5 +194,16 @@ def add_args():
                         default=argparse.SUPPRESS, type=int)
     parser.add_argument('--g_noMulNk',
                         default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--g_bsnap_iter',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--g_osnap_iter',
+                        default=argparse.SUPPRESS, type=int)
     args = parser.parse_args()
     return args
+
+
+def opt_to_gluster_kwargs(opt):
+    return {'beta': opt.g_beta, 'min_size': opt.g_min_size,
+            'nclusters': opt.g_nclusters, 'reinit_method': opt.g_reinit,
+            'no_grad': opt.g_no_grad, 'active_only': opt.g_active_only,
+            'debug': opt.g_debug, 'mul_Nk': (not opt.g_noMulNk)}
