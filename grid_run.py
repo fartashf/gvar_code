@@ -2300,24 +2300,72 @@ def mnist_gvar(args):
                    #            ('adam', OrderedDict([('lr', .05)]))
                    #            ]),
                    # ('log_stats', ''),
-                   ('gvar_estim_iter', 1000),
-                   ('gvar_log_iter', 100),
-                   ('gvar_start', 2*epoch_iters),
                    ]
+    shared_args += [('gvar_estim_iter', 1000),
+                    ('gvar_log_iter', 100),
+                    ('gvar_start', 2*epoch_iters),
+                    ]
     # TODO: duplicate data
     # TODO: regularization
     # TODO: corrupt data
-    # args_sgd = [('g_estim', ['sgd'])]
-    # args += [OrderedDict(shared_args+args_sgd)]
+    args_sgd = [('g_estim', ['sgd'])]
+    args += [OrderedDict(shared_args+args_sgd)]
 
     snap_args = [('g_bsnap_iter', 2*epoch_iters)]
 
-    # args_svrg = [('g_estim', ['svrg'])]
-    # args += [OrderedDict(shared_args+snap_args+args_svrg)]
+    args_svrg = [('g_estim', ['svrg'])]
+    args += [OrderedDict(shared_args+snap_args+args_svrg)]
 
     gluster_args = [
             ('g_estim', 'gluster'),
             ('g_nclusters', [2, 10, 100]),
+            ('g_debug', '')]
+
+    args_3 = [('gb_citers', 10)]
+    args += [OrderedDict(shared_args+snap_args+gluster_args+args_3)]
+    args_4 = [('g_online', ''),
+              ('g_osnap_iter', 10),
+              ('g_beta', .99),
+              ('g_min_size', 10),
+              ('g_reinit', 'largest')
+              ]
+    args += [OrderedDict(shared_args+snap_args+gluster_args+args_4)]
+    return args, log_dir, module_name
+
+
+def imagenet_pretrained_gvar(args):
+    dataset = 'imagenet'
+    module_name = 'main.gvar'
+    log_dir = 'runs_%s_gvar' % dataset
+    shared_args = [('dataset', dataset),
+                   # ('optim', 'sgd'),  # 'sgd', 'adam'
+                   # ('arch', 'resnet18'),
+                   # ('arch', 'resnet34'),
+                   ('arch', 'resnet50'),
+                   ('batch_size', 64),
+                   # ('test_batch_size', 64),
+                   #  ### pretrained
+                   ('pretrained', ['']),
+                   ('epochs', [10]),
+                   ('lr', [.001]),
+                   # ('lr_decay_epoch', [10]),
+                   # ('exp_lr', [None]),
+                   ]
+    shared_args += [('gvar_estim_iter', 100),
+                    ('gvar_log_iter', 100),
+                    ('gvar_start', 1000),
+                    ]
+    args_sgd = [('g_estim', ['sgd'])]
+    args += [OrderedDict(shared_args+args_sgd)]
+
+    snap_args = [('g_bsnap_iter', 4000)]
+
+    args_svrg = [('g_estim', ['svrg'])]
+    args += [OrderedDict(shared_args+snap_args+args_svrg)]
+
+    gluster_args = [
+            ('g_estim', 'gluster'),
+            ('g_nclusters', [10, 100]),
             ('g_debug', '')]
 
     # args_3 = [('gb_citers', 10)]
@@ -2326,7 +2374,7 @@ def mnist_gvar(args):
               ('g_osnap_iter', 10),
               ('g_beta', .99),
               ('g_min_size', 10),
-              ('g_reinit', 'largest')
+              # ('g_reinit', 'largest')  # default
               ]
     args += [OrderedDict(shared_args+snap_args+gluster_args+args_4)]
     return args, log_dir, module_name
@@ -2367,7 +2415,8 @@ if __name__ == '__main__':
     # args, log_dir = mnist_duplicate(args)
     # args, log_dir = mnist_diff(args)
     # args, log_dir = imagenet_diff(args)
-    args, log_dir, module_name = mnist_gvar(args)
+    # args, log_dir, module_name = mnist_gvar(args)
+    args, log_dir, module_name = imagenet_pretrained_gvar(args)
     # jobs_0 = ['bolt0_gpu0,1,2,3', 'bolt1_gpu0,1,2,3']
     # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2',
     #           'bolt1_gpu0,1', 'bolt1_gpu2,3',
@@ -2380,14 +2429,14 @@ if __name__ == '__main__':
               # 'bolt0_gpu0', 'bolt0_gpu1', 'bolt0_gpu2', 'bolt0_gpu3'
               ]
     # njobs = [3] * 4 + [2] * 4  # validate start.sh
-    njobs = [2]*4
+    njobs = [1]*4
     jobs = []
     for s, n in zip(jobs_0, njobs):
         jobs += ['%s_job%d' % (s, i) for i in range(n)]
         # jobs += ['%s_job%d' % (s, i) for s in jobs_0]
 
     run_single = RunSingle(log_dir, module_name)
-    run_single.num = 16
+    # run_single.num = 16
 
     # args = OrderedDict([('lr', [1, 2]), ('batch_size', [10, 20])])
     # args = OrderedDict([('lr', [(1, OrderedDict([('batch_size', [10])])),

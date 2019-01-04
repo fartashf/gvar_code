@@ -366,19 +366,18 @@ def test(tb_logger, model, test_loader,
 
 def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
           save_checkpoint, train_test_loader, gvar):
-    batch_time = AverageMeter()
+    batch_time = Profiler(k=50)
     model.train()
     profiler = Profiler()
-    end = time.time()
     epoch_iters = int(np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
     optimizer.logger.reset()
     # for batch_idx, (data, target, idx) in enumerate(train_loader):
     data_iter = iter(InfiniteLoader(train_loader))
     for batch_idx in range(opt.epoch_iters):
         profiler.start()
-        profiler.tic()
         # sgd step
         data, target, idx = next(data_iter)
+        # batch_time.toc('DTime')
         model.train()
         if opt.cuda:
             data, target = data.cuda(), target.cuda()
@@ -404,8 +403,8 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
             logging.info('%s' % str(profiler))
         profiler.end()
 
-        batch_time.update(time.time() - end)
-        end = time.time()
+        batch_time.toc('Time')
+        batch_time.end()
         niters = optimizer.niters
 
         # if True:
@@ -420,11 +419,11 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
             logging.info(
                 'Epoch: [{0}][{1}/{2}]({niters})\t'
                 'Loss: {loss:.6f}\t'
-                'Time: {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                '{batch_time}\t'
                 '{opt_log}{gvar_log}{prof_log}'.format(
                     epoch, batch_idx, len(train_loader),
                     loss=loss.item(),
-                    batch_time=batch_time,
+                    batch_time=str(batch_time),
                     opt_log=str(optimizer.logger),
                     gvar_log=gvar_log,
                     prof_log=prof_log,
@@ -435,8 +434,8 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
             tb_logger.log_value('lr', lr, step=niters)
             tb_logger.log_value('niters', niters, step=niters)
             tb_logger.log_value('batch_idx', batch_idx, step=niters)
-            tb_logger.log_value('batch_time', batch_time.val,
-                                step=niters)
+            # tb_logger.log_value('batch_time', batch_time.val,
+            #                     step=niters)
             tb_logger.log_value('loss', loss, step=niters)
             optimizer.logger.tb_log(tb_logger, step=niters)
         if optimizer.niters % epoch_iters == 0:

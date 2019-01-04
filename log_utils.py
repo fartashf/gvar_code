@@ -123,6 +123,28 @@ class AverageMeter(object):
         tb_logger.log_value(name, self.val, step=step)
 
 
+class TimeMeter(object):
+    """Store last K times"""
+
+    def __init__(self, k=10):
+        self.k = k
+        self.reset()
+
+    def reset(self):
+        self.vals = [0]*self.k
+        self.i = 0
+
+    def update(self, val):
+        self.vals[self.i] = val
+        self.i = (self.i + 1) % self.k
+
+    def __str__(self):
+        return '%.4f +- %.2f' % (np.mean(self.vals), np.std(self.vals))
+
+    def tb_log(self, tb_logger, name, step=None):
+        tb_logger.log_value(name, self.vals[0], step=step)
+
+
 class StatisticMeter(object):
     """Computes and stores the average and current value"""
 
@@ -275,7 +297,8 @@ class LogCollector(object):
 
 
 class Profiler(object):
-    def __init__(self):
+    def __init__(self, k=10):
+        self.k = k
         self.meters = OrderedDict()
         self.start()
 
@@ -296,8 +319,8 @@ class Profiler(object):
     def end(self):
         for k, v in self.times.items():
             if k not in self.meters:
-                self.meters[k] = AverageMeter()
-            self.meters[k].update(sum(v), 1)
+                self.meters[k] = TimeMeter(self.k)
+            self.meters[k].update(sum(v))
         self.start()
 
     def __str__(self):
