@@ -2350,7 +2350,7 @@ def imagenet_pretrained_gvar(args):
                    # ('lr_decay_epoch', [10]),
                    # ('exp_lr', [None]),
                    ]
-    shared_args += [('gvar_estim_iter', 100),
+    shared_args += [('gvar_estim_iter', 10),  # 100
                     ('gvar_log_iter', 100),
                     ('gvar_start', 1000),
                     ('g_bsnap_iter', 10000)
@@ -2370,7 +2370,7 @@ def imagenet_pretrained_gvar(args):
     # args += [OrderedDict(shared_args+snap_args+gluster_args+args_3)]
     args_4 = [('g_online', ''),
               ('g_osnap_iter', 10),
-              ('g_beta', .99),
+              ('g_beta', .999),
               ('g_min_size', 10),
               # ('g_reinit', 'largest')  # default
               ]

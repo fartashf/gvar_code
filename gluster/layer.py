@@ -164,15 +164,30 @@ class GlusterModule(object):
         if self.has_bias:
             self.Cb.copy_(self.Cb_new).div_(cluster_size.clamp(1))
 
-    def update_online(self, pre_size, new_size):
+    def update_online_beta(self, pre_size, post_ratio, new_size):
+        if not self.has_param:
+            return
+        pr = post_ratio
+        # TODO: .4/5.5s overhead
+        if self.has_weight:
+            # C = Co*No/Nt + Cn/Nn.clamp(1)*Nn/Nt
+            self.Ci.mul_(pre_size).add_(self.Ci_new.mul(pr)).div_(new_size)
+            self.Co.mul_(pre_size).add_(self.Co_new.mul(pr)).div_(new_size)
+        if self.has_bias:
+            self.Cb.mul_(pre_size).add_(self.Cb_new.mul(pr)).div_(new_size)
+
+    def update_online_eta(self, eta, counts):
         if not self.has_param:
             return
         # TODO: .4/5.5s overhead
         if self.has_weight:
-            self.Ci.mul_(pre_size).add_(self.Ci_new).div_(new_size)
-            self.Co.mul_(pre_size).add_(self.Co_new).div_(new_size)
+            # eta = eta*Nn/Nn.clamp(1)
+            # No = Nt-Nn
+            # C = Co*(1-eta) + Cn/Nn.clamp(1)*eta
+            self.Ci.mul_(1-eta).add_(self.Ci_new.div(counts.clamp(1)).mul(eta))
+            self.Co.mul_(1-eta).add_(self.Co_new.div(counts.clamp(1)).mul(eta))
         if self.has_bias:
-            self.Cb.mul_(pre_size).add_(self.Cb_new).div_(new_size)
+            self.Cb.mul_(1-eta).add_(self.Cb_new.div(counts.clamp(1)).mul(eta))
 
     def accum_new_centers(self, assign_i):
         if not self.has_param:
@@ -277,8 +292,8 @@ class GlusterContainer(GlusterModule):
 
     def _set_default_loop(self):
         loop_functions = [
-                'update_batch', 'update_online', 'zero_new_centers',
-                'accum_new_centers', 'reinit_from_data',
+                'update_batch', 'update_online_beta', 'update_online_eta',
+                'zero_new_centers', 'accum_new_centers', 'reinit_from_data',
                 'reinit_from_largest', 'get_dist', 'get_centers',
                 'deactivate', 'activate', 'eval']
         for fname in loop_functions:

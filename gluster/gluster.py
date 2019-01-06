@@ -279,14 +279,20 @@ class GradientClusterOnline(GradientCluster):
         return assign_i, batch_dist
 
     def update(self, assign_i, batch_dist):
+        # Update beta is more exact tested by MLP.test_more_iters
+        self.update_beta(assign_i, batch_dist)
+
+    def update_beta(self, assign_i, batch_dist):
         # Not keeping a full internal assignment list
         # E: update C
         # E: C_c = mean_i(g_i * I(c==a_i))
         beta = self.beta
         counts = torch.zeros(self.nclusters, 1).cuda()
         counts.scatter_add_(0, assign_i, torch.ones(assign_i.shape).cuda())
-        self.cluster_size.mul_(beta).add_(counts)  # no *(1-beta)
-        pre_size = self.cluster_size-counts
+        post_size = counts.mul(1-beta)
+        post_ratio = post_size/counts.clamp(1)
+        self.cluster_size.mul_(beta).add_(post_size)  # no *(1-beta)
+        pre_size = self.cluster_size-post_size
         # TODO: this should be indep of batch size?
         if self.add_GG:
             tddec = pre_size/self.cluster_size.clamp(1)
@@ -301,7 +307,36 @@ class GradientClusterOnline(GradientCluster):
 
         self.G.zero_new_centers()
         self.G.accum_new_centers(assign_i)
-        self.G.update_online(pre_size, self.cluster_size)
+        self.G.update_online_beta(pre_size, post_ratio, self.cluster_size)
+
+        invalid_clusters = self.reinit(assign_i.shape[0])
+        return invalid_clusters
+
+    def update_eta(self, assign_i, batch_dist):
+        # Not keeping a full internal assignment list
+        # E: update C
+        # E: C_c = mean_i(g_i * I(c==a_i))
+        eta = 1-self.beta
+        counts = torch.zeros(self.nclusters, 1).cuda()
+        counts.scatter_add_(0, assign_i, torch.ones(assign_i.shape).cuda())
+        post_size = counts.mul(eta)
+        self.cluster_size.mul_(1-eta).add_(post_size)
+        eta = counts.mul(eta)/counts.clamp(1)  # after updating cluster size
+        # TODO: this should be indep of batch size?
+        if self.add_GG:
+            td_new = torch.zeros_like(self.total_dist).scatter_add_(
+                    0, assign_i, batch_dist)
+            self.total_dist.mul_(1-eta).add_(td_new.mul_(eta))
+        else:
+            # TODO: reinit largest is not good with no addg
+            # do this to pass TestGlusterMLP.test_more_iters
+            pre_size = self.cluster_size-post_size
+            self.total_dist.mul_(pre_size).scatter_add_(
+                0, assign_i, batch_dist).div_(self.cluster_size)
+
+        self.G.zero_new_centers()
+        self.G.accum_new_centers(assign_i)
+        self.G.update_online_eta(eta, counts)
 
         invalid_clusters = self.reinit(assign_i.shape[0])
         return invalid_clusters
