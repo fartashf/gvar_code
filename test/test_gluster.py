@@ -565,9 +565,9 @@ class ToyTests(object):
         kwargs.update(self.kwargs)
         # Few iterations
         data = data_unique_n(100, 5)
-        test_gluster_online(model, 10, data, 5, .9, .5, 'data', 10, **kwargs)
+        test_gluster_online(model, 10, data, 5, .9, .1, 'data', 10, **kwargs)
         print(">>> One cluster still hasn't converged?")
-        test_gluster_online(model, 10, data, 5, .9, .5, 'largest', 10,
+        test_gluster_online(model, 10, data, 5, .9, .1, 'largest', 10,
                             **kwargs)
         print(">>> But the init with largest takes longer")
 
@@ -576,9 +576,9 @@ class ToyTests(object):
         kwargs.update(self.kwargs)
         # More iterations
         data = data_unique_n(100, 5)
-        test_gluster_online(model, 10, data, 5, .9, .5, 'data', 100, **kwargs)
+        test_gluster_online(model, 10, data, 5, .9, .1, 'data', 100, **kwargs)
         print(">>> This has now converged.")
-        test_gluster_online(model, 10, data, 5, .9, .5, 'largest', 100,
+        test_gluster_online(model, 10, data, 5, .9, .1, 'largest', 100,
                             **kwargs)
         print(">>> centers should match input based on Dist")
 
@@ -587,8 +587,8 @@ class ToyTests(object):
         kwargs.update(self.kwargs)
         # More unique data than centers
         data = data_unique_n(100, 10)
-        test_gluster_online(model, 10, data, 5, .9, .5, 'data', 100, **kwargs)
-        test_gluster_online(model, 10, data, 5, .9, .5, 'largest', 100,
+        test_gluster_online(model, 10, data, 5, .9, .1, 'data', 100, **kwargs)
+        test_gluster_online(model, 10, data, 5, .9, .1, 'largest', 100,
                             **kwargs)
         print(
                 "*** Clusters should get about the same "
@@ -613,8 +613,8 @@ class ToyTests(object):
         kwargs.update(self.kwargs)
         # Imbalance data
         data = data_unique_perc(100, [.9, .1])
-        test_gluster_online(model, 10, data, 2, .9, .5, 'data', 10, **kwargs)
-        test_gluster_online(model, 10, data, 2, .9, .5, 'largest', 10,
+        test_gluster_online(model, 10, data, 2, .9, .1, 'data', 10, **kwargs)
+        test_gluster_online(model, 10, data, 2, .9, .1, 'largest', 10,
                             **kwargs)
         print(
                 "***  finds 2 clusters in 1 reinit "
@@ -625,8 +625,8 @@ class ToyTests(object):
         kwargs.update(self.kwargs)
         # More iterations
         data = data_unique_perc(100, [.9, .1])
-        test_gluster_online(model, 10, data, 2, .9, .5, 'data', 100, **kwargs)
-        test_gluster_online(model, 10, data, 2, .9, .5, 'largest', 100,
+        test_gluster_online(model, 10, data, 2, .9, .1, 'data', 100, **kwargs)
+        test_gluster_online(model, 10, data, 2, .9, .1, 'largest', 100,
                             **kwargs)
         print("***  converged now ***")
 
@@ -635,7 +635,7 @@ class ToyTests(object):
         kwargs.update(self.kwargs)
         # Time test
         data = data_unique_perc(1000, [.9, .1])
-        test_gluster_online(model, 128, data, 2, .9, .5, 'data', 100, **kwargs)
+        test_gluster_online(model, 128, data, 2, .9, .1, 'data', 100, **kwargs)
         print("2-3x solwer")
 
     def test_noise(self, **kwargs):
@@ -644,8 +644,8 @@ class ToyTests(object):
         # noise
         data = data_unique_perc(100, [.9, .1])
         data = purturb_data(data, .01)
-        test_gluster_online(model, 10, data, 2, .9, .5, 'data', 100, **kwargs)
-        test_gluster_online(model, 10, data, 2, .9, .5, 'largest', 100,
+        test_gluster_online(model, 10, data, 2, .9, .1, 'data', 100, **kwargs)
+        test_gluster_online(model, 10, data, 2, .9, .1, 'largest', 100,
                             **kwargs)
 
     def test_toy_batch(self, **kwargs):
@@ -653,7 +653,7 @@ class ToyTests(object):
         kwargs.update(self.kwargs)
         # gluster batch
         data = data_unique_n(100, 5)
-        test_toy_batch(model, 10, data, 5, .5, 10, **kwargs)
+        test_toy_batch(model, 10, data, 5, .1, 10, **kwargs)
         print(">>> distortions should be about the same and zero for mul_Nk")
 
     def test_toy_batch_noise(self, **kwargs):
@@ -663,7 +663,7 @@ class ToyTests(object):
         data = data_unique_perc(100, [.9, .1])
         data = purturb_data(data, .01)
         set_seed(12345)
-        test_toy_batch(model, 10, data, 2, .5, 10, **kwargs)
+        test_toy_batch(model, 10, data, 2, .1, 10, **kwargs)
         print(">>> mul_Nk should have 30x more distortion for one cluster.")
 
 
@@ -709,7 +709,7 @@ class MNISTTest(object):
         epochs = 2
         nclusters = 10
         beta = .999  # .999 # .99 this for conv1
-        min_size = 10  # 1
+        min_size = .01  # 10, 1
         reinit_method = 'largest'
         figname = (
                 self.prefix+',nclusters_10,online%s.pth.tar'
@@ -737,7 +737,7 @@ class MNISTTest(object):
 
     def test_mnist_online_delay100(self, **kwargs):
         beta = .9  # .999
-        min_size = 20  # 1
+        min_size = .01  # 20, 1
         self.test_mnist_online_delayed(delay=100, beta=beta, min_size=min_size)
 
     def test_mnist_batch_input(self, **kwargs):

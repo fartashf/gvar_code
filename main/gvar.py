@@ -244,6 +244,8 @@ class GlusterBatchEstimator(GlusterEstimator):
 class GlusterOnlineEstimator(GlusterEstimator):
     def __init__(self, *args, **kwargs):
         super(GlusterOnlineEstimator, self).__init__(*args, **kwargs)
+        self.raw_iter = iter(InfiniteLoader(self.raw_loader))
+        self.init_assign = False
 
     def snap_online(self, model, niters):
         opt = self.opt
@@ -253,21 +255,39 @@ class GlusterOnlineEstimator(GlusterEstimator):
             self.gluster.deactivate()
         # Online Gluster is only fully active here
         self.gluster.activate()
-        data = next(self.data_iter)
+        # TODO: maybe use its own grad
+        # self.grad(model, in_place=True)
+        # TODO: using raw_iter variance goes up in the end
+        # data = next(self.raw_iter)
+        data = next(self.data_iter)  # bootstraping
         data, target = data[0].cuda(), data[1].cuda()
         model.zero_grad()
         output = model(data)
-        loss = F.nll_loss(output, target)
+        loss = F.nll_loss(output, target)  # no reweighting grads
         loss.backward()
-        ai, batch_dist, iv = self.gluster.em_step()
+        w = 1
+        # TODO: reweight correction is not helpful
+        if self.init_assign:
+            cluster_size = self.sampler.cluster_size
+            Nk = cluster_size
+            N = cluster_size.sum()
+            w = 1.*Nk/N
+            # print(w.sum().item())
+        ai, batch_dist, iv = self.gluster.em_step(w)  # TODO: reweight here?
         # for ivi in iv:
         #     self.assign_i[self.assign_i == ivi] = -1
         #     ai[ai == ivi] = -1
         self.gluster.deactivate()
 
         tb_logger.log_vector('go_bd_i', batch_dist.cpu().numpy())
-        total_dist = self.gluster.total_dist
+        cluster_size = self.gluster.cluster_size
+        total_dist = self.gluster.total_dist/cluster_size.sum().clamp(1)
         tb_logger.log_value('gb_td', total_dist.sum().item(), step=niters)
+        # print(list(self.gluster.cluster_size.cpu().numpy().flatten()))
+        # print(self.gluster.cluster_size.sum().item())
+        tb_logger.log_value('gb_cs', cluster_size[0].item(), step=niters)
+        reinits = self.gluster.reinits.sum().item()
+        tb_logger.log_value('gb_reinits', reinits, step=niters)
 
     def snap_batch(self, model, niters):
         raw_loader = self.raw_loader
@@ -300,6 +320,7 @@ class GlusterOnlineEstimator(GlusterEstimator):
         cluster_size = torch.zeros_like(self.gluster.cluster_size)
         cluster_size[u, 0] = torch.from_numpy(c).cuda().float()
         self.update_sampler(assign_i, cluster_size)
+        self.init_assign = True
 
 
 class MinVarianceGradient(object):

@@ -258,12 +258,12 @@ class GradientClusterOnline(GradientCluster):
         self.reinit_method = reinit_method  # 'data' or 'largest'
         self.cluster_size.fill_(self.min_size)
 
-    def em_step(self):
+    def em_step(self, w=1):
         if self.G.is_active:
             with torch.no_grad():
                 assign_i, batch_dist = self.assign()
                 if not self.G.is_eval:
-                    invalid_clusters = self.update(assign_i, batch_dist)
+                    invalid_clusters = self.update(assign_i, batch_dist, w)
                     return assign_i, batch_dist, invalid_clusters
                 return assign_i, batch_dist
 
@@ -278,32 +278,36 @@ class GradientClusterOnline(GradientCluster):
         batch_dist = batch_dist.unsqueeze(1)
         return assign_i, batch_dist
 
-    def update(self, assign_i, batch_dist):
-        # Update beta is more exact tested by MLP.test_more_iters
-        self.update_beta(assign_i, batch_dist)
+    def update(self, assign_i, batch_dist, w=1):
+        # TODO: Update beta is more exact tested by MLP.test_more_iters
+        self.update_beta(assign_i, batch_dist, w)
 
-    def update_beta(self, assign_i, batch_dist):
+    def update_beta(self, assign_i, batch_dist, w=1):
         # Not keeping a full internal assignment list
         # E: update C
         # E: C_c = mean_i(g_i * I(c==a_i))
         beta = self.beta
         counts = torch.zeros(self.nclusters, 1).cuda()
         counts.scatter_add_(0, assign_i, torch.ones(assign_i.shape).cuda())
+        # TODO: w is only multiplied by total_dist, others are better to be
+        # biased towards Gluster sampling
+        # counts.mul_(w)
+        # print(list(counts.cpu().numpy().flatten()))
         post_size = counts.mul(1-beta)
-        post_ratio = post_size/counts.clamp(1)
+        post_ratio = post_size/counts.clamp(1)  # counts.clamp(.0001)
         self.cluster_size.mul_(beta).add_(post_size)  # no *(1-beta)
         pre_size = self.cluster_size-post_size
         # TODO: this should be indep of batch size?
         if self.add_GG:
             tddec = pre_size/self.cluster_size.clamp(1)
             td_new = torch.zeros_like(self.total_dist).scatter_add_(
-                    0, assign_i, batch_dist)
+                    0, assign_i, batch_dist).mul(w)
             self.total_dist.mul_(tddec).add_(td_new.mul_(1-tddec))
         else:
             # TODO: reinit largest is not good with no addg
             # do this to pass TestGlusterMLP.test_more_iters
             self.total_dist.mul_(pre_size).scatter_add_(
-                0, assign_i, batch_dist).div_(self.cluster_size)
+                0, assign_i, batch_dist).mul(w).div_(self.cluster_size)
 
         self.G.zero_new_centers()
         self.G.accum_new_centers(assign_i)
@@ -346,7 +350,10 @@ class GradientClusterOnline(GradientCluster):
         # (time = beta decay).
         # If we reinit based only on the current batch assignemnts, it ignores
         # reinits constantly for the 5-example test
-        reinits = (self.cluster_size < self.min_size)
+        # cs/batch_size prob of seeing an example from a cluster
+        # should be equal to 1/nclusters, reinit if <.1*1/nclusters or .01
+        reinits = (self.cluster_size/batch_size
+                   < self.min_size*(1./self.nclusters))
         nreinits = reinits.sum()
         self.reinits += reinits.long()
         # TODO: stop reinit or delay if too often

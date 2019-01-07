@@ -72,7 +72,7 @@ def get_gluster_loader(train_loader, opt):
         batch_size=opt.batch_size,
         sampler=train_sampler,
         shuffle=(train_sampler is None),
-        drop_last=False, **kwargs)
+        drop_last=True, **kwargs)
     return raw_loader, train_loader, train_sampler
 
 
