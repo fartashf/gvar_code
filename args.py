@@ -202,12 +202,16 @@ def add_args():
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--g_optim_start',
                         default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--g_svd',
+                        default=argparse.SUPPRESS, action='store_true')
     args = parser.parse_args()
     return args
 
 
 def opt_to_gluster_kwargs(opt):
+    active_only = list(opt.g_active_only.split(','))
     return {'beta': opt.g_beta, 'min_size': opt.g_min_size,
             'nclusters': opt.g_nclusters, 'reinit_method': opt.g_reinit,
-            'no_grad': opt.g_no_grad, 'active_only': opt.g_active_only,
-            'debug': opt.g_debug, 'mul_Nk': (not opt.g_noMulNk)}
+            'no_grad': opt.g_no_grad, 'active_only': active_only,
+            'debug': opt.g_debug, 'mul_Nk': (not opt.g_noMulNk),
+            'do_svd': opt.g_svd}

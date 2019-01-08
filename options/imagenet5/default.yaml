@@ -68,7 +68,7 @@ g_reinit: largest
 gb_citers: 10
 g_estim: none
 epoch_iters: 0
-gvar_log_iter: 10
+gvar_log_iter: 100
 gvar_estim_iter: 10
 g_debug: False
 gvar_start: 0
@@ -77,3 +77,4 @@ g_bsnap_iter: 100
 g_osnap_iter: 10
 g_optim: False
 g_optim_start: 1
+g_svd: False
