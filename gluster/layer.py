@@ -19,7 +19,7 @@ class GlusterModule(object):
     def __init__(
             self, module, eps, nclusters, no_grad=False,
             inactive_mods=[], active_only=[], name='', do_svd=False,
-            debug=True, add_GG=False, *args, **kwargs):
+            debug=True, add_GG=False, add_CZ=False, *args, **kwargs):
         self.module = module
         self.nclusters = nclusters
         self.eps = eps
@@ -49,6 +49,7 @@ class GlusterModule(object):
         self.count = 0
         self.debug = debug
         self.add_GG = add_GG
+        self.add_CZ = add_CZ
         self._register_hooks()
 
     def _register_hooks(self):
@@ -144,6 +145,8 @@ class GlusterModule(object):
             self.Co_new.fill_(0)
             if self.do_svd:
                 self.Dw_acc.fill_(0)
+            self.Zi_new.fill_(0)
+            self.Zo_new.fill_(0)
         if self.has_bias:
             self.Cb_new.fill_(0)
 
@@ -159,12 +162,18 @@ class GlusterModule(object):
             self.Ci.copy_(self.Ci_new).div_(cluster_size.clamp(1))
             self.Co.copy_(self.Co_new)
             if not self.do_svd:
+                # TODO:
                 # self.Ci.div_(self.T)
                 self.Co.div_(cluster_size.clamp(1))
+            if self.add_CZ:
+                self.Zi.copy_(self.Zi_new).div_(cluster_size.sum())
+                self.Zo.copy_(self.Zo_new).div_(cluster_size.sum())
+                # self.Ci.div_(2).add_(self.Zi.div(2))
+                # self.Co.div_(2).add_(self.Zo.div(2))
         if self.has_bias:
             self.Cb.copy_(self.Cb_new).div_(cluster_size.clamp(1))
 
-    def update_online_beta(self, pre_size, post_ratio, new_size):
+    def update_online_beta(self, pre_size, post_ratio, new_size, beta, num):
         if not self.has_param:
             return
         pr = post_ratio
@@ -173,6 +182,11 @@ class GlusterModule(object):
             # C = Co*No/Nt + Cn/Nn.clamp(1)*Nn/Nt
             self.Ci.mul_(pre_size).add_(self.Ci_new.mul(pr)).div_(new_size)
             self.Co.mul_(pre_size).add_(self.Co_new.mul(pr)).div_(new_size)
+            if self.add_CZ:
+                self.Zi.mul_(beta).add_(self.Zi_new.div(num).mul(1-beta))
+                self.Zo.mul_(beta).add_(self.Zo_new.div(num).mul(1-beta))
+                # self.Ci.div_(2).add_(self.Zi.div(2))
+                # self.Co.div_(2).add_(self.Zo.div(2))
         if self.has_bias:
             self.Cb.mul_(pre_size).add_(self.Cb_new.mul(pr)).div_(new_size)
 
@@ -205,6 +219,9 @@ class GlusterModule(object):
         if self.has_weight:
             self.Ci_new.scatter_add_(0, assign_i.expand_as(Ais), Ais)
             self.Co_new.scatter_add_(0, assign_i.expand_as(Gos), Gos)
+            if self.add_CZ:
+                self.Zi_new.add_(Ais.sum(0))
+                self.Zo_new.add_(Gos.sum(0))
         if self.has_bias:
             self.Cb_new.scatter_add_(0, assign_i.expand_as(Gos), Gos)
 
@@ -314,6 +331,10 @@ class GlusterLinear(GlusterModule):
                 self.Co = torch.rand((C, dout)).cuda()/(din+dout)*self.eps
                 self.Ci_new = torch.zeros_like(self.Ci)
                 self.Co_new = torch.zeros_like(self.Co)
+                self.Zi = torch.rand((1, din)).cuda()/(din+dout)*self.eps
+                self.Zo = torch.rand((1, dout)).cuda()/(din+dout)*self.eps
+                self.Zi_new = torch.zeros_like(self.Zi)
+                self.Zo_new = torch.zeros_like(self.Zo)
                 if self.do_svd:
                     self.Dw_acc = torch.zeros((C, din, dout)).cuda()
             if self.has_bias:
@@ -347,6 +368,9 @@ class GlusterLinear(GlusterModule):
         B = Ai.shape[0]
 
         Ci, Co = self.Ci, self.Co
+        if self.add_CZ:
+            Ci = Ci/2 + self.Zi/2
+            Co = Co/2 + self.Zo/2
         CiAi = torch.matmul(Ci, Ai.t())
         CoGo = torch.matmul(Co, Go.t())
         CG = (CiAi)*(CoGo)
@@ -373,10 +397,21 @@ class GlusterLinear(GlusterModule):
             # Gw = torch.einsum('bi,bo->bio', [Ai, Go])
             # GG = Gw.pow(2).sum(2).sum(1).view(1, -1)
             assert GG.shape == (1, B), 'GG: 1 x B.'
+        CZd = torch.tensor(0)
+        if self.add_CZ:
+            Zi, Zo = self.Zi, self.Zo
+            ZiZi = torch.matmul(Zi, Zi.t())
+            ZoZo = torch.matmul(Zo, Zo.t())
+            ZZ = ZiZi*ZoZo
+            CiZi = torch.matmul(Ci, Zi.t())
+            CoZo = torch.matmul(Co, Zo.t())
+            CZ = (CiZi)*(CoZo)
+            CZd = CC+ZZ-2*CZ
+            assert CZd.shape == (C, 1), 'CZd: C x 1.'
         # Not summing here because of floating point precision
         # O = CC-2*CG+GG
         # assert O.shape == (C, B), 'O: C x B.'
-        return CC, CG, GG
+        return CC, CG, GG, CZd
 
     def reinit_from_data(self, reinits, perm):
         if not self.has_param:
@@ -434,6 +469,10 @@ class GlusterConv(GlusterModule):
                 self.Co = torch.rand((C, dout)).cuda()/(din+dout)*eps
                 self.Ci_new = torch.zeros_like(self.Ci)
                 self.Co_new = torch.zeros_like(self.Co)
+                self.Zi = torch.rand((1, din)).cuda()/(din+dout)*eps
+                self.Zo = torch.rand((1, dout)).cuda()/(din+dout)*eps
+                self.Zi_new = torch.zeros_like(self.Zi)
+                self.Zo_new = torch.zeros_like(self.Zo)
                 if self.do_svd:
                     self.Dw_acc = torch.zeros((C, din, dout)).cuda()
             if self.has_bias:
@@ -488,6 +527,9 @@ class GlusterConv(GlusterModule):
         assert Go.shape == (B, dout, T), 'Go: B x dout x T'
         assert Ai.shape == (B, din, T), 'Ai: B x din x T'
         Ci, Co = self.Ci, self.Co
+        if self.add_CZ:
+            Ci = Ci/2 + self.Zi/2
+            Co = Co/2 + self.Zo/2
         assert Ci.shape == (C, din), 'Ci: C x din'
         assert Co.shape == (C, dout), 'Co: C x dout'
         # Ci = Ci.reshape((C, -1))
@@ -508,13 +550,20 @@ class GlusterConv(GlusterModule):
                 self._gnorm = self._gnorm_choose(Ai, Go)
             GG = self._gnorm(Ai, Go).view(1, -1)
             assert GG.shape == (1, B), 'GG: 1 x B.'
+        CZd = torch.tensor(0)
+        if self.add_CZ:
+            Zi, Zo = self.Zi.view(1, -1, 1), self.Zo.view(1, -1, 1)
+            ZZ = self._gnorm(Zi, Zo)
+            CZ = self._conv_dot(Ci, Zi, Co, Zo)
+            CZd = CC+ZZ-2*CZ
+            assert CZd.shape == (C, 1), 'CZd: C x 1.'
         # O = CC-2*CG+GG
         # assert O.shape == (C, B), 'O: C x B.'
         # if self.Ai.max() > 10000:
         #     # TODO: seed 1 this happens, try toy tests
         #     import ipdb; ipdb.set_trace()
 
-        return CC, CG, GG
+        return CC, CG, GG, CZd
 
     def _conv_dot_choose(self, Ci, Ai, Co, Go):
         C, din = Ci.shape

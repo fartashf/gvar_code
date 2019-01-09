@@ -10,7 +10,7 @@ import time
 
 class GradientCluster(object):
     def __init__(self, model, nclusters=1, debug=True, mul_Nk=False,
-                 add_GG=False, **kwargs):
+                 add_GG=False, add_CZ=False, **kwargs):
         # Q: duplicates
         # TODO: challenge: how many C? memory? time?
 
@@ -25,10 +25,11 @@ class GradientCluster(object):
         self.debug = debug
         self.mul_Nk = mul_Nk
         self.add_GG = (mul_Nk or add_GG)
+        self.add_CZ = add_CZ
 
         self.G = GlusterContainer(
                 model, 1, nclusters, debug=debug,
-                add_GG=(mul_Nk or add_GG), **kwargs)
+                add_GG=(mul_Nk or add_GG), add_CZ=add_CZ, **kwargs)
 
     def activate(self):
         self.G.activate()
@@ -76,13 +77,17 @@ class GradientCluster(object):
     def get_dist(self):
         batch_dist = self.G.get_dist()
         # total_dist = torch.stack(batch_dist).sum(0)
-        CC, CG, GG = [torch.stack(x).sum(0) for x in zip(*batch_dist)]
+        CC, CG, GG, CZd = [torch.stack(x).sum(0) for x in zip(*batch_dist)]
         total_dist = CC-2*CG
         if self.add_GG or self.mul_Nk:
             total_dist += GG
         if self.mul_Nk:
             # cluster_size should be correct and fixed for assignment step
             total_dist.mul_(self.cluster_size.clamp(1))
+        if self.add_CZ:
+            # TODO: TestGlusterMLPCZ.test_toy_batch distortion goes up
+            # one cluster hasn't converged
+            total_dist += CZd.mul(self.cluster_size).mul(self.cluster_size)
         return total_dist, GG
 
 
@@ -280,7 +285,7 @@ class GradientClusterOnline(GradientCluster):
 
     def update(self, assign_i, batch_dist, w=1):
         # TODO: Update beta is more exact tested by MLP.test_more_iters
-        self.update_beta(assign_i, batch_dist, w)
+        return self.update_beta(assign_i, batch_dist, w)
 
     def update_beta(self, assign_i, batch_dist, w=1):
         # Not keeping a full internal assignment list
@@ -296,6 +301,7 @@ class GradientClusterOnline(GradientCluster):
         post_size = counts.mul(1-beta)
         post_ratio = post_size/counts.clamp(1)  # counts.clamp(.0001)
         self.cluster_size.mul_(beta).add_(post_size)  # no *(1-beta)
+        # print(counts)
         pre_size = self.cluster_size-post_size
         # TODO: this should be indep of batch size?
         if self.add_GG:
@@ -306,12 +312,14 @@ class GradientClusterOnline(GradientCluster):
         else:
             # TODO: reinit largest is not good with no addg
             # do this to pass TestGlusterMLP.test_more_iters
+            # something wrong here: MLP.test_mnist_online_delayed inf dists
             self.total_dist.mul_(pre_size).scatter_add_(
                 0, assign_i, batch_dist).mul(w).div_(self.cluster_size)
 
         self.G.zero_new_centers()
         self.G.accum_new_centers(assign_i)
-        self.G.update_online_beta(pre_size, post_ratio, self.cluster_size)
+        self.G.update_online_beta(pre_size, post_ratio, self.cluster_size,
+                                  beta, assign_i.shape[0])
 
         invalid_clusters = self.reinit(assign_i.shape[0])
         return invalid_clusters
@@ -352,8 +360,9 @@ class GradientClusterOnline(GradientCluster):
         # reinits constantly for the 5-example test
         # cs/batch_size prob of seeing an example from a cluster
         # should be equal to 1/nclusters, reinit if <.1*1/nclusters or .01
-        reinits = (self.cluster_size/batch_size
-                   < self.min_size*(1./self.nclusters))
+        # min_size=1 is equal probability
+        reinits = (self.cluster_size/batch_size*self.nclusters
+                   < self.min_size)
         nreinits = reinits.sum()
         self.reinits += reinits.long()
         # TODO: stop reinit or delay if too often
@@ -383,8 +392,7 @@ class GradientClusterOnline(GradientCluster):
         # reinit from the largest cluster
         # reinit one at a time
         _, ri = reinits.max(0)
-        tdm = self.total_dist.masked_fill(
-            self.cluster_size < self.min_size, float('-inf'))
+        tdm = self.total_dist.masked_fill(reinits, float('-inf'))
         _, li = tdm.max(0)
         self.G.reinit_from_largest(ri, li)
         self.cluster_size[ri] = self.cluster_size[li] / 2

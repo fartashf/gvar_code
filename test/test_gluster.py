@@ -606,7 +606,8 @@ class ToyTests(object):
                             **kwargs)
         print(
                 "*** 5 centers are reinited > 30 "
-                "times but first 5 are stable ***")
+                "times but first 5 are stable. Well balanced centers with"
+                "CZ ***")
 
     def test_imbalance(self, **kwargs):
         model = self.model
@@ -718,13 +719,13 @@ class MNISTTest(object):
                           beta, min_size, reinit_method, figname,
                           **kwargs)
 
-    def test_mnist_online_delayed(self, delay=10, beta=.99, min_size=20,
+    def test_mnist_online_delayed(self, delay=10, beta=.99, min_size=.01,
                                   **kwargs):
         model = self.model
         kwargs.update(self.kwargs)
         # Online gluster with delayed update
         epochs = 2
-        nclusters = 10
+        nclusters = 100
         reinit_method = 'largest'
         figname = (
             self.prefix+',nclusters_10,online,delay_%d%s.pth.tar'
@@ -893,6 +894,18 @@ class TestGlusterConvNk(TestGlusterConv):
     def setUp(self):
         super(TestGlusterConvNk, self).setUp()
         self.kwargs = {'mul_Nk': True}
+
+
+class TestGlusterMLPCZ(TestGlusterMLP):
+    def setUp(self):
+        super(TestGlusterMLPCZ, self).setUp()
+        self.kwargs = {'mul_Nk': True, 'add_CZ': True}
+
+
+class TestGlusterConvCZ(TestGlusterConv):
+    def setUp(self):
+        super(TestGlusterConvCZ, self).setUp()
+        self.kwargs = {'mul_Nk': True, 'add_CZ': True}
 
 
 if __name__ == '__main__':
