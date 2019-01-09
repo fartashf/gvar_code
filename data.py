@@ -106,7 +106,7 @@ class IndexedDataset(data.Dataset):
     def __getitem__(self, index):
         subindex = index
         if index >= len(self.ds):
-            subindex = self.dup_ids[(index-len(self.ds))/self.dup_cnt]
+            subindex = self.dup_ids[(index-len(self.ds))//self.dup_cnt]
         img, target = self.ds[subindex]
         if int(index) in self.cr_ids:
             target = torch.tensor(self.cr_labels[index])

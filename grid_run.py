@@ -28,10 +28,18 @@ def deep_product(args, index=0, cur_args=[]):
     if index >= len(args):
         yield cur_args
     elif isinstance(args, list):
+        # Disjoint
         for a in args:
-            for a in deep_product(a):
-                yield a
+            for b in deep_product(a):
+                yield b
+    elif isinstance(args, tuple):
+        # Disjoint product
+        for a in deep_product(args[index]):
+            next_args = cur_args + a
+            for b in deep_product(args, index+1, next_args):
+                yield b
     elif isinstance(args, dict):
+        # Product
         # keys = args.keys()
         # values = args.values()
         # for v in product(*values):
@@ -2283,7 +2291,7 @@ def imagenet_diff(args):
 def mnist_gvar(args):
     dataset = 'mnist'
     module_name = 'main.gvar'
-    log_dir = 'runs_%s_gvar' % dataset
+    log_dir = 'runs_%s_gvar_cz' % dataset
     epoch_iters = 468
     shared_args = [('dataset', dataset),
                    # ('lr', [.1, .05, .02, .01]),
@@ -2301,14 +2309,12 @@ def mnist_gvar(args):
                    #            ]),
                    # ('log_stats', ''),
                    ]
-    shared_args += [('gvar_estim_iter', 100),
-                    ('gvar_log_iter', 100),
+    shared_args += [
+                    # ('gvar_estim_iter', 10),
+                    # ('gvar_log_iter', 100),
                     ('gvar_start', 2*epoch_iters),
                     ('g_bsnap_iter', 2*epoch_iters)
                     ]
-    # TODO: duplicate data
-    # TODO: regularization
-    # TODO: corrupt data
     args_sgd = [('g_estim', ['sgd'])]
     args += [OrderedDict(shared_args+args_sgd)]
 
@@ -2318,15 +2324,16 @@ def mnist_gvar(args):
     gluster_args = [
             ('g_estim', 'gluster'),
             ('g_nclusters', [2, 10, 100]),
-            ('g_debug', '')]
+            ('g_debug', ''),
+            ('g_CZ', '')]
 
-    args_3 = [('gb_citers', 10),
-              ('g_min_size', 100)]
-    args += [OrderedDict(shared_args+gluster_args+args_3)]
+    # args_3 = [('gb_citers', 10),
+    #           ('g_min_size', 100)]
+    # args += [OrderedDict(shared_args+gluster_args+args_3)]
     args_4 = [('g_online', ''),
               ('g_osnap_iter', 10),
               ('g_beta', .99),  # 1-lr (the desired learning rate)
-              ('g_min_size', .01),  # 100x diff in probabilities
+              ('g_min_size', .1),  # 100x diff in probabilities
               # ('g_reinit', 'largest')
               ]
     args += [OrderedDict(shared_args+gluster_args+args_4)]
@@ -2432,7 +2439,7 @@ def cifar10_gvar_resnet32(args):
 def cifar10_gvar_cnn(args):
     dataset = 'cifar10'
     module_name = 'main.gvar'
-    log_dir = 'runs_%s_gvar_cnn_aonly' % dataset
+    log_dir = 'runs_%s_gvar_cnn_adam' % dataset
     epoch_iters = 390
     shared_args = [('dataset', dataset),
                    # ('arch', 'resnet32'),
@@ -2449,6 +2456,7 @@ def cifar10_gvar_cnn(args):
                    ('arch', 'cnn'),
                    ('lr', [0.01]),
                    ('momentum', [0.9]),
+                   ('optim', ['adam']),
                    ]
     shared_args += [
                     # ('gvar_estim_iter', 10),  # default
@@ -2467,7 +2475,7 @@ def cifar10_gvar_cnn(args):
     gluster_args = [
             ('g_estim', 'gluster'),
             ('g_nclusters', [10, 100]),  # 2
-            ('g_active_only', ['module.fc2', 'module.fc1,module.fc2']),
+            # ('g_active_only', ['module.fc2', 'module.fc1,module.fc2']),
             ('g_debug', '')]
 
     # args_3 = [('gb_citers', 10),
@@ -2480,6 +2488,62 @@ def cifar10_gvar_cnn(args):
               # ('g_reinit', 'largest')
               ]
     args += [OrderedDict(shared_args+gluster_args+args_4)]
+    return args, log_dir, module_name
+
+
+def mnist_gvar_dup(args):
+    dataset = 'mnist'
+    module_name = 'main.gvar'
+    log_dir = 'runs_%s_gvar_dup' % dataset
+    epoch_iters = 468
+    shared_args = [('dataset', dataset),
+                   # ('lr', [.1, .05, .02, .01]),
+                   ('lr', .02),
+                   ('epochs', [
+                       # (100, OrderedDict([('lr_decay_epoch', 100)])),
+                       (30, OrderedDict([('lr_decay_epoch', 30)])),
+                   ]),
+                   # ('exp_lr', ''),
+                   ('arch', ['cnn']),  # 'mlp'
+                   # ('arch', 'bigcnn', 'ssmlp'),
+                   ('optim', ['sgd']),
+                   # ('optim', [('sgd', OrderedDict([('lr', .02)])),
+                   #            ('adam', OrderedDict([('lr', .05)]))
+                   #            ]),
+                   # ('log_stats', ''),
+                   ]
+    shared_args += [
+                    # ('gvar_estim_iter', 10),
+                    # ('gvar_log_iter', 100),
+                    ('gvar_start', 2*epoch_iters),
+                    ('g_bsnap_iter', 2*epoch_iters)
+                    ]
+    disj_args = [[],
+                 OrderedDict([('wnoise', '')]),
+                 OrderedDict([('label_smoothing', 0.1)]),
+                 OrderedDict([('duplicate', '10,10000')]),
+                 OrderedDict([('corrupt_perc', [20, 50, 100])])]
+    args_sgd = [('g_estim', ['sgd'])]
+    args += [tuple((OrderedDict(shared_args+args_sgd), disj_args))]
+
+    args_svrg = [('g_estim', ['svrg'])]
+    args += [tuple((OrderedDict(shared_args+args_svrg), disj_args))]
+
+    gluster_args = [
+            ('g_estim', 'gluster'),
+            ('g_nclusters', [100]),
+            ('g_debug', '')]
+
+    # args_3 = [('gb_citers', 10),
+    #           ('g_min_size', 100)]
+    # args += [OrderedDict(shared_args+gluster_args+args_3)]
+    args_4 = [('g_online', ''),
+              ('g_osnap_iter', 10),
+              ('g_beta', .99),  # 1-lr (the desired learning rate)
+              ('g_min_size', .1),  # 100x diff in probabilities
+              # ('g_reinit', 'largest')
+              ]
+    args += [tuple((OrderedDict(shared_args+gluster_args+args_4), disj_args))]
     return args, log_dir, module_name
 
 
@@ -2518,8 +2582,9 @@ if __name__ == '__main__':
     # args, log_dir = mnist_duplicate(args)
     # args, log_dir = mnist_diff(args)
     # args, log_dir = imagenet_diff(args)
-    # args, log_dir, module_name = mnist_gvar(args)
-    args, log_dir, module_name = cifar10_gvar_cnn(args)
+    args, log_dir, module_name = mnist_gvar(args)
+    # args, log_dir, module_name = cifar10_gvar_cnn(args)
+    # args, log_dir, module_name = mnist_gvar_dup(args)
     # args, log_dir, module_name = imagenet_pretrained_gvar(args)
     # jobs_0 = ['bolt0_gpu0,1,2,3', 'bolt1_gpu0,1,2,3']
     # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2',
@@ -2533,8 +2598,8 @@ if __name__ == '__main__':
               # 'bolt0_gpu0', 'bolt0_gpu1', 'bolt0_gpu2', 'bolt0_gpu3'
               ]
     # njobs = [3] * 4 + [2] * 4  # validate start.sh
-    # njobs = [2]*4
-    njobs = [1, 1, 2, 2]
+    njobs = [3]*4
+    # njobs = [1, 1, 2, 2]
     jobs = []
     for s, n in zip(jobs_0, njobs):
         jobs += ['%s_job%d' % (s, i) for i in range(n)]
