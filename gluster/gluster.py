@@ -366,7 +366,7 @@ class GradientClusterOnline(GradientCluster):
         # cs/batch_size prob of seeing an example from a cluster
         # should be equal to 1/nclusters, reinit if <.1*1/nclusters or .01
         # min_size=1 is equal probability
-        reinits = (self.cluster_size/batch_size*self.nclusters
+        reinits = (self.cluster_size/batch_size  # *self.nclusters
                    < self.min_size)
         nreinits = reinits.sum()
         self.reinits += reinits.long()
