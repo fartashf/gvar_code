@@ -3,7 +3,6 @@ import copy
 
 import torch
 import torch.nn
-import torch.nn.functional as F
 import torch.multiprocessing
 
 from log_utils import Profiler
@@ -23,10 +22,7 @@ class SVRGEstimator(GradientEstimator):
         batch_time = Profiler()
         for batch_idx, (data, target, idx) in enumerate(self.data_loader):
             num += len(idx)
-            data, target = data.cuda(), target.cuda()
-            model.zero_grad()
-            output = model(data)
-            loss = F.nll_loss(output, target, reduction='sum')
+            loss = model.criterion(model, data, reduction='sum')
             grad_params = torch.autograd.grad(loss, model.parameters())
             for m, g in zip(self.mu, grad_params):
                 m += g
@@ -44,18 +40,13 @@ class SVRGEstimator(GradientEstimator):
         data = next(self.data_iter)
 
         model_old = self.model
-        data, target = data[0].cuda(), data[1].cuda()
 
         # old grad
-        model_old.zero_grad()
-        output = model_old(data)
-        loss = F.nll_loss(output, target)
+        loss = model_old.criterion(model_old, data)
         g_old = torch.autograd.grad(loss, model_old.parameters())
 
         # new grad
-        model_new.zero_grad()
-        output = model_new(data)
-        loss = F.nll_loss(output, target)
+        loss = model_new.criterion(model_new, data)
         g_new = torch.autograd.grad(loss, model_new.parameters())
 
         if in_place:

@@ -4,7 +4,6 @@ import logging
 
 import torch
 import torch.nn
-import torch.nn.functional as F
 import torch.multiprocessing
 
 from data import InfiniteLoader, get_gluster_loader
@@ -37,10 +36,7 @@ class GlusterEstimator(SGDEstimator):
         Nk = cluster_size[ci].flatten()
         N = cluster_size.sum()
 
-        data, target = data[0].cuda(), data[1].cuda()
-        model.zero_grad()
-        output = model(data)
-        loss = F.nll_loss(output, target, reduction='none')
+        loss = model.criterion(model, data, reduction='none')
         # multiply by the size of the cluster
         w = 1.*M*Nk/N
         loss = (loss*w).mean()
@@ -123,10 +119,7 @@ class GlusterOnlineEstimator(GlusterEstimator):
         # TODO: using raw_iter variance goes up in the end
         # data = next(self.raw_iter)
         data = next(self.data_iter)  # bootstraping
-        data, target = data[0].cuda(), data[1].cuda()
-        model.zero_grad()
-        output = model(data)
-        loss = F.nll_loss(output, target)  # no reweighting grads
+        loss = model.criterion(model, data)  # no reweighting grads
         loss.backward()
         w = 1
         # TODO: reweight correction is not helpful
@@ -160,10 +153,7 @@ class GlusterOnlineEstimator(GlusterEstimator):
         self.gluster.eval()
         batch_time = Profiler()
         for batch_idx, (data, target, idx) in enumerate(raw_loader):
-            data, target = data.cuda(), target.cuda()
-            model.zero_grad()
-            output = model(data)
-            loss = F.nll_loss(output, target)
+            loss = model.criterion(model, data)
             loss.backward()
             ai, batch_dist = self.gluster.em_step()
             assign_i[idx] = ai.cpu().numpy().flat

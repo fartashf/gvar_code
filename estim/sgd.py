@@ -1,6 +1,5 @@
 import torch
 import torch.nn
-import torch.nn.functional as F
 import torch.multiprocessing
 
 from data import InfiniteLoader
@@ -16,10 +15,8 @@ class SGDEstimator(GradientEstimator):
     def grad(self, model, in_place=False):
         data = next(self.data_iter)
 
-        data, target = data[0].cuda(), data[1].cuda()
-        model.zero_grad()
-        output = model(data)
-        loss = F.nll_loss(output, target)
+        loss = model.criterion(model, data)
+
         # print(loss)
         # import ipdb; ipdb.set_trace()
         if in_place:

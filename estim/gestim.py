@@ -1,6 +1,7 @@
 import torch
 import torch.nn
 import torch.multiprocessing
+import torch.nn.functional as F
 
 
 class GradientEstimator(object):
@@ -51,3 +52,11 @@ class GradientEstimator(object):
                 [((ss+1e-10).log()-(nn+1e-10).log()).sum()
                     for ss, nn in zip(Es, En)])/nw
         return Ege, var_e, snr_e
+
+
+def nll_loss(model, data, reduction='mean'):
+    data, target = data[0].cuda(), data[1].cuda()
+    model.zero_grad()
+    output = model(data)
+    loss = F.nll_loss(output, target, reduction=reduction)
+    return loss

@@ -21,6 +21,7 @@ from log_utils import TBXWrapper
 from log_utils import Profiler
 from log_utils import LogCollector
 from estim.gvar import MinVarianceGradient
+from estim.gestim import nll_loss
 tb_logger = TBXWrapper()
 torch.multiprocessing.set_sharing_strategy('file_system')
 
@@ -176,7 +177,7 @@ def main():
     opt.maxiter = opt.epoch_iters * opt.epochs
 
     model = models.init_model(opt)
-    model.criterion = F.nll_loss
+    model.criterion = nll_loss
 
     if opt.optim == 'sgd':
         optimizer = optim.SGD(model.parameters(),
