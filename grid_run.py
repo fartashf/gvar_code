@@ -2549,6 +2549,76 @@ def mnist_gvar_dup(args):
     return args, log_dir, module_name
 
 
+def mnist_gvar_bs(args):
+    dataset = 'mnist'
+    module_name = 'main.gvar'
+    log_dir = 'runs_%s_gvar_bs' % dataset
+    shared_args = [('dataset', dataset),
+                   # ('lr', [.1, .05, .02, .01]),
+                   # ('lr', .02),
+                   ('epochs', [
+                       # (100, OrderedDict([('lr_decay_epoch', 100)])),
+                       (30, OrderedDict([('lr_decay_epoch', 30)])),
+                   ]),
+                   # ('exp_lr', ''),
+                   ('arch', ['cnn']),  # , 'mlp'
+                   # ('arch', 'bigcnn', 'ssmlp'),
+                   # ('optim', ['sgd']),
+                   # ('optim', [('sgd', OrderedDict([('lr', .02)])),
+                   #            ('adam', OrderedDict([('lr', .05)]))
+                   #            ]),
+                   # ('log_stats', ''),
+                   ('batch_size', [
+                       (8, OrderedDict([
+                           ('lr', .005),
+                           ('gvar_estim_iter', 100),
+                           ('gvar_log_iter', 1000),
+                           ('gvar_start', 2*(60000//8)),
+                           ('g_bsnap_iter', 2*(60000//8))
+                           ])),
+                       # (128, OrderedDict([('lr', .02)])),
+                       (1024, OrderedDict([
+                           ('lr', .05),
+                           ('gvar_estim_iter', 10),
+                           ('gvar_log_iter', 10),
+                           ('gvar_start', 2*(60000//1024)),
+                           ('g_bsnap_iter', 2*(60000//1024))
+                           ])),
+                   ]),
+                   ]
+    shared_args += [
+                    # ('gvar_estim_iter', 10),
+                    # ('gvar_log_iter', 100),
+                    # ('gvar_start', 2*epoch_iters),
+                    # ('g_bsnap_iter', 2*epoch_iters)
+                    ]
+    args_sgd = [('g_estim', ['sgd'])]
+    args += [OrderedDict(shared_args+args_sgd)]
+
+    args_svrg = [('g_estim', ['svrg'])]
+    args += [OrderedDict(shared_args+args_svrg)]
+
+    gluster_args = [
+            ('g_estim', 'gluster'),
+            ('g_nclusters', [2, 10, 100]),
+            ('g_debug', ''),
+            # ('g_CZ', '')
+            # ('g_noMulNk', ''),
+            ]
+
+    # args_3 = [('gb_citers', 10),
+    #           ('g_min_size', 100)]
+    # args += [OrderedDict(shared_args+gluster_args+args_3)]
+    args_4 = [('g_online', ''),
+              ('g_osnap_iter', 10),
+              ('g_beta', .99),  # 1-lr (the desired learning rate)
+              ('g_min_size', .01),  # 100x diff in probabilities
+              # ('g_reinit', 'largest')
+              ]
+    args += [OrderedDict(shared_args+gluster_args+args_4)]
+    return args, log_dir, module_name
+
+
 if __name__ == '__main__':
     args = []
     # module_name ='zerol.main'
@@ -2584,10 +2654,11 @@ if __name__ == '__main__':
     # args, log_dir = mnist_duplicate(args)
     # args, log_dir = mnist_diff(args)
     # args, log_dir = imagenet_diff(args)
-    args, log_dir, module_name = mnist_gvar(args)
+    # args, log_dir, module_name = mnist_gvar(args)
     # args, log_dir, module_name = cifar10_gvar_cnn(args)
     # args, log_dir, module_name = mnist_gvar_dup(args)
     # args, log_dir, module_name = imagenet_pretrained_gvar(args)
+    args, log_dir, module_name = mnist_gvar_bs(args)
     # jobs_0 = ['bolt0_gpu0,1,2,3', 'bolt1_gpu0,1,2,3']
     # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2',
     #           'bolt1_gpu0,1', 'bolt1_gpu2,3',
