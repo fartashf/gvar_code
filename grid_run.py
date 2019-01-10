@@ -2291,7 +2291,7 @@ def imagenet_diff(args):
 def mnist_gvar(args):
     dataset = 'mnist'
     module_name = 'main.gvar'
-    log_dir = 'runs_%s_gvar_cz' % dataset
+    log_dir = 'runs_%s_gvar_2' % dataset
     epoch_iters = 468
     shared_args = [('dataset', dataset),
                    # ('lr', [.1, .05, .02, .01]),
@@ -2325,7 +2325,9 @@ def mnist_gvar(args):
             ('g_estim', 'gluster'),
             ('g_nclusters', [2, 10, 100]),
             ('g_debug', ''),
-            ('g_CZ', '')]
+            # ('g_CZ', '')
+            # ('g_noMulNk', ''),
+            ]
 
     # args_3 = [('gb_citers', 10),
     #           ('g_min_size', 100)]
@@ -2333,7 +2335,7 @@ def mnist_gvar(args):
     args_4 = [('g_online', ''),
               ('g_osnap_iter', 10),
               ('g_beta', .99),  # 1-lr (the desired learning rate)
-              ('g_min_size', .1),  # 100x diff in probabilities
+              ('g_min_size', .01),  # 100x diff in probabilities
               # ('g_reinit', 'largest')
               ]
     args += [OrderedDict(shared_args+gluster_args+args_4)]

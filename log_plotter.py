@@ -247,8 +247,7 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
                'Terror': plot_f, 'Verror': plot_f,
                'Tloss': plot_f, 'Vloss': plot_f,
                'grad_var': plot_smooth_o1, 'grad_var_n': plot_smooth_o1,
-               'gbar_norm': plot_smooth_o1, 'g_variance_mean': plot_smooth_o1,
-               }
+               'gbar_norm': plot_smooth_o1, 'g_variance_mean': plot_smooth_o1}
     if 'nolog' in tag_name:
         idx = tag_name.find('_nolog')
         tag_name = tag_name[:idx]+tag_name[idx+6:]

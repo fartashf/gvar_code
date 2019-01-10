@@ -19,7 +19,8 @@ class GlusterModule(object):
     def __init__(
             self, module, eps, nclusters, no_grad=False,
             inactive_mods=[], active_only=[], name='', do_svd=False,
-            debug=True, add_GG=False, add_CZ=False, *args, **kwargs):
+            debug=True, add_GG=False, add_CZ=False,
+            cluster_size=None, *args, **kwargs):
         self.module = module
         self.nclusters = nclusters
         self.eps = eps
@@ -50,6 +51,7 @@ class GlusterModule(object):
         self.debug = debug
         self.add_GG = add_GG
         self.add_CZ = add_CZ
+        self.cluster_size = cluster_size
         self._register_hooks()
 
     def _register_hooks(self):
@@ -369,8 +371,10 @@ class GlusterLinear(GlusterModule):
 
         Ci, Co = self.Ci, self.Co
         if self.add_CZ:
-            Ci = Ci/2 + self.Zi/2
-            Co = Co/2 + self.Zo/2
+            Nk = self.cluster_size
+            Ci = Ci.mul(Nk).div(Nk+1) + self.Zi.mul(Nk).div(Nk+1)
+            Co = Co.mul(Nk).div(Nk+1) + self.Zo.mul(Nk).div(Nk+1)
+            # print((self.Ci-Ci).abs().max())
         CiAi = torch.matmul(Ci, Ai.t())
         CoGo = torch.matmul(Co, Go.t())
         CG = (CiAi)*(CoGo)
@@ -528,8 +532,9 @@ class GlusterConv(GlusterModule):
         assert Ai.shape == (B, din, T), 'Ai: B x din x T'
         Ci, Co = self.Ci, self.Co
         if self.add_CZ:
-            Ci = Ci/2 + self.Zi/2
-            Co = Co/2 + self.Zo/2
+            Nk = self.cluster_size
+            Ci = Ci.div(Nk+1) + self.Zi.mul(Nk).div(Nk+1)
+            Co = Co.div(Nk+1) + self.Zo.mul(Nk).div(Nk+1)
         assert Ci.shape == (C, din), 'Ci: C x din'
         assert Co.shape == (C, dout), 'Co: C x dout'
         # Ci = Ci.reshape((C, -1))

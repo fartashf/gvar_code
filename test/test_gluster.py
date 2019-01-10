@@ -576,9 +576,9 @@ class ToyTests(object):
         kwargs.update(self.kwargs)
         # More iterations
         data = data_unique_n(100, 5)
-        test_gluster_online(model, 10, data, 5, .9, .1, 'data', 100, **kwargs)
+        test_gluster_online(model, 10, data, 5, .9, .01, 'data', 100, **kwargs)
         print(">>> This has now converged.")
-        test_gluster_online(model, 10, data, 5, .9, .1, 'largest', 100,
+        test_gluster_online(model, 10, data, 5, .9, .01, 'largest', 100,
                             **kwargs)
         print(">>> centers should match input based on Dist")
 
@@ -719,13 +719,13 @@ class MNISTTest(object):
                           beta, min_size, reinit_method, figname,
                           **kwargs)
 
-    def test_mnist_online_delayed(self, delay=10, beta=.99, min_size=.01,
+    def test_mnist_online_delayed(self, delay=10, beta=.9, min_size=.01,
                                   **kwargs):
         model = self.model
         kwargs.update(self.kwargs)
         # Online gluster with delayed update
         epochs = 2
-        nclusters = 100
+        nclusters = 10
         reinit_method = 'largest'
         figname = (
             self.prefix+',nclusters_10,online,delay_%d%s.pth.tar'

@@ -10,7 +10,7 @@ import time
 
 class GradientCluster(object):
     def __init__(self, model, nclusters=1, debug=True, mul_Nk=False,
-                 add_GG=False, add_CZ=False, **kwargs):
+                 add_GG=False, add_CZ=False, eps=1, **kwargs):
         # Q: duplicates
         # TODO: challenge: how many C? memory? time?
 
@@ -28,8 +28,9 @@ class GradientCluster(object):
         self.add_CZ = add_CZ
 
         self.G = GlusterContainer(
-                model, 1, nclusters, debug=debug,
-                add_GG=(mul_Nk or add_GG), add_CZ=add_CZ, **kwargs)
+                model, eps, nclusters, debug=debug,
+                add_GG=(mul_Nk or add_GG), add_CZ=add_CZ,
+                cluster_size=self.cluster_size, **kwargs)
 
     def activate(self):
         self.G.activate()
@@ -64,8 +65,9 @@ class GradientCluster(object):
         return normC
 
     def print_stats(self):
-        normC = self.get_center_norms()
-        logging.info('normC:\n%s' % str(normC))
+        normC = None
+        # normC = self.get_center_norms()
+        # logging.info('normC:\n%s' % str(normC))
         logging.info(
                 'Reinit count:\n%s' % str(self.reinits.cpu().numpy()))
         logging.info(
@@ -81,13 +83,15 @@ class GradientCluster(object):
         total_dist = CC-2*CG
         if self.add_GG or self.mul_Nk:
             total_dist += GG
+        cs = self.cluster_size+1
         if self.mul_Nk:
             # cluster_size should be correct and fixed for assignment step
-            total_dist.mul_(self.cluster_size.clamp(1))
+            # total_dist.mul_(self.cluster_size.clamp(1))
+            total_dist.mul_(cs)  # TODO: this or above
         if self.add_CZ:
             # TODO: TestGlusterMLPCZ.test_toy_batch distortion goes up
             # one cluster hasn't converged
-            total_dist += CZd.mul(self.cluster_size).mul(self.cluster_size)
+            total_dist += CZd.mul(cs).mul(cs)
         return total_dist, GG
 
 
@@ -125,7 +129,7 @@ class GradientClusterBatch(GradientCluster):
         GG_i = np.zeros(train_size)
         topk_i = np.zeros((train_size, 2))
         total_dist = torch.zeros(self.nclusters, 1).to(device)
-        self.cluster_size = torch.zeros(self.nclusters, 1).cuda()
+        self.cluster_size.fill_(0)
 
         if self.debug:
             logging.info(
@@ -304,7 +308,7 @@ class GradientClusterOnline(GradientCluster):
         # print(counts)
         pre_size = self.cluster_size-post_size
         # TODO: this should be indep of batch size?
-        if self.add_GG:
+        if True:  # self.add_GG:
             tddec = pre_size/self.cluster_size.clamp(1)
             td_new = torch.zeros_like(self.total_dist).scatter_add_(
                     0, assign_i, batch_dist).mul(w)
@@ -325,6 +329,7 @@ class GradientClusterOnline(GradientCluster):
         return invalid_clusters
 
     def update_eta(self, assign_i, batch_dist):
+        # ## Not being used now ###
         # Not keeping a full internal assignment list
         # E: update C
         # E: C_c = mean_i(g_i * I(c==a_i))
