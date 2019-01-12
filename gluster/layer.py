@@ -20,9 +20,9 @@ class GlusterModule(object):
             self, module, eps, nclusters, no_grad=False,
             inactive_mods=[], active_only=[], name='', do_svd=False,
             debug=True, add_GG=False, add_CZ=False,
-            cluster_size=None, *args, **kwargs):
+            cluster_size=None, rank=1, *args, **kwargs):
         self.module = module
-        self.nclusters = nclusters
+        self.nclusters = nclusters*rank
         self.eps = eps
         self.batch_dist = None
         self.is_active = True
@@ -52,6 +52,7 @@ class GlusterModule(object):
         self.add_GG = add_GG
         self.add_CZ = add_CZ
         self.cluster_size = cluster_size
+        self.rank = rank
         self._register_hooks()
 
     def _register_hooks(self):
@@ -160,6 +161,8 @@ class GlusterModule(object):
         # self.count += 1
         if self.do_svd:
             self.centers_svd()
+        if self.rank > 1:
+            cluster_size = cluster_size.repeat(1, self.rank).view(-1, 1)
         if self.has_weight:
             self.Ci.copy_(self.Ci_new).div_(cluster_size.clamp(1))
             self.Co.copy_(self.Co_new)
@@ -179,6 +182,10 @@ class GlusterModule(object):
         if not self.has_param:
             return
         pr = post_ratio
+        if self.rank > 1:
+            pre_size = pre_size.repeat(1, self.rank).view(-1, 1)
+            pr = pr.repeat(1, self.rank).view(-1, 1)
+            new_size = new_size.repeat(1, self.rank).view(-1, 1)
         # TODO: .4/5.5s overhead
         if self.has_weight:
             # C = Co*No/Nt + Cn/Nn.clamp(1)*Nn/Nt
@@ -254,6 +261,9 @@ class GlusterModule(object):
         reinit from the largest cluster
         reinit one at a time
         """
+        if self.rank > 1:
+            li = range(li*self.rank, (li+1)*self.rank)
+            ri = range(ri*self.rank, (ri+1)*self.rank)
         # reinit centers
         # X[ri] = is index_put_(ri, ...)
         if self.has_weight:
@@ -379,10 +389,19 @@ class GlusterLinear(GlusterModule):
         CoGo = torch.matmul(Co, Go.t())
         CG = (CiAi)*(CoGo)
         assert CG.shape == (C, B), 'CG: C x B.'
-        CiCi = (Ci*Ci).view(Ci.shape[0], -1).sum(1)
-        CoCo = (Co*Co).view(Co.shape[0], -1).sum(1)
-        CC = ((CiCi)*(CoCo)).unsqueeze(-1)
-        assert CC.shape == (C, 1), 'CC: C x 1.'
+        if self.rank == 1:
+            CiCi = (Ci*Ci).view(C, -1).sum(1)
+            CoCo = (Co*Co).view(C, -1).sum(1)
+            CC = ((CiCi)*(CoCo)).unsqueeze(-1)
+            assert CC.shape == (C, 1), 'CC: C x 1.'
+        else:
+            K = self.rank
+            Civ = Ci.view(-1, K, Ci.shape[-1])
+            Cov = Co.view(-1, K, Co.shape[-1])
+            CiCi = torch.einsum('cki,cli->ckl', [Civ, Civ])
+            CoCo = torch.einsum('cko,clo->ckl', [Cov, Cov])
+            CC = torch.einsum('ckl,ckl->c', [CiCi, CoCo]).unsqueeze(-1)
+            assert CC.shape == (C/K, 1), 'CC: C/K x 1.'
         GG = torch.tensor(0)
         if self.add_GG:
             # GG = (CG/(CC+1e-7)).mean(0, keepdim=True)
@@ -423,6 +442,10 @@ class GlusterLinear(GlusterModule):
         # Ci0, Co0 = self._init_centers_layer(module.weight, nzeros)
         # Ci.masked_scatter_(counts == 0, Ci0)
         # Co.masked_scatter_(counts == 0, Co0)
+        if self.rank > 1:
+            reinits = reinits.repeat(1, self.rank)
+            reinits[:, 1:].fill_(0)
+            reinits = reinits.view(-1, 1)
         if self.has_weight:
             self.Ci.masked_scatter_(reinits, self.Ais[perm])
             self.Co.masked_scatter_(reinits, self.Gos[perm])

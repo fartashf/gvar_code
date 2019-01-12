@@ -2800,7 +2800,7 @@ def mnist_gvar_optim(args):
     shared_args = [('dataset', dataset),
                    # ('lr', [.1, .05, .02, .01]),
                    # ('lr', .02),
-                   ('lr', [.1, .02]),
+                   ('lr', [.1, .02, .001]),
                    ('epochs', [
                        # (100, OrderedDict([('lr_decay_epoch', 100)])),
                        (30, OrderedDict([('lr_decay_epoch', 30)])),
@@ -2830,7 +2830,7 @@ def mnist_gvar_optim(args):
 
     gluster_args = [
             ('g_estim', 'gluster'),
-            ('g_nclusters', [10, 100]),
+            ('g_nclusters', [2, 10, 100]),
             ('g_debug', ''),
             # ('g_CZ', '')
             # ('g_noMulNk', ''),
@@ -2842,7 +2842,7 @@ def mnist_gvar_optim(args):
     args_4 = [('g_online', ''),
               ('g_osnap_iter', 10),
               ('g_beta', .99),  # 1-lr (the desired learning rate)
-              ('g_min_size', .001),  # 100x diff in probabilities
+              ('g_min_size', .01),  # 100x diff in probabilities
               # ('g_reinit', 'largest')
               ]
     args += [OrderedDict(shared_args+gluster_args+args_4)]
@@ -2905,7 +2905,7 @@ if __name__ == '__main__':
               # 'bolt0_gpu0', 'bolt0_gpu1', 'bolt0_gpu2', 'bolt0_gpu3'
               ]
     # njobs = [3] * 4 + [2] * 4  # validate start.sh
-    njobs = [2]*4
+    njobs = [4]*4
     # njobs = [2, 1, 1, 1]
     jobs = []
     for s, n in zip(jobs_0, njobs):

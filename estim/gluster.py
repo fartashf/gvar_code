@@ -182,4 +182,4 @@ class GlusterOnlineEstimator(GlusterEstimator):
         cluster_size[u, 0] = torch.from_numpy(c).cuda().float()
         self.update_sampler(assign_i, cluster_size)
         self.init_assign = True
-        self.gluster.reset()
+        # self.gluster.reset()

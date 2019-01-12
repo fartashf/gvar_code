@@ -908,5 +908,11 @@ class TestGlusterConvCZ(TestGlusterConv):
         self.kwargs = {'mul_Nk': True, 'add_CZ': True}
 
 
+class TestGlusterMLPRank(TestGlusterMLP):
+    def setUp(self):
+        super(TestGlusterMLPRank, self).setUp()
+        self.kwargs = {'mul_Nk': True, 'rank': 7}
+
+
 if __name__ == '__main__':
     unittest.main()
