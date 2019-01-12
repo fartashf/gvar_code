@@ -36,12 +36,18 @@ class GlusterEstimator(SGDEstimator):
         Nk = cluster_size[ci].flatten()
         N = cluster_size.sum()
 
-        loss = model.criterion(model, data, reduction='none')
+        loss_i = model.criterion(model, data, reduction='none')
         # multiply by the size of the cluster
         w = 1.*M*Nk/N
-        loss = (loss*w).mean()
+        loss = (loss_i*w).mean()
         # print(loss)
         # import ipdb; ipdb.set_trace()
+        if not (loss < 1):
+            print(loss_i)
+            print((loss_i*w).sort())
+            print(Nk[(loss_i*w).sort()[1]])
+            import ipdb
+            ipdb.set_trace()
         if in_place:
             loss.backward()
             return loss
@@ -144,6 +150,7 @@ class GlusterOnlineEstimator(GlusterEstimator):
         tb_logger.log_value('gb_cs', cluster_size[0].item(), step=niters)
         reinits = self.gluster.reinits.sum().item()
         tb_logger.log_value('gb_reinits', reinits, step=niters)
+        # print(self.gluster.cluster_size)
 
     def snap_batch(self, model, niters):
         raw_loader = self.raw_loader
@@ -152,7 +159,8 @@ class GlusterOnlineEstimator(GlusterEstimator):
 
         self.gluster.eval()
         batch_time = Profiler()
-        for batch_idx, (data, target, idx) in enumerate(raw_loader):
+        for batch_idx, data in enumerate(raw_loader):
+            idx = data[2]
             loss = model.criterion(model, data)
             loss.backward()
             ai, batch_dist = self.gluster.em_step()
@@ -174,3 +182,4 @@ class GlusterOnlineEstimator(GlusterEstimator):
         cluster_size[u, 0] = torch.from_numpy(c).cuda().float()
         self.update_sampler(assign_i, cluster_size)
         self.init_assign = True
+        self.gluster.reset()

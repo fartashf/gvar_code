@@ -86,3 +86,7 @@ g_optim: False
 g_optim_start: 1
 g_svd: False
 g_CZ: False
+no_transform: False
+g_init_mul: 1
+g_reinit_iter: 50
+g_optim_max: 10000

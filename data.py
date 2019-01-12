@@ -117,18 +117,16 @@ class IndexedDataset(data.Dataset):
 
 
 def get_mnist_loaders(opt, **kwargs):
-    train_dataset = datasets.MNIST(
-        opt.data, train=True, download=True,
-        transform=transforms.Compose([
+    transform = transforms.ToTensor()
+    if not opt.no_transform:
+        transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize((0.1307,), (0.3081,))
-        ]))
+        ])
+    train_dataset = datasets.MNIST(
+        opt.data, train=True, download=True, transform=transform)
 
-    test_dataset = datasets.MNIST(
-            opt.data, train=False, transform=transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.1307,), (0.3081,))
-            ]))
+    test_dataset = datasets.MNIST(opt.data, train=False, transform=transform)
     return dataset_to_loaders(train_dataset, test_dataset, opt, **kwargs)
 
 
@@ -580,13 +578,24 @@ class GlusterSampler(Sampler):
         if assign_i is None:
             self.assign_i = None
             return
-        self.assign_i = assign_i
-        self.cluster_size = cluster_size
+        # self.assign_i = assign_i
+        # self.cluster_size = cluster_size
+        self.assign_i = np.zeros_like(assign_i)
+        self.cluster_size = torch.zeros_like(cluster_size)
         self.iters = []
+        I0 = []
         for i in range(assign_i.max()+1):
-            I = list(np.where(self.assign_i.flat == i)[0])
-            if len(I) != 0:
+            I = list(np.where(assign_i.flat == i)[0])
+            if len(I) >= 10:
+                self.cluster_size[len(self.iters)] = len(I)
+                self.assign_i[I] = len(self.iters)
                 self.iters += [iter(InfiniteLoader(I))]
+            else:
+                I0 += I
+        if len(I0) > 0:
+            self.cluster_size[len(self.iters)] = len(I0)
+            self.assign_i[I] = len(self.iters)
+            self.iters += [iter(InfiniteLoader(I0))]
 
     def __iter__(self):
         if self.assign_i is None:

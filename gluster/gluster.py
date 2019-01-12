@@ -260,12 +260,22 @@ class GradientClusterBatch(GradientCluster):
 
 class GradientClusterOnline(GradientCluster):
     def __init__(self, model, beta=0.9, min_size=1,
-                 reinit_method='data', **kwargs):
+                 reinit_method='data', init_mul=10,
+                 reinit_iter=10, **kwargs):
         super(GradientClusterOnline, self).__init__(model, **kwargs)
         self.beta = beta  # cluster size decay factor
         self.min_size = min_size
         self.reinit_method = reinit_method  # 'data' or 'largest'
-        self.cluster_size.fill_(self.min_size)
+        self.init_mul = init_mul
+        self.counter = 0
+        self.reinit_iter = reinit_iter
+        self.reset()
+
+    def reset(self, ids=None):
+        if ids is None:
+            self.cluster_size.fill_(self.min_size*self.init_mul)
+        else:
+            self.cluster_size[ids] = self.min_size*self.init_mul
 
     def em_step(self, w=1):
         if self.G.is_active:
@@ -304,6 +314,8 @@ class GradientClusterOnline(GradientCluster):
         # print(list(counts.cpu().numpy().flatten()))
         post_size = counts.mul(1-beta)
         post_ratio = post_size/counts.clamp(1)  # counts.clamp(.0001)
+        # batch_size = assign_i.shape[0]
+        # post_size.div_(batch_size).mul_(60000)
         self.cluster_size.mul_(beta).add_(post_size)  # no *(1-beta)
         # print(counts)
         pre_size = self.cluster_size-post_size
@@ -325,38 +337,45 @@ class GradientClusterOnline(GradientCluster):
         self.G.update_online_beta(pre_size, post_ratio, self.cluster_size,
                                   beta, assign_i.shape[0])
 
-        invalid_clusters = self.reinit(assign_i.shape[0])
+        invalid_clusters = []
+        if self.counter % self.reinit_iter == 0:
+            invalid_clusters = self.reinit(assign_i.shape[0])
+        self.counter += 1
         return invalid_clusters
 
     def update_eta(self, assign_i, batch_dist):
-        # ## Not being used now ###
-        # Not keeping a full internal assignment list
-        # E: update C
-        # E: C_c = mean_i(g_i * I(c==a_i))
-        eta = 1-self.beta
-        counts = torch.zeros(self.nclusters, 1).cuda()
-        counts.scatter_add_(0, assign_i, torch.ones(assign_i.shape).cuda())
-        post_size = counts.mul(eta)
-        self.cluster_size.mul_(1-eta).add_(post_size)
-        eta = counts.mul(eta)/counts.clamp(1)  # after updating cluster size
-        # TODO: this should be indep of batch size?
-        if self.add_GG:
-            td_new = torch.zeros_like(self.total_dist).scatter_add_(
-                    0, assign_i, batch_dist)
-            self.total_dist.mul_(1-eta).add_(td_new.mul_(eta))
-        else:
-            # TODO: reinit largest is not good with no addg
-            # do this to pass TestGlusterMLP.test_more_iters
-            pre_size = self.cluster_size-post_size
-            self.total_dist.mul_(pre_size).scatter_add_(
-                0, assign_i, batch_dist).div_(self.cluster_size)
+        # # Not keeping a full internal assignment list
+        # # E: update C
+        # # E: C_c = mean_i(g_i * I(c==a_i))
+        # # *** Not being used now ****
+        # # *** Not being used now ****
+        # # *** Not being used now ****
+        # # *** Not being used now ****
+        # eta = 1-self.beta
+        # counts = torch.zeros(self.nclusters, 1).cuda()
+        # counts.scatter_add_(0, assign_i, torch.ones(assign_i.shape).cuda())
+        # post_size = counts.mul(eta)
+        # self.cluster_size.mul_(1-eta).add_(post_size)
+        # eta = counts.mul(eta)/counts.clamp(1)  # after updating cluster size
+        # # TODO: this should be indep of batch size?
+        # if self.add_GG:
+        #     td_new = torch.zeros_like(self.total_dist).scatter_add_(
+        #             0, assign_i, batch_dist)
+        #     self.total_dist.mul_(1-eta).add_(td_new.mul_(eta))
+        # else:
+        #     # TODO: reinit largest is not good with no addg
+        #     # do this to pass TestGlusterMLP.test_more_iters
+        #     pre_size = self.cluster_size-post_size
+        #     self.total_dist.mul_(pre_size).scatter_add_(
+        #         0, assign_i, batch_dist).div_(self.cluster_size)
 
-        self.G.zero_new_centers()
-        self.G.accum_new_centers(assign_i)
-        self.G.update_online_eta(eta, counts)
+        # self.G.zero_new_centers()
+        # self.G.accum_new_centers(assign_i)
+        # self.G.update_online_eta(eta, counts)
 
-        invalid_clusters = self.reinit(assign_i.shape[0])
-        return invalid_clusters
+        # invalid_clusters = self.reinit(assign_i.shape[0])
+        # return invalid_clusters
+        pass
 
     def reinit(self, batch_size):
         # Reinit if no data is assigned to the cluster for some time
@@ -388,7 +407,7 @@ class GradientClusterOnline(GradientCluster):
         nreinits = reinits.sum()
         # reinit from data
         perm = torch.randperm(batch_size)[:nreinits]
-        self.cluster_size[reinits] = 1
+        self.reset(reinits)
         self.G.reinit_from_data(reinits, perm)
         invalid_clusters = reinits.cpu().numpy()
         return invalid_clusters

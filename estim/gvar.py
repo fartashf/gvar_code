@@ -29,12 +29,14 @@ class MinVarianceGradient(object):
         self.tb_logger = tb_logger
         self.init_snapshot = False
         self.gest_used = False
+        self.gest_counter = 0
 
     def snap_batch(self, model, niters):
         model.eval()
         # model.train() # TODO: SVRG might have trouble with dropout
         self.gest.snap_batch(model, niters)
         self.init_snapshot = True
+        self.gest_counter = 0
 
     def snap_online(self, model, niters):
         model.eval()  # TODO: keep train
@@ -67,8 +69,11 @@ class MinVarianceGradient(object):
     def grad(self, niters):
         model = self.model
         model.train()
-        if not self.opt.g_optim or niters < self.opt.g_optim_start:
+        use_sgd = not self.opt.g_optim or niters < self.opt.g_optim_start
+        # use_sgd = use_sgd or self.gest_counter >= self.opt.g_optim_max
+        if use_sgd:
             self.gest_used = False
             return self.sgd.grad(model, in_place=True)
         self.gest_used = True
+        self.gest_counter += 1
         return self.gest.grad(model, in_place=True)

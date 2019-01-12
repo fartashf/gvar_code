@@ -206,6 +206,14 @@ def add_args():
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--g_CZ',
                         default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--no_transform',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--g_init_mul',
+                        default=argparse.SUPPRESS, type=float)
+    parser.add_argument('--g_reinit_iter',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--g_optim_max',
+                        default=argparse.SUPPRESS, type=int)
     args = parser.parse_args()
     return args
 
@@ -217,4 +225,6 @@ def opt_to_gluster_kwargs(opt):
             'nclusters': opt.g_nclusters, 'reinit_method': opt.g_reinit,
             'no_grad': opt.g_no_grad, 'active_only': active_only,
             'debug': opt.g_debug, 'mul_Nk': (not opt.g_noMulNk),
-            'do_svd': opt.g_svd, 'add_CZ': opt.g_CZ}
+            'do_svd': opt.g_svd, 'add_CZ': opt.g_CZ,
+            'init_mul': opt.g_init_mul*opt.batch_size,
+            'reinit_iter': opt.g_reinit_iter}

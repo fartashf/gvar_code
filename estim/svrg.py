@@ -20,7 +20,8 @@ class SVRGEstimator(GradientEstimator):
         self.mu = [torch.zeros_like(g) for g in model.parameters()]
         num = 0
         batch_time = Profiler()
-        for batch_idx, (data, target, idx) in enumerate(self.data_loader):
+        for batch_idx, data in enumerate(self.data_loader):
+            idx = data[2]
             num += len(idx)
             loss = model.criterion(model, data, reduction='sum')
             grad_params = torch.autograd.grad(loss, model.parameters())

@@ -6,6 +6,7 @@ import models.logreg
 import models.imagenet
 import models.cifar10_wresnet
 import models.cifar10_wresnet2
+import models.loss
 
 
 def init_model(opt):
@@ -47,6 +48,7 @@ def init_model(opt):
     elif opt.dataset == '5class':
         model = models.logreg.Linear(opt.dim, opt.num_class)
 
+    model.criterion = models.loss.nll_loss
     if opt.cuda:
         model.cuda()
 

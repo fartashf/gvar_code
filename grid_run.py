@@ -2619,6 +2619,236 @@ def mnist_gvar_bs(args):
     return args, log_dir, module_name
 
 
+def cifar10_gvar_cnn_bs(args):
+    dataset = 'cifar10'
+    module_name = 'main.gvar'
+    log_dir = 'runs_%s_gvar_cnn_bs' % dataset
+    # epoch_iters = 390
+    shared_args = [('dataset', dataset),
+                   # ('arch', 'resnet32'),
+                   # ('epochs', [
+                   #     (200, OrderedDict([('lr_decay_epoch', '100,150')])),
+                   #     # (100, OrderedDict([('lr_decay_epoch', '50,75')])),
+                   #     # (200, OrderedDict([('exp_lr', ''),
+                   #     #                    ('lr_decay_epoch', 100)])),
+                   #     # (100, OrderedDict([('exp_lr', ''),
+                   #     #                    ('lr_decay_epoch', 50)])),
+                   # ]),
+                   # ('lr', 0.1),
+                   # ('weight_decay', 1e-4),
+                   ('arch', 'cnn'),
+                   # ('lr', [0.01]),
+                   # ('momentum', [0.9]),
+                   # ('optim', ['adam']),
+                   ('batch_size', [
+                       (32, OrderedDict([
+                           ('lr', .005),
+                           ('gvar_estim_iter', 100),
+                           ('gvar_log_iter', 1000),
+                           ('gvar_start', 10*(50000//32)),
+                           ('g_bsnap_iter', (50000//32))
+                           ])),
+                       # (128, OrderedDict([('lr', .01)])),
+                       (1024, OrderedDict([
+                           ('lr', .05),
+                           ('gvar_estim_iter', 10),
+                           ('gvar_log_iter', 10),
+                           ('gvar_start', 10*(50000//1024)),
+                           ('g_bsnap_iter', 1*(50000//1024))
+                           ])),
+                   ]),
+                   ]
+    shared_args += [
+                    # ('gvar_estim_iter', 10),  # default
+                    # ('gvar_log_iter', 100),  # default
+                    # ('gvar_start', 10*epoch_iters),
+                    # ('g_bsnap_iter', 10*epoch_iters)
+                    # ('gvar_start', 10*epoch_iters),
+                    # ('g_bsnap_iter', 1*epoch_iters)
+                    ]
+    args_sgd = [('g_estim', ['sgd'])]
+    args += [OrderedDict(shared_args+args_sgd)]
+
+    args_svrg = [('g_estim', ['svrg'])]
+    args += [OrderedDict(shared_args+args_svrg)]
+
+    gluster_args = [
+            ('g_estim', 'gluster'),
+            ('g_nclusters', [2, 10, 100]),  # 2
+            # ('g_active_only', ['module.fc2', 'module.fc1,module.fc2']),
+            ('g_debug', '')]
+
+    # args_3 = [('gb_citers', 10),
+    #           ('g_min_size', 100)]
+    # args += [OrderedDict(shared_args+gluster_args+args_3)]
+    args_4 = [('g_online', ''),
+              ('g_osnap_iter', 10),  # [5, 10]),
+              ('g_beta', .99),  # [.9, .99]),  # 1-lr (the desired lr)
+              ('g_min_size', .001),  # 100x diff in probabilities
+              # ('g_reinit', 'largest')
+              ]
+    args += [OrderedDict(shared_args+gluster_args+args_4)]
+    return args, log_dir, module_name
+
+
+def svhn_gvar(args):
+    # Same as cifar10 resnet32
+    dataset = 'svhn'
+    module_name = 'main.gvar'
+    log_dir = 'runs_%s_gvar' % dataset
+    epoch_iters = 604388//128
+    shared_args = [('dataset', dataset),
+                   ('arch', 'resnet32'),
+                   ('epochs', [
+                       (160, OrderedDict([('lr_decay_epoch', '80,120')])),
+                       # (120, OrderedDict([('lr_decay_epoch', '60,90')])),
+                       # (160, OrderedDict([('exp_lr', ''),
+                       #                    ('lr_decay_epoch', 80)])),
+                   ]),
+                   # ('batch_size', [
+                   #     (128, OrderedDict([('lr', .1)])),
+                   #     (1024, OrderedDict([('lr', .5)])),
+                   # ]),
+                   ('weight_decay', 1e-4),
+                   # ('lr', 0.1),
+                   # ('log_nex', ''),
+                   # ('wnoise', [None, '']),
+                   ]
+    shared_args += [
+                    # ('gvar_estim_iter', 10),  # default
+                    # ('gvar_log_iter', 100),  # default
+                    # ('gvar_start', 10*epoch_iters),
+                    # ('g_bsnap_iter', 10*epoch_iters)
+                    ('gvar_start', 10*epoch_iters),
+                    ('g_bsnap_iter', 1*epoch_iters)
+                    ]
+    args_sgd = [('g_estim', ['sgd'])]
+    args += [OrderedDict(shared_args+args_sgd)]
+
+    args_svrg = [('g_estim', ['svrg'])]
+    args += [OrderedDict(shared_args+args_svrg)]
+
+    gluster_args = [
+            ('g_estim', 'gluster'),
+            ('g_nclusters', [2, 10, 100]),  # 2
+            ('g_debug', '')]
+
+    # args_3 = [('gb_citers', 10),
+    #           ('g_min_size', 100)]
+    # args += [OrderedDict(shared_args+gluster_args+args_3)]
+    args_4 = [('g_online', ''),
+              ('g_osnap_iter', 10),  # [5, 10]),
+              ('g_beta', .99),  # [.9, .99]),  # 1-lr (the desired lr)
+              ('g_min_size', .001),  # 100x diff in probabilities
+              # ('g_reinit', 'largest')
+              ]
+    args += [OrderedDict(shared_args+gluster_args+args_4)]
+    return args, log_dir, module_name
+
+
+def imagenet_gvar(args):
+    dataset = 'imagenet'
+    module_name = 'main.gvar'
+    log_dir = 'runs_%s_gvar' % dataset
+    shared_args = [('dataset', dataset),
+                   # ('optim', 'sgd'),  # 'sgd', 'adam'
+                   ('arch', 'resnet18'),
+                   # ('arch', 'resnet34'),
+                   # ('arch', 'resnet50'),
+                   ('batch_size', 128),
+                   # ('test_batch_size', 64),
+                   #  ### pretrained
+                   # ('pretrained', ['']),
+                   # ('epochs', [10]),
+                   # ('lr', [.001]),
+                   # ('lr_decay_epoch', [10]),
+                   # ('exp_lr', [None]),
+                   ]
+    shared_args += [('gvar_estim_iter', 10),  # 100
+                    ('gvar_log_iter', 100),
+                    ('gvar_start', 1000),
+                    ('g_bsnap_iter', 10000)
+                    ]
+    args_sgd = [('g_estim', ['sgd'])]
+    args += [OrderedDict(shared_args+args_sgd)]
+
+    args_svrg = [('g_estim', ['svrg'])]
+    args += [OrderedDict(shared_args+args_svrg)]
+
+    gluster_args = [
+            ('g_estim', 'gluster'),
+            ('g_nclusters', [10, 100]),
+            ('g_debug', '')]
+
+    # args_3 = [('gb_citers', 10)]
+    # args += [OrderedDict(shared_args+snap_args+gluster_args+args_3)]
+    args_4 = [('g_online', ''),
+              ('g_osnap_iter', 10),
+              ('g_beta', .9),  # 1-lr (the desired learning rate)
+              ('g_min_size', 1),  # roughly .1*batch_size/nclusters
+              # ('g_reinit', 'largest')  # default
+              ]
+    args += [OrderedDict(shared_args+gluster_args+args_4)]
+    return args, log_dir, module_name
+
+
+def mnist_gvar_optim(args):
+    dataset = 'mnist'
+    module_name = 'main.gvar'
+    log_dir = 'runs_%s_gvar_optim' % dataset
+    epoch_iters = 60000//128
+    shared_args = [('dataset', dataset),
+                   # ('lr', [.1, .05, .02, .01]),
+                   # ('lr', .02),
+                   ('lr', [.1, .02]),
+                   ('epochs', [
+                       # (100, OrderedDict([('lr_decay_epoch', 100)])),
+                       (30, OrderedDict([('lr_decay_epoch', 30)])),
+                   ]),
+                   # ('exp_lr', ''),
+                   ('arch', ['cnn']),  # , 'mlp'
+                   # ('arch', 'bigcnn', 'ssmlp'),
+                   # ('optim', ['sgd']),
+                   # ('optim', [('sgd', OrderedDict([('lr', .02)])),
+                   #            ('adam', OrderedDict([('lr', .05)]))
+                   #            ]),
+                   # ('log_stats', ''),
+                   ]
+    shared_args += [
+                    # ('gvar_estim_iter', 10),
+                    # ('gvar_log_iter', 100),
+                    ('gvar_start', 2*epoch_iters),
+                    ('g_bsnap_iter', 2*epoch_iters),
+                    ('g_optim', ''),
+                    ('g_optim_start', 4*epoch_iters+1),
+                    ]
+    args_sgd = [('g_estim', ['sgd'])]
+    args += [OrderedDict(shared_args+args_sgd)]
+
+    args_svrg = [('g_estim', ['svrg'])]
+    args += [OrderedDict(shared_args+args_svrg)]
+
+    gluster_args = [
+            ('g_estim', 'gluster'),
+            ('g_nclusters', [10, 100]),
+            ('g_debug', ''),
+            # ('g_CZ', '')
+            # ('g_noMulNk', ''),
+            ]
+
+    # args_3 = [('gb_citers', 10),
+    #           ('g_min_size', 100)]
+    # args += [OrderedDict(shared_args+gluster_args+args_3)]
+    args_4 = [('g_online', ''),
+              ('g_osnap_iter', 10),
+              ('g_beta', .99),  # 1-lr (the desired learning rate)
+              ('g_min_size', .001),  # 100x diff in probabilities
+              # ('g_reinit', 'largest')
+              ]
+    args += [OrderedDict(shared_args+gluster_args+args_4)]
+    return args, log_dir, module_name
+
+
 if __name__ == '__main__':
     args = []
     # module_name ='zerol.main'
@@ -2658,7 +2888,11 @@ if __name__ == '__main__':
     # args, log_dir, module_name = cifar10_gvar_cnn(args)
     # args, log_dir, module_name = mnist_gvar_dup(args)
     # args, log_dir, module_name = imagenet_pretrained_gvar(args)
-    args, log_dir, module_name = mnist_gvar_bs(args)
+    # args, log_dir, module_name = mnist_gvar_bs(args)
+    # args, log_dir, module_name = cifar10_gvar_cnn_bs(args)
+    # args, log_dir, module_name = svhn_gvar(args)
+    # args, log_dir, module_name = imagenet_gvar(args)
+    args, log_dir, module_name = mnist_gvar_optim(args)
     # jobs_0 = ['bolt0_gpu0,1,2,3', 'bolt1_gpu0,1,2,3']
     # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2',
     #           'bolt1_gpu0,1', 'bolt1_gpu2,3',
@@ -2671,8 +2905,8 @@ if __name__ == '__main__':
               # 'bolt0_gpu0', 'bolt0_gpu1', 'bolt0_gpu2', 'bolt0_gpu3'
               ]
     # njobs = [3] * 4 + [2] * 4  # validate start.sh
-    njobs = [3]*4
-    # njobs = [1, 1, 2, 2]
+    njobs = [2]*4
+    # njobs = [2, 1, 1, 1]
     jobs = []
     for s, n in zip(jobs_0, njobs):
         jobs += ['%s_job%d' % (s, i) for i in range(n)]
