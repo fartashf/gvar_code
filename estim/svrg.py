@@ -57,3 +57,13 @@ class SVRGEstimator(GradientEstimator):
             return loss
         ge = [m-go+gn for m, go, gn in zip(self.mu, g_old, g_new)]
         return ge
+
+    def state_dict(self):
+        return {'svrg.mu': [m.cpu() for m in self.mu]}
+
+    def load_state_dict(self, state):
+        if 'svrg.mu' not in state:
+            return
+        mu = state['svrg.mu']
+        for mx, my in zip(mu, self.mu):
+            mx.copy_(my)

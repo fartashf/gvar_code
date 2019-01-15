@@ -3,7 +3,6 @@ import numpy as np
 import logging
 import yaml
 import os
-import glob
 import sys
 
 import torch
@@ -125,6 +124,8 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
             #                     step=niters)
             tb_logger.log_value('loss', loss, step=niters)
             optimizer.logger.tb_log(tb_logger, step=niters)
+        # pretrained_accuracy = opt.half_trained and optimizer.niters == 1
+        # if optimizer.niters % epoch_iters == 0 or pretrained_accuracy:
         if optimizer.niters % epoch_iters == 0:
             if opt.train_accuracy:
                 test(tb_logger,
@@ -132,7 +133,7 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
                      'Train', 'T')
             prec1 = test(tb_logger,
                          model, test_loader, opt, optimizer.niters)
-            save_checkpoint(model, float(prec1), opt, optimizer)
+            save_checkpoint(model, float(prec1), opt, optimizer, gvar=gvar)
             tb_logger.save_log()
 
 
@@ -176,6 +177,7 @@ def main():
     opt.maxiter = opt.epoch_iters * opt.epochs
 
     model = models.init_model(opt)
+    gvar = MinVarianceGradient(model, train_loader, opt, tb_logger)
 
     if opt.optim == 'sgd':
         optimizer = optim.SGD(model.parameters(),
@@ -192,23 +194,23 @@ def main():
     save_checkpoint = utils.SaveCheckpoint()
 
     # optionally resume from a checkpoint
-    model_path = os.path.join(opt.run_dir, opt.ckpt_name)
-    if opt.resume:
-        resume = glob.glob(opt.resume)
-        resume = resume[0] if len(resume) > 0 else opt.resume
+    model_path = os.path.join(opt.resume, opt.ckpt_name)
+    if opt.resume != '':
         if os.path.isfile(model_path):
             print("=> loading checkpoint '{}'".format(model_path))
             checkpoint = torch.load(model_path)
-            epoch = checkpoint['epoch']
-            model.load_state_dict(checkpoint['model'])
             best_prec1 = checkpoint['best_prec1']
-            save_checkpoint.best_prec1 = best_prec1
+            if opt.g_resume:
+                gvar.load_state_dict(checkpoint['gvar'])
+            else:
+                epoch = checkpoint['epoch']
+                model.load_state_dict(checkpoint['model'])
+                save_checkpoint.best_prec1 = best_prec1
             print("=> loaded checkpoint '{}' (epoch {}, best_prec {})"
                   .format(model_path, epoch, best_prec1))
         else:
             print("=> no checkpoint found at '{}'".format(model_path))
 
-    gvar = MinVarianceGradient(model, train_loader, opt, tb_logger)
     while optimizer.niters < opt.epochs*opt.epoch_iters:
         optimizer.epoch = epoch
         if isinstance(opt.lr_decay_epoch, str):

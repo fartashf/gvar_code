@@ -77,3 +77,10 @@ class MinVarianceGradient(object):
         self.gest_used = True
         self.gest_counter += 1
         return self.gest.grad(model, in_place=True)
+
+    def state_dict(self):
+        return self.gest.state_dict()
+
+    def load_state_dict(self, state):
+        self.gest.load_state_dict(state)
+        self.init_snapshot = True

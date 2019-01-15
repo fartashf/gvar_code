@@ -38,7 +38,8 @@ def init_model(opt):
             model = models.cifar10.__dict__[opt.arch]()
         model = torch.nn.DataParallel(model)
     elif opt.dataset == 'imagenet':
-        model = models.imagenet.Model(opt.arch, opt.pretrained)
+        model = models.imagenet.Model(opt.arch, opt.pretrained,
+                                      half_trained=opt.half_trained)
     elif opt.dataset.startswith('imagenet'):
         model = models.imagenet.Model(opt.arch, opt.pretrained, opt.num_class)
     elif opt.dataset == 'logreg':

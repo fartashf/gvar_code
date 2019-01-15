@@ -35,8 +35,8 @@ def dataset_to_loaders(train_dataset, test_dataset, opt):
             train_sampler = DelayedSampler(len(idxdataset), opt)
     else:
         train_sampler = None
-    if opt.g_estim == 'gluster':
-        train_sampler = GlusterSampler(len(idxdataset), opt)
+    # if opt.g_estim == 'gluster':
+    #     train_sampler = GlusterSampler(len(idxdataset), opt)
     train_loader = torch.utils.data.DataLoader(
         idxdataset,
         batch_size=opt.batch_size,
@@ -61,7 +61,10 @@ def get_gluster_loader(train_loader, opt):
     kwargs = {'num_workers': opt.workers,
               'pin_memory': True} if opt.cuda else {}
     idxdataset = train_loader.dataset
-    train_sampler = GlusterSampler(len(idxdataset), opt)
+    if opt.g_imbalance:
+        train_sampler = GlusterImbalanceSampler(len(idxdataset), opt)
+    else:
+        train_sampler = GlusterSampler(len(idxdataset), opt)
     raw_loader = torch.utils.data.DataLoader(
         idxdataset,
         batch_size=opt.batch_size,
@@ -573,6 +576,7 @@ class GlusterSampler(Sampler):
         self.cluster_size = None
         self.iters = None
         self.num_samples = opt.epoch_iters * opt.batch_size
+        self.C = 0
 
     def set_assign_i(self, assign_i=None, cluster_size=None):
         if assign_i is None:
@@ -592,9 +596,10 @@ class GlusterSampler(Sampler):
                 self.iters += [iter(InfiniteLoader(I))]
             else:
                 I0 += I
+        C = len(self.iters)
         if len(I0) > 0:
-            self.cluster_size[len(self.iters)] = len(I0)
-            self.assign_i[I] = len(self.iters)
+            self.cluster_size[C] = len(I0)
+            self.assign_i[I] = C
             self.iters += [iter(InfiniteLoader(I0))]
 
     def __iter__(self):
@@ -607,6 +612,34 @@ class GlusterSampler(Sampler):
         for i in range(self.num_samples):
             idx = next(self.iters[cur_c])
             cur_c = (cur_c+1) % len(self.iters)
+            yield idx
+
+    def __len__(self):
+        if self.assign_i is None:
+            return self.data_size
+        return self.num_samples
+
+
+class GlusterImbalanceSampler(GlusterSampler):
+    def __init__(self, *args):
+        super(GlusterImbalanceSampler, self).__init__(*args)
+
+    def __iter__(self):
+        C = len(self.iters)
+        self.ratios = self.cluster_size[:C] / self.cluster_size[:C].min()
+        if self.assign_i is None:
+            for i in torch.randperm(self.data_size):
+                yield i
+            return
+
+        cur_c = 0
+        cur_j = 0
+        for i in range(self.num_samples):
+            idx = next(self.iters[cur_c])
+            cur_j += 1
+            if cur_j >= self.cluster_size[cur_c]:
+                cur_c = (cur_c+1) % len(self.iters)
+                cur_j = 0
             yield idx
 
     def __len__(self):

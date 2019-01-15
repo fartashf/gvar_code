@@ -914,5 +914,11 @@ class TestGlusterMLPRank(TestGlusterMLP):
         self.kwargs = {'mul_Nk': True, 'rank': 7}
 
 
+class TestGlusterMLPRegNk(TestGlusterMLP):
+    def setUp(self):
+        super(TestGlusterMLPRegNk, self).setUp()
+        self.kwargs = {'mul_Nk': True, 'reg_Nk': 1e-2, 'eps_td': 1}
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -241,7 +241,7 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'gb_td': 'Total distortion of the Gluster objective.',
               'gb_cs': 'Size of Cluster #0',
               'gb_reinits': 'Total number of reinitializations.'}
-    yscale_log = ['Tloss', 'Vloss', 'tau', 'est_var', 'gb_td']
+    yscale_log = ['Tloss', 'Vloss', 'tau']  # , 'est_var', 'gb_td'
     yscale_base = ['tau']
     plot_fs = {'Tacc': plot_f, 'Vacc': plot_f,
                'Terror': plot_f, 'Verror': plot_f,
@@ -313,7 +313,7 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
         else:
             plot_fs[tag_name](
                 data[i][tag_name][0], data[i][tag_name][1],
-                style[(color0 + i) // len(color)],
+                linestyle=style[(color0 + i) // len(color)],
                 color=color[(color0 + i) % len(color)], linewidth=2)
     plt.title(titles[tag_name])
     if tag_name in yscale_log:

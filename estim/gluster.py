@@ -19,11 +19,13 @@ class GlusterEstimator(SGDEstimator):
         self.gluster = None
         self.raw_loader, self.data_loader, self.sampler = get_gluster_loader(
                 self.data_loader, self.opt)
+        self.init_assign = False
         # self.data_iter = iter(InfiniteLoader(self.data_loader))
 
     def update_sampler(self, assign_i, cluster_size):
         self.data_loader.sampler.set_assign_i(assign_i, cluster_size)
         self.data_iter = iter(InfiniteLoader(self.data_loader))
+        self.init_assign = True
 
     def grad(self, model, in_place=False):
         data = next(self.data_iter)
@@ -38,21 +40,33 @@ class GlusterEstimator(SGDEstimator):
 
         loss_i = model.criterion(model, data, reduction='none')
         # multiply by the size of the cluster
-        w = 1.*M*Nk/N
+        if self.opt.g_imbalance:
+            w = 1.*M/N
+        else:
+            w = 1.*M*Nk/N
         loss = (loss_i*w).mean()
         # print(loss)
         # import ipdb; ipdb.set_trace()
-        if not (loss < 1):
-            print(loss_i)
-            print((loss_i*w).sort())
-            print(Nk[(loss_i*w).sort()[1]])
-            import ipdb
-            ipdb.set_trace()
+        # if not (loss < 1):
+        #     print(loss_i)
+        #     print((loss_i*w).sort())
+        #     print(Nk[(loss_i*w).sort()[1]])
+        #     import ipdb
+        #     ipdb.set_trace()
         if in_place:
             loss.backward()
             return loss
         g = torch.autograd.grad(loss, model.parameters())
         return g
+
+    def state_dict(self):
+        return {'gluster.assign_i': self.sampler.assign_i,
+                'gluster.cluster_size': self.sampler.cluster_size}
+
+    def load_state_dict(self, state):
+        assign_i = state['gluster.assign_i']
+        cluster_size = state['gluster.cluster_size']
+        self.update_sampler(assign_i, cluster_size)
 
 
 class GlusterBatchEstimator(GlusterEstimator):
@@ -109,7 +123,6 @@ class GlusterOnlineEstimator(GlusterEstimator):
     def __init__(self, *args, **kwargs):
         super(GlusterOnlineEstimator, self).__init__(*args, **kwargs)
         self.raw_iter = iter(InfiniteLoader(self.raw_loader))
-        self.init_assign = False
 
     def snap_online(self, model, niters):
         tb_logger = self.tb_logger
@@ -181,5 +194,4 @@ class GlusterOnlineEstimator(GlusterEstimator):
         cluster_size = torch.zeros_like(self.gluster.cluster_size)
         cluster_size[u, 0] = torch.from_numpy(c).cuda().float()
         self.update_sampler(assign_i, cluster_size)
-        self.init_assign = True
         # self.gluster.reset()

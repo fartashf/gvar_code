@@ -11,7 +11,7 @@ import time
 class GradientCluster(object):
     def __init__(self, model, nclusters=1, debug=True, mul_Nk=False,
                  add_GG=False, add_CZ=False, eps=1, rank=1, eps_td=1e-7,
-                 **kwargs):
+                 reg_Nk=0, **kwargs):
         # Q: duplicates
         # TODO: challenge: how many C? memory? time?
 
@@ -29,6 +29,7 @@ class GradientCluster(object):
         self.add_CZ = add_CZ
         self.rank = rank
         self.eps_td = eps_td
+        self.reg_Nk = reg_Nk
 
         self.G = GlusterContainer(
                 model, eps, nclusters, debug=debug,
@@ -97,7 +98,9 @@ class GradientCluster(object):
             # TODO: TestGlusterMLPCZ.test_toy_batch distortion goes up
             # one cluster hasn't converged
             total_dist += CZd.mul(cs).mul(cs)
-        # total_dist = (total_dist/self.eps_td).round()*self.eps_td
+        if self.reg_Nk > 0:
+            total_dist += self.reg_Nk*cs
+        total_dist = (total_dist/self.eps_td).round()*self.eps_td
         # print(total_dist)
         return total_dist, GG
 

@@ -17,7 +17,7 @@ class SaveCheckpoint(object):
         self.best_prec1 = 0
 
     def __call__(self, model, prec1, opt, optimizer,
-                 filename='checkpoint.pth.tar'):
+                 filename='checkpoint.pth.tar', gvar=None):
         is_best = prec1 > self.best_prec1
         self.best_prec1 = max(prec1, self.best_prec1)
         state = {
@@ -38,6 +38,8 @@ class SaveCheckpoint(object):
                     'fnorm': optimizer.fnorm,
                     'normg': optimizer.grad_norm
                 })
+        if gvar is not None:
+            state.update({'gvar': gvar.state_dict()})
 
         torch.save(state, opt.logger_name+'/'+filename)
         if is_best:

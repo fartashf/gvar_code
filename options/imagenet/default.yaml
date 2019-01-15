@@ -85,3 +85,5 @@ no_transform: False
 g_init_mul: 1
 g_reinit_iter: 50
 g_optim_max: 10000
+g_reg_Nk: 0
+g_imbalance: False

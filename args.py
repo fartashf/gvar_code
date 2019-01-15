@@ -214,6 +214,14 @@ def add_args():
                         default=argparse.SUPPRESS, type=int)
     parser.add_argument('--g_optim_max',
                         default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--g_reg_Nk',
+                        default=argparse.SUPPRESS, type=float)
+    parser.add_argument('--g_imbalance',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--half_trained',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--g_resume',
+                        default=argparse.SUPPRESS, action='store_true')
     args = parser.parse_args()
     return args
 
@@ -227,4 +235,5 @@ def opt_to_gluster_kwargs(opt):
             'debug': opt.g_debug, 'mul_Nk': (not opt.g_noMulNk),
             'do_svd': opt.g_svd, 'add_CZ': opt.g_CZ,
             'init_mul': opt.g_init_mul*opt.batch_size,
-            'reinit_iter': opt.g_reinit_iter}
+            'reinit_iter': opt.g_reinit_iter,
+            'reg_Nk': opt.g_reg_Nk}
