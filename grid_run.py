@@ -3006,7 +3006,7 @@ def cifar10_gvar_resnet_bs_optim(args):
             # ('g_active_only', ['module.fc2', 'module.fc1,module.fc2']),
             ('g_debug', '')]
 
-    args_3 = [('gb_citers', 5),
+    args_3 = [('gb_citers', 10),
               ('g_min_size', 100),
               ('gvar_start', 101),
               ('g_bsnap_iter', 20),  # citers*4*bsnap_svrg

@@ -407,7 +407,8 @@ class GlusterLinear(GlusterModule):
             Cov = Co.view(-1, K, Co.shape[-1])
             CiCi = torch.einsum('cki,cli->ckl', [Civ, Civ])
             CoCo = torch.einsum('cko,clo->ckl', [Cov, Cov])
-            CC = torch.einsum('ckl,ckl->c', [CiCi, CoCo]).unsqueeze(-1)
+            CC = (CiCi*CoCo).sum(-1).sum(-1).unsqueeze(-1)
+            # CC = torch.einsum('ckl,ckl->c', [CiCi, CoCo]).unsqueeze(-1)
             assert CC.shape == (C/K, 1), 'CC: C/K x 1.'
         GG = torch.tensor(0)
         if self.add_GG:
@@ -420,8 +421,10 @@ class GlusterLinear(GlusterModule):
             # 1e-4 change in Ai and 1e-2 change in Go
             # test_mnist_batch
             # pow(2) is the worst
-            AiAi = torch.einsum('bi,bi->b', [Ai, Ai])
-            GoGo = torch.einsum('bo,bo->b', [Go, Go])
+            # AiAi = torch.einsum('bi,bi->b', [Ai, Ai])
+            # GoGo = torch.einsum('bo,bo->b', [Go, Go])
+            AiAi = (Ai*Ai).sum(-1)
+            GoGo = (Go*Go).sum(-1)
             GG = (AiAi*GoGo).view(1, -1)
             # type2
             # Gw = torch.einsum('bi,bo->bio', [Ai, Go])
@@ -658,12 +661,15 @@ class GlusterConv(GlusterModule):
     def _gnorm_type1(self, Ai, Go):
         AiAi = torch.einsum('bis,bit->bst', [Ai, Ai])
         GoGo = torch.einsum('bos,bot->bst', [Go, Go])
-        GG = torch.einsum('bst,bst->b', [AiAi, GoGo])
+        # GG = torch.einsum('bst,bst->b', [AiAi, GoGo])
+        GG = (AiAi*GoGo).sum(-1).sum(-1)
         return GG
 
     def _gnorm_type2(self, Ai, Go):
         AiGo = torch.einsum('bit,bot->bio', [Ai, Go])
-        GG = torch.einsum('bio,bio->b', [AiGo, AiGo])
+        # TODO: why?!!!!
+        # GG = torch.einsum('bio,bio->b', [AiGo, AiGo])
+        GG = (AiGo*AiGo).sum(-1).sum(-1)
         return GG
 
     def reinit_from_data(self, reinits, perm):
