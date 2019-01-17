@@ -26,6 +26,10 @@ class GlusterEstimator(SGDEstimator):
         self.data_loader.sampler.set_assign_i(assign_i, cluster_size)
         self.data_iter = iter(InfiniteLoader(self.data_loader))
         self.init_assign = True
+        logging.info('Sampler cluster sizes:')
+        logging.info(self.sampler.C)
+        cs = self.sampler.cluster_size[:self.sampler.C].cpu().numpy().flatten()
+        logging.info(list(np.sort(cs)))
 
     def grad(self, model, in_place=False):
         data = next(self.data_iter)
@@ -90,27 +94,27 @@ class GlusterBatchEstimator(GlusterEstimator):
         opt = self.opt
         citers = opt.gb_citers
         # TODO: refactor this
-        nclusters = self.gluster.nclusters
+        # nclusters = self.gluster.nclusters
         for i in range(citers):
             stat = self.gluster.update_batch(
                     self.raw_loader, len(self.raw_loader.dataset),
-                    ci=i, citers=citers)
-            normC = self.gluster.get_center_norms()
-            total_dist, assign_i, target_i, pred_i, loss_i, topk_i, GG_i = stat
-            correct = topk_i[:, 0]
-            ls = np.zeros(nclusters)
-            acc = np.zeros(nclusters)
-            cs = np.zeros(nclusters)
-            for c in range(nclusters):
-                idx, _ = np.where(assign_i == c)
-                ls[c] = loss_i[idx].sum()/max(1, len(idx))
-                acc[c] = (correct[idx]*100.).mean()
-                cs[c] = len(idx)
-            tb_logger.log_vector('gb_norm', normC)
-            tb_logger.log_vector('gb_size', cs)
-            tb_logger.log_vector('gb_loss', ls)
-            tb_logger.log_vector('gb_acc', acc)
-            tb_logger.log_vector('gb_td_i', total_dist)
+                    ci=i, citers=citers, do_log=False)
+            # normC = self.gluster.get_center_norms()
+            total_dist, assign_i = stat[0], stat[1]
+            # correct = topk_i[:, 0]
+            # ls = np.zeros(nclusters)
+            # acc = np.zeros(nclusters)
+            # cs = np.zeros(nclusters)
+            # for c in range(nclusters):
+            #     idx, _ = np.where(assign_i == c)
+            #     ls[c] = loss_i[idx].sum()/max(1, len(idx))
+            #     acc[c] = (correct[idx]*100.).mean()
+            #     cs[c] = len(idx)
+            # tb_logger.log_vector('gb_norm', normC)
+            # tb_logger.log_vector('gb_size', cs)
+            # tb_logger.log_vector('gb_loss', ls)
+            # tb_logger.log_vector('gb_acc', acc)
+            # tb_logger.log_vector('gb_td_i', total_dist)
         cluster_size = self.gluster.cluster_size
         self.gluster.print_stats()
         assign_i = stat[1]

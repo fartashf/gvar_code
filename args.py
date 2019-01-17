@@ -180,6 +180,7 @@ def add_args():
     parser.add_argument('--ckpt_name', default='model_best.pth.tar')
     parser.add_argument('--g_no_grad', action='store_true')
     parser.add_argument('--g_active_only', default='')
+    parser.add_argument('--g_inactive_mods', default='')
     parser.add_argument('--g_online', action='store_true')
     parser.add_argument('--g_estim', default=argparse.SUPPRESS, type=str)
     parser.add_argument('--epoch_iters',
@@ -222,6 +223,8 @@ def add_args():
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--g_resume',
                         default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--g_epoch',
+                        default=argparse.SUPPRESS, action='store_true')
     args = parser.parse_args()
     return args
 
@@ -232,6 +235,7 @@ def opt_to_gluster_kwargs(opt):
     return {'beta': opt.g_beta, 'min_size': opt.g_min_size,
             'nclusters': opt.g_nclusters, 'reinit_method': opt.g_reinit,
             'no_grad': opt.g_no_grad, 'active_only': active_only,
+            'inactive_mods': opt.g_inactive_mods,
             'debug': opt.g_debug, 'mul_Nk': (not opt.g_noMulNk),
             'do_svd': opt.g_svd, 'add_CZ': opt.g_CZ,
             'init_mul': opt.g_init_mul*opt.batch_size,

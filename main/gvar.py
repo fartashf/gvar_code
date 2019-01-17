@@ -60,7 +60,7 @@ def test(tb_logger, model, test_loader,
 
 def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
           save_checkpoint, train_test_loader, gvar):
-    batch_time = Profiler(k=100)
+    batch_time = Profiler()
     model.train()
     profiler = Profiler()
     epoch_iters = int(np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
@@ -175,6 +175,10 @@ def main():
         opt.epoch_iters = int(
                 np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
     opt.maxiter = opt.epoch_iters * opt.epochs
+    if opt.g_epoch:
+        opt.gvar_start *= opt.epoch_iters
+        opt.g_bsnap_iter *= opt.epoch_iters
+        opt.g_optim_start *= opt.epoch_iters+1
 
     model = models.init_model(opt)
     gvar = MinVarianceGradient(model, train_loader, opt, tb_logger)

@@ -126,20 +126,23 @@ class AverageMeter(object):
 class TimeMeter(object):
     """Store last K times"""
 
-    def __init__(self, k=10):
+    def __init__(self, k=1000):
         self.k = k
         self.reset()
 
     def reset(self):
         self.vals = [0]*self.k
         self.i = 0
+        self.mu = 0
 
     def update(self, val):
         self.vals[self.i] = val
         self.i = (self.i + 1) % self.k
+        self.mu = (1-1./self.k)*self.mu+(1./self.k)*val
 
     def __str__(self):
-        return '%.4f +- %.2f' % (np.mean(self.vals), np.std(self.vals))
+        # return '%.4f +- %.2f' % (np.mean(self.vals), np.std(self.vals))
+        return '%.4f +- %.2f' % (self.mu, np.std(self.vals))
 
     def tb_log(self, tb_logger, name, step=None):
         tb_logger.log_value(name, self.vals[0], step=step)

@@ -106,6 +106,13 @@ class GlusterModule(object):
             # Go = self.Go
             # print('%s %s' % (Ai.shape, Ai.shape))
             O = []
+            # self.batch_dist = [(
+            #     torch.zeros(self.nclusters, 1).cuda(),
+            #     torch.zeros(self.nclusters, grad_output[0].shape[0]).cuda(),
+            #     torch.zeros(1, grad_output[0].shape[0]).cuda(),
+            #     torch.zeros(self.nclusters, grad_output[0].shape[0]).cuda(),
+            #     )]
+            # return
             # s = 0
             if self.has_bias:
                 O += [self._save_dist_hook_bias(Ai, Go)]

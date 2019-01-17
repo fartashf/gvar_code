@@ -243,6 +243,7 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'gb_reinits': 'Total number of reinitializations.'}
     yscale_log = ['Tloss', 'Vloss', 'tau']  # , 'est_var', 'gb_td'
     yscale_base = ['tau']
+    # yscale_sci = ['est_bias', 'est_var', 'gb_td']
     plot_fs = {'Tacc': plot_f, 'Vacc': plot_f,
                'Terror': plot_f, 'Verror': plot_f,
                'Tloss': plot_f, 'Vloss': plot_f,
@@ -323,6 +324,9 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
             ax.yaxis.set_major_formatter(mtick.FuncFormatter(ticks))
         else:
             ax.set_yscale('log')
+    else:
+        ax = plt.gca()
+        ax.ticklabel_format(axis='y', style='sci', scilimits=(-3, 3))
     if ylim is not None:
         plt.ylim(ylim)
     # plt.xlim([0, 25000])
@@ -361,7 +365,7 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
         fig = plt.figure(figsize=(7 * width, 4 * height))
         fig.subplots(height, width)
     else:
-        plt.figure(figsize=(9, 4))
+        plt.figure(figsize=(7, 4))
     plt.tight_layout(pad=1., w_pad=3., h_pad=3.0)
     fi = 1
     if save_single:
@@ -382,9 +386,9 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
                          tag_names[i], lg_tags, yl, color0=j, ncolor=ncolor,
                          lg_replace=lg_replace)
                 if save_single:
-                    plt.savefig('%s/%d.png' % (fig_dir, fi),
+                    plt.savefig('%s/%s.png' % (fig_dir, tag_names[i]),
                                 dpi=100, bbox_inches='tight')
-                    plt.figure(figsize=(9, 4))
+                    plt.figure(figsize=(7, 4))
                 fi += 1
         else:
             if not isinstance(yl, list) and yl is not None:
@@ -394,9 +398,9 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
             plot_tag(data, plot_f, run_names, tag_names[i], lg_tags, yl,
                      ncolor=ncolor, lg_replace=lg_replace)
             if save_single:
-                plt.savefig('%s/%d.png' % (fig_dir, fi),
+                plt.savefig('%s/%s.png' % (fig_dir, tag_names[i]),
                             dpi=100, bbox_inches='tight')
-                plt.figure(figsize=(9, 4))
+                plt.figure(figsize=(7, 4))
             fi += 1
     plt.savefig(fig_name, dpi=100, bbox_inches='tight')
     return data, run_names

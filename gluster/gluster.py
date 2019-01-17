@@ -4,8 +4,7 @@ from torch.autograd import Variable
 import numpy as np
 from .layer import GlusterContainer
 import logging
-from log_utils import AverageMeter
-import time
+from log_utils import Profiler
 
 
 class GradientCluster(object):
@@ -128,16 +127,22 @@ class GradientClusterBatch(GradientCluster):
             self.cluster_size.add_(counts)
         return assign_i, batch_dist, GG
 
-    def update_batch(self, data_loader, train_size, ci=0, citers=0):
+    def update_batch(self, data_loader, train_size, ci=0, citers=0,
+                     do_log=True):
+        # resnet32
+        # total: .28s (both assign and update)
+        # train: .03s
+        # save_dist_hook: .25s, post_proc: .05s, GG: .18s
         model = self.model
         model.eval()
         device = self.device
         assign_i = torch.zeros(train_size, 1).long().to(device)
-        pred_i = np.zeros(train_size)
-        loss_i = np.zeros(train_size)
-        target_i = np.zeros(train_size)
-        GG_i = np.zeros(train_size)
-        topk_i = np.zeros((train_size, 2))
+        if do_log:
+            pred_i = np.zeros(train_size)
+            loss_i = np.zeros(train_size)
+            target_i = np.zeros(train_size)
+            GG_i = np.zeros(train_size)
+            topk_i = np.zeros((train_size, 2))
         total_dist = torch.zeros(self.nclusters, 1).to(device)
         self.cluster_size.fill_(0)
 
@@ -145,28 +150,23 @@ class GradientClusterBatch(GradientCluster):
             logging.info(
                     'Gluster batch> Save distortions'
                     ' and assign data to clusters.')
-        batch_time = AverageMeter()
-        end = time.time()
+        batch_time = Profiler()
         for batch_idx, (data, target, idx) in enumerate(data_loader):
-            # if batch_idx < 690:
-            #     continue
-            # if batch_idx > 700:
-            #     break
-            data, target = Variable(data), Variable(target)
             data, target = data.to(device), target.to(device)
             model.zero_grad()
-            # self.zero_data()
             output = self.model(data)
-            pred_i[idx] = output.max(1, keepdim=True)[1].cpu().numpy()[:, 0]
-            if output.shape[1] >= 5:
-                _, pred = output.topk(5, 1, True, True)
-                pred = pred.t()
-                correct = pred.eq(target.view(1, -1).expand_as(pred))
-                topk_i[idx, 0] = correct[:1].float().sum(0).cpu().numpy()
-                topk_i[idx, 1] = correct.float().sum(0).cpu().numpy()
-            target_i[idx] = target.cpu().numpy()
             loss = F.nll_loss(output, target, reduction='none')
-            loss_i[idx] = loss.detach().cpu().numpy()
+            if do_log:
+                pred_i[idx] = output.max(
+                        1, keepdim=True)[1].cpu().numpy()[:, 0]
+                if output.shape[1] >= 5:
+                    _, pred = output.topk(5, 1, True, True)
+                    pred = pred.t()
+                    correct = pred.eq(target.view(1, -1).expand_as(pred))
+                    topk_i[idx, 0] = correct[:1].float().sum(0).cpu().numpy()
+                    topk_i[idx, 1] = correct.float().sum(0).cpu().numpy()
+                target_i[idx] = target.cpu().numpy()
+                loss_i[idx] = loss.detach().cpu().numpy()
             loss = loss.mean()
             loss.backward()
             # from log_utils import get_all_tensors, get_memory
@@ -177,21 +177,21 @@ class GradientClusterBatch(GradientCluster):
             assert batch_dist.max() < 1e10 and batch_dist.min() > -1e10,\
                 'Distortion out of bounds'
             assign_i[idx] = ai
-            GG_i[idx] = gg.cpu().numpy()
+            if do_log:
+                GG_i[idx] = gg.cpu().numpy()
             total_dist.scatter_add_(0, ai, batch_dist)
-            batch_time.update(time.time() - end)
-            end = time.time()
+            batch_time.toc('Time')
+            batch_time.end()
             if batch_idx % 10 == 0:
                 if self.debug:
                     logging.info(
                             'Gluster> [{0}/{3}][Assign:0/2][{1}/{2}]\t'
                             'Loss: {loss:.6f}\t'
-                            'Time: {batch_time.val: .3f}'
-                            '({batch_time.avg:.3f})'.format(
+                            '{batch_time}'.format(
                                 ci, batch_idx, len(data_loader), citers,
                                 loss=loss.item(),
-                                batch_time=batch_time))
-                torch.cuda.empty_cache()
+                                batch_time=str(batch_time)))
+                # torch.cuda.empty_cache()
                 # import gc
                 # gc.collect()
         if not self.add_GG:
@@ -226,17 +226,11 @@ class GradientClusterBatch(GradientCluster):
                     'Update cluster centers given the assignments')
         # self._init_centers(0)
         self.G.zero_new_centers()
-        batch_time = AverageMeter()
-        end = time.time()
+        batch_time = Profiler()
         for batch_idx, (data, target, idx) in enumerate(data_loader):
-            # if batch_idx < 690:
-            #     continue
-            # if batch_idx > 20:
-            #     break
             data, target = Variable(data), Variable(target)
             data, target = data.to(device), target.to(device)
             model.zero_grad()
-            # self.zero_data()
             output = self.model(data)
             loss = F.nll_loss(output, target)
             loss.backward()
@@ -244,28 +238,29 @@ class GradientClusterBatch(GradientCluster):
             self.assign()
             # assign_i[idx], _ = self.assign()  # recompute A, G
             self.G.accum_new_centers(assign_i[idx])
-            batch_time.update(time.time() - end)
-            end = time.time()
+            batch_time.toc('Time')
+            batch_time.end()
             if batch_idx % 10 == 0:
                 if self.debug:
                     logging.info(
                             'Gluster> [{0}/{3}][Update:1/2][{1}/{2}]\t'
                             'Loss: {loss:.6f}\t'
-                            'Time: {batch_time.val: .3f}'
-                            '({batch_time.avg:.3f})'.format(
+                            '{batch_time}'.format(
                                 ci, batch_idx, len(data_loader), citers,
                                 loss=loss.item(),
-                                batch_time=batch_time))
-                torch.cuda.empty_cache()
+                                batch_time=str(batch_time)))
+                # torch.cuda.empty_cache()
 
         self.cluster_size.fill_(0)
         self.cluster_size.scatter_add_(0, assign_i,
                                        torch.ones_like(assign_i).float())
         self.G.update_batch(self.cluster_size)
         # td before E step, we have to do another loop for td after E step
-        return (
-                td, assign_i.cpu().numpy(), target_i, pred_i, loss_i, topk_i,
-                GG_i)
+        if do_log:
+            return (
+                    td, assign_i.cpu().numpy(),
+                    target_i, pred_i, loss_i, topk_i, GG_i)
+        return td, assign_i.cpu().numpy()
 
 
 class GradientClusterOnline(GradientCluster):

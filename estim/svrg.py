@@ -14,6 +14,7 @@ class SVRGEstimator(GradientEstimator):
     def __init__(self, *args, **kwargs):
         super(SVRGEstimator, self).__init__(*args, **kwargs)
         self.data_iter = iter(InfiniteLoader(self.data_loader))
+        self.mu = []
 
     def snap_batch(self, model, niters):
         self.model = model = copy.deepcopy(model)

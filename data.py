@@ -601,6 +601,8 @@ class GlusterSampler(Sampler):
             self.cluster_size[C] = len(I0)
             self.assign_i[I] = C
             self.iters += [iter(InfiniteLoader(I0))]
+            C += 1
+        self.C = C
 
     def __iter__(self):
         if self.assign_i is None:

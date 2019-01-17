@@ -92,3 +92,4 @@ g_reinit_iter: 50
 g_optim_max: 10000
 g_reg_Nk: 0
 g_imbalance: False
+g_epoch: False
