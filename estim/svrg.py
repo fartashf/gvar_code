@@ -17,6 +17,7 @@ class SVRGEstimator(GradientEstimator):
         self.mu = []
 
     def snap_batch(self, model, niters):
+        model.eval()  # SVRG's trouble with dropout/batchnorm/data aug
         self.model = model = copy.deepcopy(model)
         self.mu = [torch.zeros_like(g) for g in model.parameters()]
         num = 0

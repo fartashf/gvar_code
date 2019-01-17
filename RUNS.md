@@ -1,3 +1,9 @@
+## Jan 17
+
+```
+CUDA_VISIBLE_DEVICES=0 python -m main.gvar --dataset mnist --arch cnn --lr 0.01 --gvar_start 0 --g_bsnap_iter 100000 --g_optim  --g_optim_start 1 --g_estim gluster --g_nclusters 10 --g_debug  --g_online  --g_osnap_iter 10 --g_beta 0.99 --g_min_size 0.001 --logger_name runs/Y --resume runs/X --ckpt_name checkpoint.pth.tar --g_resume
+```
+
 ## Dec 26
 gvar
 ```

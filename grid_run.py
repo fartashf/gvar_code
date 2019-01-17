@@ -2961,12 +2961,14 @@ def cifar10_gvar_resnet_bs_optim(args):
                        #     ('g_bsnap_iter', (50000//32))
                        #     ])),
                        (32, OrderedDict([
-                           ('lr', [.05, .02, .01]),
+                           # ('lr', [.05, .02, .01]),
+                           ('lr', [.05]),
                            ('gvar_estim_iter', 10),
                            ('gvar_log_iter', 2000),
                            ])),
                        (64, OrderedDict([
-                           ('lr', [.1, .05, .02]),
+                           # ('lr', [.1, .05, .02]),
+                           ('lr', [.05]),
                            ('gvar_estim_iter', 10),
                            ('gvar_log_iter', 2000),
                            ])),
@@ -3002,16 +3004,16 @@ def cifar10_gvar_resnet_bs_optim(args):
 
     gluster_args = [
             ('g_estim', 'gluster'),
-            ('g_nclusters', [10, 100]),  # 2
+            ('g_nclusters', [32, 64]),  # [10, 100]),  # 2
             # ('g_active_only', ['module.fc2', 'module.fc1,module.fc2']),
             ('g_debug', '')]
 
-    args_3 = [('gb_citers', 10),
+    args_3 = [('gb_citers', 5),
               ('g_min_size', 100),
-              ('gvar_start', 101),
-              ('g_bsnap_iter', 20),  # citers*4*bsnap_svrg
+              ('gvar_start', 2),
+              ('g_bsnap_iter', 10),  # citers*4*bsnap_svrg
               ('g_optim', ''),
-              ('g_optim_start', 101),
+              ('g_optim_start', 2),
               ('g_epoch', ''),
               ]
     args += [OrderedDict(shared_args+gluster_args+args_3)]
@@ -3135,7 +3137,7 @@ if __name__ == '__main__':
               # 'bolt0_gpu0', 'bolt0_gpu1', 'bolt0_gpu2', 'bolt0_gpu3'
               ]
     # njobs = [3] * 4 + [2] * 4  # validate start.sh
-    njobs = [3]*4
+    njobs = [1]*4
     # njobs = [3, 3, 1, 1]
     jobs = []
     for s, n in zip(jobs_0, njobs):
@@ -3143,7 +3145,7 @@ if __name__ == '__main__':
         # jobs += ['%s_job%d' % (s, i) for s in jobs_0]
 
     run_single = RunSingle(log_dir, module_name, exclude)
-    run_single.num = 24
+    run_single.num = 8
 
     # args = OrderedDict([('lr', [1, 2]), ('batch_size', [10, 20])])
     # args = OrderedDict([('lr', [(1, OrderedDict([('batch_size', [10])])),

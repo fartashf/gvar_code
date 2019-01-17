@@ -666,7 +666,9 @@ class GlusterConv(GlusterModule):
         return GG
 
     def _gnorm_type2(self, Ai, Go):
+        # return Ai[:, 0, 0]*0+1
         AiGo = torch.einsum('bit,bot->bio', [Ai, Go])
+        # return AiGo[:, 0, 0]*0+1
         # TODO: why?!!!!
         # GG = torch.einsum('bio,bio->b', [AiGo, AiGo])
         GG = (AiGo*AiGo).sum(-1).sum(-1)

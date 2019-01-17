@@ -32,14 +32,15 @@ class MinVarianceGradient(object):
         self.gest_counter = 0
 
     def snap_batch(self, model, niters):
-        model.eval()
-        # model.train() # TODO: SVRG might have trouble with dropout
+        # model.eval()  # done inside SVRG
+        model.train()
         self.gest.snap_batch(model, niters)
         self.init_snapshot = True
         self.gest_counter = 0
 
     def snap_online(self, model, niters):
-        model.eval()  # TODO: keep train
+        # model.eval()  # TODO: keep train
+        model.train()
         self.gest.snap_online(model, niters)
 
     def log_var(self, model, niters):
