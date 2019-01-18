@@ -70,6 +70,9 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
         profiler.start()
         # sgd step
         optimizer.zero_grad()
+        # if optimizer.niters == 1050:
+        #     print('Sampler repermuted')
+        #     gvar.gest.init_data_iter()
         loss = gvar.grad(optimizer.niters)
         optimizer.step()
         optimizer.niters += 1

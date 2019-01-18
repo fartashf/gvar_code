@@ -24,7 +24,7 @@ class GlusterEstimator(SGDEstimator):
 
     def update_sampler(self, assign_i, cluster_size):
         self.data_loader.sampler.set_assign_i(assign_i, cluster_size)
-        self.data_iter = iter(InfiniteLoader(self.data_loader))
+        self.init_data_iter()
         self.init_assign = True
         logging.info('Sampler cluster sizes:')
         logging.info(self.sampler.C)
@@ -42,6 +42,11 @@ class GlusterEstimator(SGDEstimator):
         Nk = cluster_size[ci].flatten()
         N = cluster_size.sum()
 
+        # C = self.sampler.C
+        # ci = ci[:C]
+        # Nk = Nk[:C]
+        # data[0], data[1], data[2] = data[0][:C], data[1][:C], data[2][:C]
+
         loss_i = model.criterion(model, data, reduction='none')
         # multiply by the size of the cluster
         if self.opt.g_imbalance:
@@ -49,9 +54,9 @@ class GlusterEstimator(SGDEstimator):
         else:
             w = 1.*M*Nk/N
         loss = (loss_i*w).mean()
-        # print(loss)
+        # print(loss.item())
         # import ipdb; ipdb.set_trace()
-        # if not (loss < 1):
+        # if loss > 0.05:
         #     print(loss_i)
         #     print((loss_i*w).sort())
         #     print(Nk[(loss_i*w).sort()[1]])

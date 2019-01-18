@@ -6,14 +6,13 @@ import torch.nn
 import torch.multiprocessing
 
 from log_utils import Profiler
-from data import InfiniteLoader
 from .gestim import GradientEstimator
 
 
 class SVRGEstimator(GradientEstimator):
     def __init__(self, *args, **kwargs):
         super(SVRGEstimator, self).__init__(*args, **kwargs)
-        self.data_iter = iter(InfiniteLoader(self.data_loader))
+        self.init_data_iter()
         self.mu = []
 
     def snap_batch(self, model, niters):

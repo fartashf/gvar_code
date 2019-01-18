@@ -22,11 +22,14 @@ class GradientEstimator(object):
     def grad(self, model_new, in_place=False):
         raise NotImplemented('grad not implemented')
 
+    def grad_estim(self, model_new):
+        raise NotImplemented('grad_estim not implemented')
+
     def get_Ege_var(self, model, gviter):
         # estimate grad mean and variance
         Ege = [torch.zeros_like(g) for g in model.parameters()]
         for i in range(gviter):
-            ge = self.grad(model)
+            ge = self.grad_estim(model)
             for e, g in zip(Ege, ge):
                 e += g
 
@@ -37,7 +40,7 @@ class GradientEstimator(object):
         Es = [torch.zeros_like(g) for g in model.parameters()]
         En = [torch.zeros_like(g) for g in model.parameters()]
         for i in range(gviter):
-            ge = self.grad(model)
+            ge = self.grad_estim(model)
             # TODO: is variance important?
             v = sum([(gg-ee).pow(2).sum() for ee, gg in zip(Ege, ge)])
             for s, e, g, n in zip(Es, Ege, ge, En):

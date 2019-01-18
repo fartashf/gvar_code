@@ -599,7 +599,7 @@ class GlusterSampler(Sampler):
         C = len(self.iters)
         if len(I0) > 0:
             self.cluster_size[C] = len(I0)
-            self.assign_i[I] = C
+            self.assign_i[I0] = C
             self.iters += [iter(InfiniteLoader(I0))]
             C += 1
         self.C = C
@@ -636,10 +636,15 @@ class GlusterImbalanceSampler(GlusterSampler):
 
         cur_c = 0
         cur_j = 0
+        # cc = 0
         for i in range(self.num_samples):
+            # if cur_c == 0:
+            #     cperm = torch.randperm(C)
+            # cur_c = cperm[cc]
             idx = next(self.iters[cur_c])
             cur_j += 1
             if cur_j >= self.cluster_size[cur_c]:
+                # cc = (cc+1) % len(self.iters)
                 cur_c = (cur_c+1) % len(self.iters)
                 cur_j = 0
             yield idx
