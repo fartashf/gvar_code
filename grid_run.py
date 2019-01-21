@@ -2937,7 +2937,8 @@ def cifar10_gvar_resnet_bs_optim(args):
                'g_epoch']
     # epoch_iters = 390
     shared_args = [('dataset', dataset),
-                   ('arch', 'resnet32'),
+                   # ('arch', 'resnet32'),
+                   ('arch', 'resnet20'),
                    ('epochs', [
                        (200, OrderedDict([('lr_decay_epoch', '100,150')])),
                        # (100, OrderedDict([('lr_decay_epoch', '50,75')])),
@@ -2987,17 +2988,22 @@ def cifar10_gvar_resnet_bs_optim(args):
                        #     ])),
                    ]),
                    ]
-    # gvar_args = [
-    #               # ('gvar_estim_iter', 10),  # default
-    #               # ('gvar_log_iter', 100),  # default
-    #               ('gvar_start', 101),
-    #               ('g_bsnap_iter', 1),
-    #               ('g_optim', ''),
-    #               ('g_optim_start', 101),
-    #               ('g_epoch', ''),
-    #               ]
-    # args_sgd = [('g_estim', ['sgd'])]
-    # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
+    gvar_args = [
+                  # ('gvar_estim_iter', 10),  # default
+                  # ('gvar_log_iter', 100),  # default
+                  # ('gvar_start', 101),
+                  # ('g_bsnap_iter', 1),
+                  # ('g_optim', ''),
+                  # ('g_optim_start', 101),
+                  # ('g_epoch', ''),
+                  ('gvar_start', 2),
+                  ('g_bsnap_iter', 2),
+                  ('g_optim', ''),
+                  ('g_optim_start', 2),
+                  ('g_epoch', ''),
+                  ]
+    args_sgd = [('g_estim', ['sgd'])]
+    args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
     # args_svrg = [('g_estim', ['svrg'])]
     # args += [OrderedDict(shared_args+gvar_args+args_svrg)]
@@ -3006,7 +3012,9 @@ def cifar10_gvar_resnet_bs_optim(args):
             ('g_estim', 'gluster'),
             ('g_nclusters', [32, 64]),  # [10, 100]),  # 2
             # ('g_active_only', ['module.fc2', 'module.fc1,module.fc2']),
-            ('g_debug', '')]
+            ('g_debug', ''),
+            # ('g_optim_max', 50)
+            ]
 
     args_3 = [('gb_citers', 5),
               ('g_min_size', 100),
@@ -3145,7 +3153,7 @@ if __name__ == '__main__':
         # jobs += ['%s_job%d' % (s, i) for s in jobs_0]
 
     run_single = RunSingle(log_dir, module_name, exclude)
-    run_single.num = 8
+    run_single.num = 12
 
     # args = OrderedDict([('lr', [1, 2]), ('batch_size', [10, 20])])
     # args = OrderedDict([('lr', [(1, OrderedDict([('batch_size', [10])])),

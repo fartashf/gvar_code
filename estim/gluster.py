@@ -42,6 +42,7 @@ class GlusterEstimator(SGDEstimator):
         Nk = cluster_size[ci].flatten()
         N = cluster_size.sum()
 
+        # # one data per cluster
         # C = self.sampler.C
         # ci = ci[:C]
         # Nk = Nk[:C]

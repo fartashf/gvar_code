@@ -565,7 +565,7 @@ class InfiniteLoader(object):
         return self.__next__()
 
     def __len__(self):
-        return len(self.data_iter)
+        return len(self.data_loader)
 
 
 class GlusterSampler(Sampler):
@@ -587,10 +587,22 @@ class GlusterSampler(Sampler):
         self.assign_i = np.zeros_like(assign_i)
         self.cluster_size = torch.zeros_like(cluster_size)
         self.iters = []
+
+        # TODO: this justifies taking only g_optim_max steps
+        # N = assign_i.shape[0]-59900
+        # Nk = N//100
+        # for i in range(100):
+        #     self.iters += [iter(InfiniteLoader(range(i*Nk, (i+1)*Nk)))]
+        #     self.cluster_size[i] = Nk
+        # self.C = 101
+        # self.iters += [iter(InfiniteLoader(range(N, assign_i.shape[0])))]
+        # self.cluster_size[100] = 59900
+        # return
+
         I0 = []
         for i in range(assign_i.max()+1):
             I = list(np.where(assign_i.flat == i)[0])
-            if len(I) >= 10:
+            if len(I) >= 1:
                 self.cluster_size[len(self.iters)] = len(I)
                 self.assign_i[I] = len(self.iters)
                 self.iters += [iter(InfiniteLoader(I))]
@@ -610,10 +622,16 @@ class GlusterSampler(Sampler):
                 yield i
             return
 
+        C = self.C
         cur_c = 0
+        cc = 0
         for i in range(self.num_samples):
+            if cur_c == 0:
+                cperm = torch.randperm(C)
+            cur_c = cperm[cc]
             idx = next(self.iters[cur_c])
-            cur_c = (cur_c+1) % len(self.iters)
+            cc = (cc+1) % len(self.iters)
+            # cur_c = (cur_c+1) % len(self.iters)
             yield idx
 
     def __len__(self):
@@ -627,6 +645,13 @@ class GlusterImbalanceSampler(GlusterSampler):
         super(GlusterImbalanceSampler, self).__init__(*args)
 
     def __iter__(self):
+        # ***** NOT used
+        # ***** NOT used
+        # ***** NOT used
+        # ***** NOT used
+        # ***** NOT used
+        # ***** NOT used
+        # ***** NOT used
         C = len(self.iters)
         self.ratios = self.cluster_size[:C] / self.cluster_size[:C].min()
         if self.assign_i is None:
@@ -636,15 +661,10 @@ class GlusterImbalanceSampler(GlusterSampler):
 
         cur_c = 0
         cur_j = 0
-        # cc = 0
         for i in range(self.num_samples):
-            # if cur_c == 0:
-            #     cperm = torch.randperm(C)
-            # cur_c = cperm[cc]
             idx = next(self.iters[cur_c])
             cur_j += 1
             if cur_j >= self.cluster_size[cur_c]:
-                # cc = (cc+1) % len(self.iters)
                 cur_c = (cur_c+1) % len(self.iters)
                 cur_j = 0
             yield idx

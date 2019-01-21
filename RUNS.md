@@ -1,7 +1,15 @@
+## Jan 18
+
+```
+CUDA_VISIBLE_DEVICES=0 python -m main.gvar --dataset cifar10 --arch resnet20 --epochs 200 --lr_decay_epoch 100,150 --weight_decay 0.0001 --batch_size 128 --lr 0.1 --gvar_estim_iter 10 --gvar_log_iter 2000 --g_estim gluster --g_nclusters 64 --g_debug --gb_citers 5 --g_min_size 100 --gvar_start 101 --g_bsnap_iter 10 --g_optim  --g_optim_start 101 --g_epoch  --logger_name runs/cifar10_blup
+CUDA_VISIBLE_DEVICES=3 python -m main.gvar --dataset cifar10 --arch resnet20 --epochs 100 --lr_decay_epoch 50 --weight_decay 0.0001 --batch_size 128 --lr 0.01 --gvar_estim_iter 10 --gvar_log_iter 1000 --g_estim sgd --g_debug --gvar_start 1 --g_epoch  --logger_name runs/runs_cifar10_blup/g_estim_sgd,epoch_100,200 --resume runs/runs_cifar10_blup/sgd,epoch_0,100/ --ckpt_name checkpoint.pth.tar
+CUDA_VISIBLE_DEVICES=0 python -m main.gvar --dataset cifar10 --arch resnet20 --epochs 100 --lr_decay_epoch 50 --weight_decay 0.0001 --batch_size 128 --lr 0.01 --gvar_estim_iter 10 --gvar_log_iter 1000 --g_estim gluster --g_nclusters 100 --g_debug --gb_citers 2 --g_min_size 100 --gvar_start 1 --g_bsnap_iter 10 --g_optim  --g_optim_start 1 --g_epoch  --logger_name runs/runs_cifar10_blup/g_estim_gluster,epoch_100,200 --resume runs/runs_cifar10_blup/sgd,epoch_0,100 --ckpt_name checkpoint.pth.tar
+```
 ## Jan 17
 
 ```
 CUDA_VISIBLE_DEVICES=0 python -m main.gvar --dataset mnist --arch cnn --lr 0.01 --gvar_start 0 --g_bsnap_iter 100000 --g_optim  --g_optim_start 1 --g_estim gluster --g_nclusters 10 --g_debug  --g_online  --g_osnap_iter 10 --g_beta 0.99 --g_min_size 0.001 --logger_name runs/Y --resume runs/X --ckpt_name checkpoint.pth.tar --g_resume
+CUDA_VISIBLE_DEVICES=0 python -m main.gvar --dataset mnist --arch cnn --lr 0.1 --gvar_start 1000 --g_bsnap_iter 1000 --g_optim  --g_optim_start 1001 --g_estim gluster --g_nclusters 128 --g_debug  --g_online  --g_osnap_iter 10 --g_beta 0.99 --g_min_size 0.001 --logger_name runs/X --g_optim_max 50
 ```
 
 ## Dec 26

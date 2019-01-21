@@ -71,7 +71,8 @@ class MinVarianceGradient(object):
         model = self.model
         model.train()
         use_sgd = not self.opt.g_optim or niters < self.opt.g_optim_start
-        # use_sgd = use_sgd or self.gest_counter >= self.opt.g_optim_max
+        use_sgd = use_sgd or (self.opt.g_optim_max > 0 and
+                              self.gest_counter >= self.opt.g_optim_max)
         if use_sgd:
             self.gest_used = False
             return self.sgd.grad(model, in_place=True)
