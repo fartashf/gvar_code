@@ -20,7 +20,7 @@ class GlusterModule(object):
             self, module, eps, nclusters, no_grad=False,
             inactive_mods=[], active_only=[], name='', do_svd=False,
             debug=True, add_GG=False, add_CZ=False,
-            cluster_size=None, rank=1, *args, **kwargs):
+            cluster_size=None, rank=1, stable=100, *args, **kwargs):
         self.module = module
         self.nclusters = nclusters*rank
         self.eps = eps
@@ -38,9 +38,13 @@ class GlusterModule(object):
         self.has_param = (self.has_weight or self.has_bias)
         self.has_param = (
                 self.has_param and
-                (len(active_only) == 0 or self.name in active_only)
+                # (len(active_only) == 0 or self.name in active_only)
+                (len(active_only) == 0 or
+                    any(s in self.name for s in active_only))
                 and
-                (len(inactive_mods) == 0 or self.name not in inactive_mods))
+                # (len(inactive_mods) == 0 or self.name not in inactive_mods))
+                (len(inactive_mods) == 0 or
+                    not any(s in self.name for s in inactive_mods)))
         self.Ai0 = torch.Tensor(0)
         self.Ais = torch.Tensor(0)
         self.Gos = torch.Tensor(0)
@@ -53,6 +57,7 @@ class GlusterModule(object):
         self.add_CZ = add_CZ
         self.cluster_size = cluster_size
         self.rank = rank
+        self.stable = stable
         self._register_hooks()
 
     def _register_hooks(self):
@@ -465,8 +470,8 @@ class GlusterLinear(GlusterModule):
     def _post_proc(self, Go0):
         if self.no_grad:
             Go0.fill_(1e-3)  # TODO: /Go0.numel())
-        self.Ais = self.Ai0
-        self.Gos = Go0
+        self.Ais = self.Ai0/self.stable
+        self.Gos = Go0*self.stable
         if self.do_svd:
             Dw = torch.einsum('bi,bo->bio', [self.Ai0, Go0])
             if self.Dw_cur.shape != Dw.shape:
@@ -697,8 +702,8 @@ class GlusterConv(GlusterModule):
         # mean/sum? sqrt(mean)
         # TODO: overflow, try /T only for Ais
         T = Go.shape[-1]
-        Ais = (Ai/T/100).sum(-1)  # np.sqrt(T)
-        Gos = (Go*100).sum(-1)
+        Ais = (Ai/T/self.stable).sum(-1)  # np.sqrt(T)
+        Gos = (Go*self.stable).sum(-1)
         if Ais.shape != self.Ais.shape:
             self.Ais = torch.zeros_like(Ais).cuda()
         if Gos.shape != self.Gos.shape:

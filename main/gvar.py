@@ -75,7 +75,6 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
         #     gvar.gest.init_data_iter()
         loss = gvar.grad(optimizer.niters)
         optimizer.step()
-        optimizer.niters += 1
         profiler.toc('optim')
         # snapshot
         if optimizer.niters % opt.g_osnap_iter == 0:
@@ -94,6 +93,7 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
 
         batch_time.toc('Time')
         batch_time.end()
+        optimizer.niters += 1
         niters = optimizer.niters
 
         # if True:
@@ -181,7 +181,7 @@ def main():
     if opt.g_epoch:
         opt.gvar_start *= opt.epoch_iters
         opt.g_bsnap_iter *= opt.epoch_iters
-        opt.g_optim_start *= opt.epoch_iters+1
+        opt.g_optim_start = (opt.g_optim_start*opt.epoch_iters)+1
 
     model = models.init_model(opt)
     gvar = MinVarianceGradient(model, train_loader, opt, tb_logger)

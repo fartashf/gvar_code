@@ -225,6 +225,10 @@ def add_args():
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--g_epoch',
                         default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--g_stable',
+                        default=argparse.SUPPRESS, type=float)
+    parser.add_argument('--g_avg',
+                        default=argparse.SUPPRESS, type=float)
     args = parser.parse_args()
     return args
 
@@ -232,12 +236,15 @@ def add_args():
 def opt_to_gluster_kwargs(opt):
     active_only = (list(opt.g_active_only.split(','))
                    if opt.g_active_only != '' else [])
+    inactive_mods = (list(opt.g_inactive_mods.split(','))
+                     if opt.g_inactive_mods != '' else [])
     return {'beta': opt.g_beta, 'min_size': opt.g_min_size,
             'nclusters': opt.g_nclusters, 'reinit_method': opt.g_reinit,
             'no_grad': opt.g_no_grad, 'active_only': active_only,
-            'inactive_mods': opt.g_inactive_mods,
+            'inactive_mods': inactive_mods,
             'debug': opt.g_debug, 'mul_Nk': (not opt.g_noMulNk),
             'do_svd': opt.g_svd, 'add_CZ': opt.g_CZ,
             'init_mul': opt.g_init_mul*opt.batch_size,
             'reinit_iter': opt.g_reinit_iter,
-            'reg_Nk': opt.g_reg_Nk}
+            'reg_Nk': opt.g_reg_Nk, 'stable': opt.g_stable,
+            'model_mom': opt.g_avg}

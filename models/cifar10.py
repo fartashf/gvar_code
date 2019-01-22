@@ -198,6 +198,35 @@ class Convnet(nn.Module):
         return F.log_softmax(x, dim=-1)
 
 
+class MLP(nn.Module):
+    def __init__(self, dropout=True):
+        """
+        mnist MLP
+        """
+        super(MLP, self).__init__()
+        self.dropout = dropout
+        self.fc1 = nn.Linear(3*32*32, 1024)
+        self.fc2 = nn.Linear(1024, 1024)
+        # self.fc3 = nn.Linear(1024, 1024)
+        self.fc4 = nn.Linear(1024, 10)
+
+    def forward(self, x):
+        x = x.view(-1, 3*32*32)
+        if self.dropout:
+            x = F.dropout(x, training=self.training, p=0.2)
+        x = F.relu(self.fc1(x))
+        if self.dropout:
+            x = F.dropout(x, training=self.training)
+        x = F.relu(self.fc2(x))
+        # if self.dropout:
+        #     x = F.dropout(x, training=self.training)
+        # x = F.relu(self.fc3(x))
+        if self.dropout:
+            x = F.dropout(x, training=self.training)
+        x = self.fc4(x)
+        return F.log_softmax(x, dim=-1)
+
+
 if __name__ == "__main__":
     for net_name in __all__:
         if net_name.startswith('resnet'):

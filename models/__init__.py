@@ -29,6 +29,8 @@ def init_model(opt):
         # model.cuda()
         if opt.arch == 'cnn':
             model = models.cifar10.Convnet()
+        elif opt.arch == 'mlp':
+            model = models.cifar10.MLP()
         elif opt.arch.startswith('wrn'):
             depth, widen_factor = map(int, opt.arch[3:].split('-'))
             # model = models.cifar10_wresnet.Wide_ResNet(28, 10, 0.3, 10)

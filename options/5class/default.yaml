@@ -94,3 +94,5 @@ g_reg_Nk: 0
 g_imbalance: False
 g_epoch: False
 g_resume: False
+g_stable: 100
+g_avg: 1

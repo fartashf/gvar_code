@@ -2,6 +2,8 @@ import torch
 import torch.nn
 import torch.multiprocessing
 
+from data import InfiniteLoader
+
 
 class GradientEstimator(object):
     def __init__(self, data_loader, opt, tb_logger=None, *args, **kwargs):
@@ -9,6 +11,10 @@ class GradientEstimator(object):
         self.model = None
         self.data_loader = data_loader
         self.tb_logger = tb_logger
+
+    def init_data_iter(self):
+        self.data_iter = iter(InfiniteLoader(self.data_loader))
+        self.estim_iter = iter(InfiniteLoader(self.data_loader))
 
     def snap_batch(self, model, niters):
         pass
@@ -22,8 +28,14 @@ class GradientEstimator(object):
     def grad(self, model_new, in_place=False):
         raise NotImplemented('grad not implemented')
 
-    def grad_estim(self, model_new):
-        raise NotImplemented('grad_estim not implemented')
+    def grad_estim(self, model):
+        # insuring continuity of data seen in training
+        # TODO: make sure sub-classes never use any other data_iter, e.g. raw
+        dt = self.data_iter
+        self.data_iter = self.estim_iter
+        ret = self.grad(model)
+        self.data_iter = dt
+        return ret
 
     def get_Ege_var(self, model, gviter):
         # estimate grad mean and variance

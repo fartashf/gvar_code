@@ -156,7 +156,7 @@ def get_legend(lg_tags, run_name, lg_replace=[]):
 
 
 def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
-             ncolor=None, lg_replace=[]):
+             ncolor=None, lg_replace=[], no_title=False):
     xlabel = {'visits_h': '# Visits',
               'count_h': '# Wait Iterations',
               'Tloss_h': 'Loss',
@@ -316,7 +316,8 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
                 data[i][tag_name][0], data[i][tag_name][1],
                 linestyle=style[(color0 + i) // len(color)],
                 color=color[(color0 + i) % len(color)], linewidth=2)
-    plt.title(titles[tag_name])
+    if not no_title:
+        plt.title(titles[tag_name])
     if tag_name in yscale_log:
         ax = plt.gca()
         if tag_name in yscale_base:
@@ -341,7 +342,8 @@ def ticks(y, pos):
 
 def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
                        fig_name, lg_tags, ylim, batch_size=None, sep_h=True,
-                       ncolor=None, save_single=False, lg_replace=[]):
+                       ncolor=None, save_single=False, lg_replace=[],
+                       no_title=False):
     run_names = get_run_names(logdir, patterns)
     data = get_data_f(logdir, run_names, tag_names, batch_size)
     if len(data) == 0:
@@ -384,7 +386,7 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
                     plt.subplot(height, width, fi)
                 plot_tag(data[j], plot_f, run_names[j],
                          tag_names[i], lg_tags, yl, color0=j, ncolor=ncolor,
-                         lg_replace=lg_replace)
+                         lg_replace=lg_replace, no_title=no_title)
                 if save_single:
                     plt.savefig('%s/%s.png' % (fig_dir, tag_names[i]),
                                 dpi=100, bbox_inches='tight')
@@ -396,7 +398,7 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
             if not save_single:
                 plt.subplot(height, width, fi)
             plot_tag(data, plot_f, run_names, tag_names[i], lg_tags, yl,
-                     ncolor=ncolor, lg_replace=lg_replace)
+                     ncolor=ncolor, lg_replace=lg_replace, no_title=no_title)
             if save_single:
                 plt.savefig('%s/%s.png' % (fig_dir, tag_names[i]),
                             dpi=100, bbox_inches='tight')
