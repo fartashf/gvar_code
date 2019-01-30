@@ -212,7 +212,7 @@ def add_args():
     parser.add_argument('--g_init_mul',
                         default=argparse.SUPPRESS, type=float)
     parser.add_argument('--g_reinit_iter',
-                        default=argparse.SUPPRESS, type=int)
+                        default=argparse.SUPPRESS, type=float)
     parser.add_argument('--g_optim_max',
                         default=argparse.SUPPRESS, type=int)
     parser.add_argument('--g_reg_Nk',
@@ -229,6 +229,12 @@ def add_args():
                         default=argparse.SUPPRESS, type=float)
     parser.add_argument('--g_avg',
                         default=argparse.SUPPRESS, type=float)
+    parser.add_argument('--g_save_snap',
+                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--g_noise',
+                        default=argparse.SUPPRESS, type=float)
+    parser.add_argument('--g_batch_size',
+                        default=argparse.SUPPRESS, type=int)
     args = parser.parse_args()
     return args
 
@@ -247,4 +253,4 @@ def opt_to_gluster_kwargs(opt):
             'init_mul': opt.g_init_mul*opt.batch_size,
             'reinit_iter': opt.g_reinit_iter,
             'reg_Nk': opt.g_reg_Nk, 'stable': opt.g_stable,
-            'model_mom': opt.g_avg}
+            'model_mom': opt.g_avg, 'gnoise': opt.g_noise}

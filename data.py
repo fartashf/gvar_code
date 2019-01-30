@@ -79,6 +79,18 @@ def get_gluster_loader(train_loader, opt):
     return raw_loader, train_loader, train_sampler
 
 
+def get_minvar_loader(train_loader, opt):
+    kwargs = {'num_workers': opt.workers,
+              'pin_memory': True} if opt.cuda else {}
+    idxdataset = train_loader.dataset
+    train_loader = torch.utils.data.DataLoader(
+        idxdataset,
+        batch_size=opt.g_batch_size,
+        shuffle=True,
+        drop_last=False, **kwargs)
+    return train_loader
+
+
 class IndexedDataset(data.Dataset):
     def __init__(self, dataset, opt, train=False, cr_labels=None):
         np.random.seed(2222)

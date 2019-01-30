@@ -10,7 +10,7 @@ from log_utils import Profiler
 class GradientCluster(object):
     def __init__(self, model, nclusters=1, debug=True, mul_Nk=False,
                  add_GG=False, add_CZ=False, eps=1, rank=1, eps_td=1e-7,
-                 reg_Nk=0, model_mom=1, **kwargs):
+                 reg_Nk=0, model_mom=1, gnoise=0, **kwargs):
         # Q: duplicates
         # TODO: challenge: how many C? memory? time?
 
@@ -30,6 +30,7 @@ class GradientCluster(object):
         self.eps_td = eps_td
         self.reg_Nk = reg_Nk
         self.model_mom = model_mom
+        self.gnoise = gnoise
 
         self.G = GlusterContainer(
                 model, eps, nclusters, debug=debug,
@@ -47,8 +48,10 @@ class GradientCluster(object):
 
     def copy_(self, model):
         for m, g in zip(model.parameters(), self.model.parameters()):
-            g.data.copy_(m.data)
-            # g.data.mul_(1-self.model_mom).add_(m.data.mul(self.model_mom))
+            if self.model_mom < 1:
+                g.data.mul_(1-self.model_mom).add_(m.data.mul(self.model_mom))
+            else:
+                g.data.copy_(m.data)
 
     def assign(self):
         raise NotImplemented('assign not implemented')
@@ -102,6 +105,7 @@ class GradientCluster(object):
         if self.reg_Nk > 0:
             total_dist += self.reg_Nk*cs
         total_dist = (total_dist/self.eps_td).round()*self.eps_td
+        total_dist += torch.rand_like(total_dist).abs()*self.gnoise
         # print(total_dist)
         return total_dist, GG
 
@@ -284,12 +288,13 @@ class GradientClusterOnline(GradientCluster):
         else:
             self.cluster_size[ids] = self.min_size*self.init_mul
 
-    def em_step(self, w=1):
+    def em_step(self, w=1, do_reinit=True):
         if self.G.is_active:
             with torch.no_grad():
                 assign_i, batch_dist = self.assign()
                 if not self.G.is_eval:
-                    invalid_clusters = self.update(assign_i, batch_dist, w)
+                    invalid_clusters = self.update(assign_i, batch_dist, w,
+                                                   do_reinit)
                     return assign_i, batch_dist, invalid_clusters
                 return assign_i, batch_dist
 
@@ -304,11 +309,11 @@ class GradientClusterOnline(GradientCluster):
         batch_dist = batch_dist.unsqueeze(1)
         return assign_i, batch_dist
 
-    def update(self, assign_i, batch_dist, w=1):
+    def update(self, assign_i, batch_dist, w=1, do_reinit=True):
         # TODO: Update beta is more exact tested by MLP.test_more_iters
-        return self.update_beta(assign_i, batch_dist, w)
+        return self.update_beta(assign_i, batch_dist, w, do_reinit=do_reinit)
 
-    def update_beta(self, assign_i, batch_dist, w=1):
+    def update_beta(self, assign_i, batch_dist, w=1, do_reinit=True):
         # Not keeping a full internal assignment list
         # E: update C
         # E: C_c = mean_i(g_i * I(c==a_i))
@@ -345,7 +350,9 @@ class GradientClusterOnline(GradientCluster):
                                   beta, assign_i.shape[0])
 
         invalid_clusters = []
-        if self.counter % self.reinit_iter == 0:
+        # if self.counter % self.reinit_iter == 0:
+        if do_reinit:
+            logging.info('Do reinit')
             invalid_clusters = self.reinit(assign_i.shape[0])
         self.counter += 1
         return invalid_clusters

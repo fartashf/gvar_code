@@ -487,3 +487,98 @@ def plot_clusters(run_dir, gfname, nsamples=20, sz=28, seed=123, topk=True):
     plt.imshow(xi.numpy().transpose([1, 2, 0]))
     plt.axis('off')
     plt.savefig(fig_name, dpi=100, bbox_inches='tight')
+
+
+def plot_one_iter(
+        nclusters, nsamples, dataset, sz, pad, hpad,
+        assign_i, target_i, pred_i, loss_i, delim=True):
+    # nclusters = int(assign_i.max()+1)
+    lc = np.zeros((nclusters, ))
+    for i in range(nclusters):
+        idx = np.where(assign_i == i)[0]
+        if len(idx) > 0:
+            lc[i] = loss_i[idx].mean()
+    # cids = np.argsort(lc)
+    images = np.zeros((nclusters, nsamples, 3, hpad, hpad))
+    for c in range(nclusters):
+        # i = cids[c]
+        i = c
+        idx = np.where(assign_i == i)[0]
+        if len(idx) == 0:
+            continue
+        np.random.shuffle(idx)
+        for j in range(min(len(idx), nsamples)):
+            xi = dataset[idx[j]][0]
+            xi2 = np.zeros((3, hpad, hpad))
+            xi2[0] = (pred_i[idx[j]] != target_i[idx[j]])
+            if xi.shape[0] == 1:
+                xi2[0:1, pad:sz+pad, pad:sz+pad] = xi
+                xi2[1:2, pad:sz+pad, pad:sz+pad] = xi
+                xi2[2:3, pad:sz+pad, pad:sz+pad] = xi
+            else:
+                xi2[:, pad:sz+pad, pad:sz+pad] = xi
+            images[c, j] = xi2
+    # if delim:
+    #     images[:, -1, :, :, -pad:] = 1
+    return images
+
+
+def plot_clusters_online(
+        run_dir, gfname, nsamples=20, iters=[1], sz=28, seed=123, topk=True):
+    gpath = os.path.join(run_dir, '%s.pth.tar' % gfname)
+    fig_name = os.path.join(run_dir, '%s.png' % gfname)
+    data = torch.load(
+            gpath,
+            map_location=lambda storage, loc: storage)
+    opt = data['opt']
+    # dataset = opt['dataset']
+    data = data['gvar']['snap_data']
+    assign_i, target_i = data['assign'], data['target']
+    pred_i, loss_i = data['pred'], data['loss']
+    niters = data['niters']
+    # total_dist = data['total_dist']
+    # correct = pred_i == target_i
+    opt = utils.DictWrapper(opt)
+    np.random.seed(seed)
+    print(niters)
+
+    opt.cuda = not opt.no_cuda and torch.cuda.is_available()
+
+    train_loader, test_loader, train_test_loader = get_loaders(opt)
+    dataset = train_test_loader.dataset
+    dataset.ds.transform = transforms.Compose([
+        transforms.Resize(sz),
+        transforms.CenterCrop(sz),
+        transforms.ToTensor(),
+        ])
+
+    nclusters = int(max([a.max()+1 for a in assign_i]))
+    height = nclusters
+    width = nsamples*len(iters)
+    plt.figure(figsize=(7 * width, 4 * height))
+    plt.tight_layout(pad=1., w_pad=3., h_pad=3.0)
+
+    pad = 2
+    hpad = sz+2*pad
+    images = []
+    for i in range(len(iters)):
+        si = iters[i]
+        images += [plot_one_iter(
+                nclusters, nsamples, dataset, sz, pad, hpad,
+                assign_i[si], target_i, pred_i[si], loss_i[si],
+                delim=(i != len(iters)-1))]
+    images = np.concatenate(images, axis=1).transpose([1, 0, 2, 3, 4])
+
+    fig = torch.tensor(images.reshape(-1, 3, hpad, hpad))
+    xi = vutils.make_grid(fig, nrow=height, normalize=True, scale_each=True)
+
+    xi = xi.numpy().transpose([1, 2, 0])
+    xi2 = np.zeros((xi.shape[0]+(len(iters)-1)*pad, xi.shape[1], xi.shape[2]))
+    for i in range(len(iters)):
+        ww = xi.shape[0]/len(iters)
+        xi2[(ww+pad)*i:(ww+pad)*i+ww, :, :] = xi[ww*i:ww*(i+1), :, :]
+        if i != len(iters)-1:
+            xi2[(ww+pad)*i+ww:(ww+pad)*(i+1), :, :] = 1
+    plt.imshow(xi2)
+    plt.axis('off')
+    plt.savefig(fig_name, dpi=20, bbox_inches='tight')

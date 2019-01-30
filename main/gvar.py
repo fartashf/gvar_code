@@ -14,7 +14,7 @@ import torch.multiprocessing
 
 import utils
 import models
-from data import get_loaders
+from data import get_loaders, get_minvar_loader
 from args import add_args
 from log_utils import TBXWrapper
 from log_utils import Profiler
@@ -77,7 +77,8 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
         optimizer.step()
         profiler.toc('optim')
         # snapshot
-        if optimizer.niters % opt.g_osnap_iter == 0:
+        if ((optimizer.niters-opt.gvar_start) % opt.g_osnap_iter == 0
+                and optimizer.niters >= opt.gvar_start):
             # Frequent snaps
             gvar.snap_online(model, optimizer.niters)
             profiler.toc('snap_online')
@@ -100,7 +101,8 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
         if batch_idx % opt.log_interval == 0:
             gvar_log = ''
             prof_log = ''
-            if batch_idx % opt.gvar_log_iter == 0:
+            if (batch_idx % opt.gvar_log_iter == 0
+                    and optimizer.niters >= opt.gvar_start):
                 gvar_log = '\t'+gvar.log_var(model, niters)
             if opt.log_profiler:
                 prof_log = '\t'+str(profiler)
@@ -171,8 +173,11 @@ def main():
         np.random.seed(opt.seed)
     # helps with wide-resnet by reducing memory and time 2x
     cudnn.benchmark = True
+    if opt.g_batch_size == -1:
+        opt.g_batch_size = opt.batch_size
 
     train_loader, test_loader, train_test_loader = get_loaders(opt)
+    minvar_loader = get_minvar_loader(train_loader, opt)
 
     if opt.epoch_iters == 0:
         opt.epoch_iters = int(
@@ -182,9 +187,11 @@ def main():
         opt.gvar_start *= opt.epoch_iters
         opt.g_bsnap_iter *= opt.epoch_iters
         opt.g_optim_start = (opt.g_optim_start*opt.epoch_iters)+1
+        opt.g_reinit_iter = opt.g_reinit_iter*opt.epoch_iters
+    opt.g_reinit_iter = int(opt.g_reinit_iter)
 
     model = models.init_model(opt)
-    gvar = MinVarianceGradient(model, train_loader, opt, tb_logger)
+    gvar = MinVarianceGradient(model, minvar_loader, opt, tb_logger)
 
     if opt.optim == 'sgd':
         optimizer = optim.SGD(model.parameters(),
