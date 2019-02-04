@@ -167,9 +167,10 @@ class GlusterOnlineEstimator(GlusterEstimator):
         # TODO: reweight correction is not helpful
         if self.init_assign:
             cluster_size = self.sampler.cluster_size
-            Nk = cluster_size
-            N = cluster_size.sum()
-            w = 1.*Nk/N
+            # Nk = cluster_size
+            # N = cluster_size.sum()
+            # w = 1.*Nk/N
+            w = 1
             # print(w.sum().item())
         do_reinit = False
         if (niters-self.last_reinit) >= opt.g_reinit_iter:

@@ -1,8 +1,20 @@
+## Feb 04
+
+biased
+```
+CUDA_VISIBLE_DEVICES=0 python -m main.gvar --dataset 10class --lr 0.01 --gvar_start 2 --g_bsnap_iter 1 --g_optim  --g_optim_start 2 --g_epoch  --g_estim gluster --g_nclusters 2 --g_debug  --g_online  --g_osnap_iter 10 --g_beta 0.99 --g_min_size 0.01 --g_init_mul 2 --g_reinit_iter 1 --logger_name runs/X --gvar_estim_iter 100 --g_batch_size 40
+```
+
 ## Jan 32
 
 ```
 CUDA_VISIBLE_DEVICES=3 python -m main.gvar --dataset mnist --lr 0.001 --epochs 30 --lr_decay_epoch 30 --arch cnn --gvar_start 0 --g_bsnap_iter 5  --g_optim_start 0 --g_epoch  --g_estim gluster --g_nclusters 10 --g_debug  --g_online  --g_osnap_iter 10 --g_beta 0.99 --g_min_size 0.001 --g_init_mul 2 --logger_name runs/mnist_adam_snap --g_save_snap  --g_noMulNk --optim adam
 CUDA_VISIBLE_DEVICES=3 python -m main.gvar --dataset mnist --lr 0.05 --epochs 30 --lr_decay_epoch 30 --arch cnn --gvar_start 0 --g_bsnap_iter 5  --g_optim_start 0 --g_epoch  --g_estim gluster --g_nclusters 10 --g_debug  --g_online  --g_osnap_iter 10 --g_beta 0.99 --g_min_size 0.001 --g_init_mul 2 --logger_name runs/mnist_snap --g_save_snap  --g_noMulNk
+```
+
+imagenet
+```
+CUDA_VISIBLE_DEVICES=0,1,2,3 python main.py -a resnet18 /nobackup_ssd/faghri/imagenet256/ --epochs 45 --workers 12
 ```
 
 ## Jan 18

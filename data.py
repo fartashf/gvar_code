@@ -72,7 +72,7 @@ def get_gluster_loader(train_loader, opt):
         drop_last=False, **kwargs)
     train_loader = torch.utils.data.DataLoader(
         idxdataset,
-        batch_size=opt.batch_size,
+        batch_size=opt.g_batch_size,
         sampler=train_sampler,
         shuffle=(train_sampler is None),
         drop_last=True, **kwargs)
@@ -638,7 +638,7 @@ class GlusterSampler(Sampler):
         cur_c = 0
         cc = 0
         for i in range(self.num_samples):
-            if cur_c == 0:
+            if cc == 0:
                 cperm = torch.randperm(C)
             cur_c = cperm[cc]
             idx = next(self.iters[cur_c])
