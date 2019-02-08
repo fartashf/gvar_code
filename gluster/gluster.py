@@ -10,7 +10,7 @@ from log_utils import Profiler
 class GradientCluster(object):
     def __init__(self, model, nclusters=1, debug=True, mul_Nk=False,
                  add_GG=False, add_CZ=False, eps=1, rank=1, eps_td=1e-7,
-                 reg_Nk=0, model_mom=1, gnoise=0, **kwargs):
+                 reg_Nk=0, gnoise=0, **kwargs):
         # Q: duplicates
         # TODO: challenge: how many C? memory? time?
 
@@ -29,7 +29,6 @@ class GradientCluster(object):
         self.rank = rank
         self.eps_td = eps_td
         self.reg_Nk = reg_Nk
-        self.model_mom = model_mom
         self.gnoise = gnoise
 
         self.G = GlusterContainer(
@@ -48,10 +47,7 @@ class GradientCluster(object):
 
     def copy_(self, model):
         for m, g in zip(model.parameters(), self.model.parameters()):
-            if self.model_mom < 1:
-                g.data.mul_(1-self.model_mom).add_(m.data.mul(self.model_mom))
-            else:
-                g.data.copy_(m.data)
+            g.data.copy_(m.data)
 
     def assign(self):
         raise NotImplemented('assign not implemented')

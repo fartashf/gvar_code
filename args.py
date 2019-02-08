@@ -1,4 +1,9 @@
 import argparse
+import yaml
+import os
+
+import torch
+import utils
 
 
 def add_args():
@@ -228,12 +233,14 @@ def add_args():
     parser.add_argument('--g_stable',
                         default=argparse.SUPPRESS, type=float)
     parser.add_argument('--g_avg',
-                        default=argparse.SUPPRESS, type=float)
+                        default=argparse.SUPPRESS, type=int)
     parser.add_argument('--g_save_snap',
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--g_noise',
                         default=argparse.SUPPRESS, type=float)
     parser.add_argument('--g_batch_size',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--g_msnap_iter',
                         default=argparse.SUPPRESS, type=int)
     args = parser.parse_args()
     return args
@@ -253,4 +260,30 @@ def opt_to_gluster_kwargs(opt):
             'init_mul': opt.g_init_mul*opt.batch_size,
             'reinit_iter': opt.g_reinit_iter,
             'reg_Nk': opt.g_reg_Nk, 'stable': opt.g_stable,
-            'model_mom': opt.g_avg, 'gnoise': opt.g_noise}
+            'gnoise': opt.g_noise}
+
+
+def yaml_opt(yaml_path):
+    opt = {}
+    with open(yaml_path, 'r') as handle:
+        opt = yaml.load(handle)
+    return opt
+
+
+def get_opt():
+    args = add_args()
+    opt = yaml_opt('options/default.yaml')
+    opt_s = yaml_opt(os.path.join('options/{}/{}'.format(args.dataset,
+                                                         args.path_opt)))
+    opt.update(opt_s)
+    opt.update(vars(args).items())
+    # od = vars(args)
+    # for k, v in od.items():
+    #     opt[k] = v
+    opt = utils.DictWrapper(opt)
+
+    opt.cuda = not opt.no_cuda and torch.cuda.is_available()
+
+    if opt.g_batch_size == -1:
+        opt.g_batch_size = opt.batch_size
+    return opt

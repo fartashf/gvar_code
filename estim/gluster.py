@@ -1,7 +1,6 @@
 from __future__ import print_function
 import numpy as np
 import logging
-import copy
 
 import torch
 import torch.nn
@@ -94,16 +93,11 @@ class GlusterBatchEstimator(GlusterEstimator):
         # TODO: do we need this for batch?
         # model = self.model
         opt = self.opt
+        modelg = self.model
         if self.gluster is None:
-            if opt.g_avg < 1:
-                modelg = copy.deepcopy(model)
-            else:
-                modelg = model
             self.gluster = GradientClusterBatch(
                     modelg, **opt_to_gluster_kwargs(opt))
             self.gluster.deactivate()
-        else:
-            self.gluster.copy_(model)
         # Batch Gluster is only active here
         self.gluster.activate()
         opt = self.opt
@@ -150,10 +144,15 @@ class GlusterOnlineEstimator(GlusterEstimator):
     def snap_online(self, model, niters):
         tb_logger = self.tb_logger
         opt = self.opt
+        modelg = self.model
         if self.gluster is None:
             self.gluster = GradientClusterOnline(
-                    model, **opt_to_gluster_kwargs(opt))
+                    modelg, **opt_to_gluster_kwargs(opt))
             self.gluster.deactivate()
+        # if self.gluster is None:
+        #     self.gluster = GradientClusterOnline(
+        #             model, **opt_to_gluster_kwargs(opt))
+        #     self.gluster.deactivate()
         # Online Gluster is only fully active here
         self.gluster.activate()
         # TODO: maybe use its own grad
@@ -161,7 +160,7 @@ class GlusterOnlineEstimator(GlusterEstimator):
         # TODO: using raw_iter variance goes up in the end
         # data = next(self.raw_iter)
         data = next(self.data_iter)  # bootstraping
-        loss = model.criterion(model, data)  # no reweighting grads
+        loss = modelg.criterion(modelg, data)  # no reweighting grads
         loss.backward()
         w = 1
         # TODO: reweight correction is not helpful
@@ -201,6 +200,7 @@ class GlusterOnlineEstimator(GlusterEstimator):
         loss_i = np.zeros(train_size)
         pred_i = np.zeros(train_size)
         target_i = np.zeros(train_size)
+        modelg = self.gluster.model
 
         self.gluster.eval()
         batch_time = Profiler()
@@ -208,8 +208,8 @@ class GlusterOnlineEstimator(GlusterEstimator):
             idx = data[2]
             # loss = model.criterion(model, data)
             data, target = data[0].cuda(), data[1].cuda()
-            model.zero_grad()
-            output = model(data)
+            modelg.zero_grad()
+            output = modelg(data)
             loss = F.nll_loss(output, target)
             loss.backward()
             ai, batch_dist = self.gluster.em_step()

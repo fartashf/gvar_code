@@ -1,6 +1,7 @@
 import torch
 import torch.nn
 import torch.multiprocessing
+import copy
 
 from data import InfiniteLoader
 
@@ -72,3 +73,42 @@ class GradientEstimator(object):
 
     def load_state_dict(self, state):
         pass
+
+    def _snap_model_gavg(self, model):
+        # g_avg = self.opt.g_avg
+        # if self.model is None:
+        #     if g_avg < 1:
+        #         self.model = copy.deepcopy(model)
+        #     else:
+        #         self.model = model
+        #     return
+        # for m, g in zip(model.parameters(), self.model.parameters()):
+        #     if g_avg < 1:
+        #         g.data.mul_(1-self.g_avg).add_(m.data.mul(self.g_avg))
+        #     else:
+        #         g.data.copy_(m.data)
+        pass
+
+    def snap_model(self, model):
+        opt = self.opt
+        if opt.g_avg == 1:
+            if self.model is None:
+                self.model = model
+            return
+        if self.model is None:
+            self.model = copy.deepcopy(model)
+            # running model sum
+            self.model_s = copy.deepcopy(model)
+            self.g_avg_iter = 1
+            return
+        # update sum
+        for m, s in zip(model.parameters(), self.model_s.parameters()):
+            s.data.add_(m.data)
+        self.g_avg_iter += 1
+        if self.g_avg_iter != opt.g_avg:
+            return
+        # update snapshot
+        for g, s in zip(self.model.parameters(), self.model_s.parameters()):
+            g.data.copy_(s.data).div_(opt.g_avg)
+            s.data.fill_(0)
+        self.g_avg_iter = 0

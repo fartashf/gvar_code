@@ -1,7 +1,6 @@
 from __future__ import print_function
 import numpy as np
 import logging
-import yaml
 import os
 import sys
 
@@ -15,7 +14,7 @@ import torch.multiprocessing
 import utils
 import models
 from data import get_loaders, get_minvar_loader
-from args import add_args
+from args import get_opt
 from log_utils import TBXWrapper
 from log_utils import Profiler
 from log_utils import LogCollector
@@ -77,6 +76,11 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
         optimizer.step()
         profiler.toc('optim')
         # snapshot
+        if ((optimizer.niters-opt.gvar_start) % opt.g_msnap_iter == 0
+                and optimizer.niters >= opt.gvar_start):
+            # Update model snaps
+            gvar.snap_model(model)
+            profiler.toc('snap_model')
         if ((optimizer.niters-opt.gvar_start) % opt.g_osnap_iter == 0
                 and optimizer.niters >= opt.gvar_start):
             # Frequent snaps
@@ -143,19 +147,7 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
 
 
 def main():
-    args = add_args()
-    yaml_path = os.path.join('options/{}/{}'.format(args.dataset,
-                                                    args.path_opt))
-    opt = {}
-    with open(yaml_path, 'r') as handle:
-        opt = yaml.load(handle)
-    od = vars(args)
-    for k, v in od.items():
-        opt[k] = v
-    opt = utils.DictWrapper(opt)
-
-    opt.cuda = not opt.no_cuda and torch.cuda.is_available()
-
+    opt = get_opt()
     tb_logger.configure(opt.logger_name, flush_secs=5, opt=opt)
     logfname = os.path.join(opt.logger_name, 'log.txt')
     logging.basicConfig(
@@ -173,8 +165,6 @@ def main():
         np.random.seed(opt.seed)
     # helps with wide-resnet by reducing memory and time 2x
     cudnn.benchmark = True
-    if opt.g_batch_size == -1:
-        opt.g_batch_size = opt.batch_size
 
     train_loader, test_loader, train_test_loader = get_loaders(opt)
     minvar_loader = get_minvar_loader(train_loader, opt)
