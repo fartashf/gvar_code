@@ -51,7 +51,7 @@ class MinVarianceGradient(object):
 
     def log_var(self, model, niters):
         tb_logger = self.tb_logger
-        model.eval()
+        # model.eval()
         if not self.init_snapshot:
             return ''
         gviter = self.opt.gvar_estim_iter

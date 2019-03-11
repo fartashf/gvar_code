@@ -2,6 +2,7 @@ import torch
 import torch.nn
 import torch.multiprocessing
 import copy
+import logging
 
 from data import InfiniteLoader
 
@@ -48,6 +49,13 @@ class GradientEstimator(object):
 
         for e in Ege:
             e /= gviter
+
+        z = 0
+        n = 0
+        for e in Ege:
+            z += (e.abs() < self.opt.adam_eps).sum().item()
+            n += e.numel()
+        print('%.2f%%' % (z*100./n))
         nw = sum([w.numel() for w in model.parameters()])
         var_e = 0
         Es = [torch.zeros_like(g) for g in model.parameters()]
@@ -107,6 +115,7 @@ class GradientEstimator(object):
         self.g_avg_iter += 1
         if self.g_avg_iter != opt.g_avg:
             return
+        logging.info('Snap Model')
         # update snapshot
         for g, s in zip(self.model.parameters(), self.model_s.parameters()):
             g.data.copy_(s.data).div_(opt.g_avg)

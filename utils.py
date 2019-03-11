@@ -47,6 +47,22 @@ class SaveCheckpoint(object):
                             opt.logger_name+'/model_best.pth.tar')
 
 
+def base_lr(optimizer, opt):
+    lr = opt.lr
+    if opt.g_mlr != 1 and optimizer.gest_used:
+        lr *= opt.g_mlr
+    return lr
+
+
+def adjust_lr(optimizer, opt):
+    if isinstance(opt.lr_decay_epoch, str):
+        adjust_learning_rate_multi(
+                optimizer, optimizer.niters//opt.epoch_iters, opt)
+    else:
+        adjust_learning_rate(
+                optimizer, optimizer.niters//opt.epoch_iters, opt)
+
+
 def adjust_learning_rate(optimizer, epoch, opt):
     """ Sets the learning rate to the initial LR decayed by 10 """
     if opt.exp_lr:
@@ -57,7 +73,7 @@ def adjust_learning_rate(optimizer, epoch, opt):
         last_epoch = 2. ** (float(epoch) / int(opt.lr_decay_epoch)) - 1
     else:
         last_epoch = epoch // int(opt.lr_decay_epoch)
-    lr = opt.lr * (0.1 ** last_epoch)
+    lr = base_lr(optimizer, opt) * (0.1 ** last_epoch)
     print(lr)
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
@@ -74,7 +90,9 @@ def adjust_learning_rate_multi(optimizer, epoch, opt):
         ei = [0]
     print(el)
     print(ei)
-    lr = opt.lr * (opt.lr_decay_rate ** (ei[-1] + el[ei[-1]]))
+    # lr = opt.lr * (opt.lr_decay_rate ** (ei[-1] + el[ei[-1]]))
+    lr = base_lr(optimizer, opt) * (
+            opt.lr_decay_rate ** (ei[-1]+(el[ei[-1]] > 0)))
     print(lr)
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
@@ -82,7 +100,8 @@ def adjust_learning_rate_multi(optimizer, epoch, opt):
 
 def adjust_learning_rate_niters(optimizer, niters, opt, train_size):
     """Sets the learning rate to the initial LR decayed by 10"""
-    lr = opt.lr * (0.1 ** (niters // (opt.lr_decay_epoch*train_size)))
+    lr = base_lr(optimizer, opt) * (
+            0.1 ** (niters // (opt.lr_decay_epoch*train_size)))
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 

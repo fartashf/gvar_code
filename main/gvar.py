@@ -3,6 +3,7 @@ import numpy as np
 import logging
 import os
 import sys
+from optim.adamw import AdamW
 
 import torch
 import torch.nn
@@ -23,6 +24,52 @@ tb_logger = TBXWrapper()
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 
+class OptimizerFactory(object):
+
+    def __init__(self, model, opt):
+        self.model = model
+        self.opt = opt
+        self.niters = 0
+        self.optimizer = None
+        self.logger = LogCollector(opt)
+        self.param_groups = None
+        self.gest_used = False
+        self.reset()
+
+    def reset(self):
+        model = self.model
+        opt = self.opt
+        if opt.optim == 'sgd':
+            optimizer = optim.SGD(model.parameters(),
+                                  lr=opt.lr, momentum=opt.momentum,
+                                  weight_decay=opt.weight_decay,
+                                  nesterov=opt.nesterov)
+        elif opt.optim == 'adam':
+            optimizer = optim.Adam(model.parameters(),
+                                   lr=opt.lr,
+                                   betas=opt.adam_betas,
+                                   eps=opt.adam_eps,
+                                   weight_decay=opt.weight_decay)
+        elif opt.optim == 'adamw':
+            optimizer = AdamW(model.parameters(),
+                              lr=opt.lr,
+                              betas=opt.adam_betas,
+                              eps=opt.adam_eps,
+                              weight_decay=opt.weight_decay,
+                              l2_reg=False)
+        self.optimizer = optimizer
+        if self.param_groups is not None:
+            self.optimizer.param_groups = self.param_groups
+        else:
+            self.param_groups = self.optimizer.param_groups
+
+    def zero_grad(self):
+        self.optimizer.zero_grad()
+
+    def step(self):
+        self.optimizer.step()
+
+
 def test(tb_logger, model, test_loader,
          opt, niters, set_name='Test', prefix='V'):
     model.eval()
@@ -39,7 +86,7 @@ def test(tb_logger, model, test_loader,
             pred = output.data.max(1, keepdim=True)[1]
             correct += pred.eq(target.data.view_as(pred)).cpu().sum().item()
 
-        wrong = len(test_loader.dataset)-correct
+        wrong = len(test_loader.dataset) - correct
         test_loss /= len(test_loader.dataset)
         accuracy = 100. * correct / len(test_loader.dataset)
         error = 100. * wrong / len(test_loader.dataset)
@@ -62,7 +109,7 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
     batch_time = Profiler()
     model.train()
     profiler = Profiler()
-    epoch_iters = int(np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
+    epoch_iters = int(np.ceil(1. * len(train_loader.dataset) / opt.batch_size))
     optimizer.logger.reset()
     # for batch_idx, (data, target, idx) in enumerate(train_loader):
     for batch_idx in range(opt.epoch_iters):
@@ -72,21 +119,31 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
         # if optimizer.niters == 1050:
         #     print('Sampler repermuted')
         #     gvar.gest.init_data_iter()
+        pg_used = gvar.gest_used
         loss = gvar.grad(optimizer.niters)
+        if gvar.gest_used != pg_used:
+            logging.info('Optimizer reset.')
+            optimizer.gest_used = gvar.gest_used
+            utils.adjust_lr(optimizer, opt)
+            optimizer.reset()
         optimizer.step()
         profiler.toc('optim')
         # snapshot
-        if ((optimizer.niters-opt.gvar_start) % opt.g_msnap_iter == 0
-                and optimizer.niters >= opt.gvar_start):
+        # if ((optimizer.niters-opt.gvar_start) % opt.g_msnap_iter == 0
+        #         and optimizer.niters >= opt.gvar_start):
+        if ((optimizer.niters % opt.g_msnap_iter == 0 and opt.g_avg > 1)
+                or (optimizer.niters == 0 and opt.g_avg == 1)):
             # Update model snaps
+            # logging.info('Snap Model')
             gvar.snap_model(model)
             profiler.toc('snap_model')
-        if ((optimizer.niters-opt.gvar_start) % opt.g_osnap_iter == 0
+        if ((optimizer.niters - opt.gvar_start) % opt.g_osnap_iter == 0
                 and optimizer.niters >= opt.gvar_start):
             # Frequent snaps
+            # logging.info('Snap Online')
             gvar.snap_online(model, optimizer.niters)
             profiler.toc('snap_online')
-        if ((optimizer.niters-opt.gvar_start) % opt.g_bsnap_iter == 0
+        if ((optimizer.niters - opt.gvar_start) % opt.g_bsnap_iter == 0
                 and optimizer.niters >= opt.gvar_start):
             # Rare snaps
             logging.info('Batch Snapshot')
@@ -107,9 +164,9 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
             prof_log = ''
             if (batch_idx % opt.gvar_log_iter == 0
                     and optimizer.niters >= opt.gvar_start):
-                gvar_log = '\t'+gvar.log_var(model, niters)
+                gvar_log = '\t' + gvar.log_var(model, niters)
             if opt.log_profiler:
-                prof_log = '\t'+str(profiler)
+                prof_log = '\t' + str(profiler)
 
             logging.info(
                 'Epoch: [{0}][{1}/{2}]({niters})\t'
@@ -151,8 +208,8 @@ def main():
     tb_logger.configure(opt.logger_name, flush_secs=5, opt=opt)
     logfname = os.path.join(opt.logger_name, 'log.txt')
     logging.basicConfig(
-            filename=logfname,
-            format='%(asctime)s %(message)s', level=logging.INFO)
+        filename=logfname,
+        format='%(asctime)s %(message)s', level=logging.INFO)
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
     logging.info(str(opt.d))
@@ -171,29 +228,19 @@ def main():
 
     if opt.epoch_iters == 0:
         opt.epoch_iters = int(
-                np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
+            np.ceil(1. * len(train_loader.dataset) / opt.batch_size))
     opt.maxiter = opt.epoch_iters * opt.epochs
     if opt.g_epoch:
         opt.gvar_start *= opt.epoch_iters
         opt.g_bsnap_iter *= opt.epoch_iters
-        opt.g_optim_start = (opt.g_optim_start*opt.epoch_iters)+1
-        opt.g_reinit_iter = opt.g_reinit_iter*opt.epoch_iters
+        opt.g_optim_start = (opt.g_optim_start * opt.epoch_iters) + 1
+        opt.g_reinit_iter = opt.g_reinit_iter * opt.epoch_iters
     opt.g_reinit_iter = int(opt.g_reinit_iter)
 
     model = models.init_model(opt)
     gvar = MinVarianceGradient(model, minvar_loader, opt, tb_logger)
 
-    if opt.optim == 'sgd':
-        optimizer = optim.SGD(model.parameters(),
-                              lr=opt.lr, momentum=opt.momentum,
-                              weight_decay=opt.weight_decay,
-                              nesterov=opt.nesterov)
-    elif opt.optim == 'adam':
-        optimizer = optim.Adam(model.parameters(),
-                               lr=opt.lr,
-                               weight_decay=opt.weight_decay)
-    optimizer.niters = 0
-    optimizer.logger = LogCollector(opt)
+    optimizer = OptimizerFactory(model, opt)
     epoch = 0
     save_checkpoint = utils.SaveCheckpoint()
 
@@ -215,18 +262,13 @@ def main():
         else:
             print("=> no checkpoint found at '{}'".format(model_path))
 
-    while optimizer.niters < opt.epochs*opt.epoch_iters:
+    while optimizer.niters < opt.epochs * opt.epoch_iters:
         optimizer.epoch = epoch
-        if isinstance(opt.lr_decay_epoch, str):
-            utils.adjust_learning_rate_multi(
-                    optimizer, optimizer.niters//opt.epoch_iters, opt)
-        else:
-            utils.adjust_learning_rate(
-                    optimizer, optimizer.niters//opt.epoch_iters, opt)
+        utils.adjust_lr(optimizer, opt)
         ecode = train(
-                tb_logger,
-                epoch, train_loader, model, optimizer, opt, test_loader,
-                save_checkpoint, train_test_loader, gvar)
+            tb_logger,
+            epoch, train_loader, model, optimizer, opt, test_loader,
+            save_checkpoint, train_test_loader, gvar)
         if ecode == -1:
             break
         epoch += 1

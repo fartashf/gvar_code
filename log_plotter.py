@@ -241,7 +241,7 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'gb_td': 'Total distortion of the Gluster objective.',
               'gb_cs': 'Size of Cluster #0',
               'gb_reinits': 'Total number of reinitializations.'}
-    yscale_log = ['Tloss', 'Vloss', 'tau']  # , 'est_var', 'gb_td'
+    yscale_log = ['Tloss', 'Vloss', 'tau', 'lr']  # , 'est_var', 'gb_td'
     yscale_base = ['tau']
     # yscale_sci = ['est_bias', 'est_var', 'gb_td']
     plot_fs = {'Tacc': plot_f, 'Vacc': plot_f,

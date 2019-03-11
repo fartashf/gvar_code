@@ -1,6 +1,7 @@
 import argparse
 import yaml
 import os
+from ast import literal_eval as make_tuple
 
 import torch
 import utils
@@ -242,6 +243,12 @@ def add_args():
                         default=argparse.SUPPRESS, type=int)
     parser.add_argument('--g_msnap_iter',
                         default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--adam_betas',
+                        default=argparse.SUPPRESS, type=str)
+    parser.add_argument('--adam_eps',
+                        default=argparse.SUPPRESS, type=float)
+    parser.add_argument('--g_mlr',
+                        default=argparse.SUPPRESS, type=float)
     args = parser.parse_args()
     return args
 
@@ -286,4 +293,5 @@ def get_opt():
 
     if opt.g_batch_size == -1:
         opt.g_batch_size = opt.batch_size
+    opt.adam_betas = make_tuple(opt.adam_betas)
     return opt
