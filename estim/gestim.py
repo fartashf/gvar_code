@@ -55,7 +55,7 @@ class GradientEstimator(object):
         for e in Ege:
             z += (e.abs() < self.opt.adam_eps).sum().item()
             n += e.numel()
-        print('%.2f%%' % (z*100./n))
+        # print('%.2f%%' % (z*100./n))
         nw = sum([w.numel() for w in model.parameters()])
         var_e = 0
         Es = [torch.zeros_like(g) for g in model.parameters()]

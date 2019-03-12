@@ -83,3 +83,4 @@ g_msnap_iter: 1
 adam_betas: "(.9,.999)"
 adam_eps: 1.e-8
 g_mlr: 1
+g_whiten: False

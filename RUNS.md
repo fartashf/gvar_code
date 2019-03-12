@@ -1,3 +1,10 @@
+## March 11
+open shells
+
+```
+CUDA_VISIBLE_DEVICES=0 ipython -m main.vae --pdb -- --dataset mnist --lr 0.001 --gvar_estim_iter 100 --gvar_log_iter 1001 --gvar_start 1000 --g_bsnap_iter 1000 --g_estim gluster --g_nclusters 100 --g_debug  --g_online  --g_osnap_iter 1 --g_beta 0.99 --g_min_size .001 --g_reinit largest --logger_name runs/X --g_init_mul 2
+```
+
 ## Feb 11
 divergence
 

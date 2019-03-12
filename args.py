@@ -249,6 +249,8 @@ def add_args():
                         default=argparse.SUPPRESS, type=float)
     parser.add_argument('--g_mlr',
                         default=argparse.SUPPRESS, type=float)
+    parser.add_argument('--g_whiten',
+                        default=argparse.SUPPRESS, action='store_true')
     args = parser.parse_args()
     return args
 
@@ -267,7 +269,9 @@ def opt_to_gluster_kwargs(opt):
             'init_mul': opt.g_init_mul*opt.batch_size,
             'reinit_iter': opt.g_reinit_iter,
             'reg_Nk': opt.g_reg_Nk, 'stable': opt.g_stable,
-            'gnoise': opt.g_noise}
+            'gnoise': opt.g_noise,
+            'adam_betas': opt.adam_betas, 'adam_eps': opt.adam_eps,
+            'do_whiten': opt.g_whiten}
 
 
 def yaml_opt(yaml_path):

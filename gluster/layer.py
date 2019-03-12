@@ -15,12 +15,68 @@ def get_gluster_module(module):
     return None
 
 
+class Whitener(object):
+    def __init__(self, betas, eps):
+        self.beta1, self.beta2 = betas
+        self.eps = eps
+        self.m_dict = {}
+        self.v_dict = {}
+        self.s_dict = {}
+
+    def mean(self, A):
+        # TODO: multi-update
+        if A.dim() == 2:
+            Am = A.mean(0, keepdim=True)
+        else:
+            Am = A.sum(0, keepdim=True).sum(-1, keepdim=True).div(
+                                                A.shape[0]*A.shape[2])
+        return Am
+
+    def whiten(self, name, A):
+        # A:
+        # fc: B x DDD
+        # conv: B x DDD x T
+
+        # Current mean
+        Am = self.mean(A)
+        Av = self.mean((A-Am)*(A-Am))
+
+        # Stored stats
+        if name not in self.m_dict:
+            self.m_dict[name] = torch.zeros_like(Am)
+            self.v_dict[name] = torch.zeros_like(Am)
+            self.s_dict[name] = 0
+        self.s_dict[name] += 1
+        m, v, step = self.m_dict[name], self.v_dict[name], self.s_dict[name]
+
+        # Bias correction
+        beta1, beta2, eps = self.beta1, self.beta2, self.eps
+        bias_correction1 = 1 - beta1 ** step
+        bias_correction2 = 1 - beta2 ** step
+
+        # Mean
+        m.mul_(beta1).add_(1-beta1, Am)
+        mh = m/bias_correction1
+
+        # Variance
+        # v.mul_(beta2).addcmul_(1-beta2, Azm, Azm)
+        v.mul_(beta2).add_(1-beta2, Av)
+        vh = v/bias_correction2
+        sh = vh.sqrt().add(eps)
+
+        # Whiten
+        Aw = (A-mh)/sh
+        return Aw
+
+
 class GlusterModule(object):
     def __init__(
             self, module, eps, nclusters, no_grad=False,
             inactive_mods=[], active_only=[], name='', do_svd=False,
             debug=True, add_GG=False, add_CZ=False,
-            cluster_size=None, rank=1, stable=100, *args, **kwargs):
+            cluster_size=None, rank=1, stable=100,
+            do_whiten=False, adam_betas=None, adam_eps=None,
+            *args, **kwargs):
         self.module = module
         self.nclusters = nclusters*rank
         self.eps = eps
@@ -58,6 +114,9 @@ class GlusterModule(object):
         self.cluster_size = cluster_size
         self.rank = rank
         self.stable = stable
+        self.do_whiten = do_whiten
+        if do_whiten:
+            self.whitener = Whitener(adam_betas, adam_eps)
         self._register_hooks()
 
     def _register_hooks(self):
@@ -88,9 +147,11 @@ class GlusterModule(object):
         #     import ipdb; ipdb.set_trace()
 
     def _post_proc_Ai(self, Ai0):
+        raise Exception('Deprecated. Use _post_proc')
         return Ai0
 
     def _post_proc_Go(self, Go0):
+        raise Exception('Deprecated. Use _post_proc')
         return Go0
 
     def _save_dist_hook(self, m, grad_input, grad_output):
@@ -477,7 +538,11 @@ class GlusterLinear(GlusterModule):
             if self.Dw_cur.shape != Dw.shape:
                 self.Dw_cur = torch.zeros_like(Dw).cuda()
             self.Dw_cur.copy_(Dw)
-        return self.Ai0, Go0
+        Ai, Go = self.Ai0, Go0
+        if self.do_whiten:
+            Ai = self.whitener.whiten('Ai', Ai)
+            Go = self.whitener.whiten('Go', Go)
+        return Ai, Go
 
     def get_centers(self):
         if not self.has_param:
@@ -524,6 +589,7 @@ class GlusterConv(GlusterModule):
         self._conv_dot = None
 
     def _post_proc_Ai(self, Ai0):
+        raise Exception('Deprecated. Use _post_proc')
         module = self.module
         Ai = F.unfold(
                 Ai0, module.kernel_size,
@@ -532,6 +598,7 @@ class GlusterConv(GlusterModule):
         return Ai
 
     def _post_proc_Go(self, Go0):
+        raise Exception('Deprecated. Use _post_proc')
         Go = Go0.reshape(Go0.shape[:-2]+(np.prod(Go0.shape[-2:]), ))
         return Go
 
@@ -715,6 +782,9 @@ class GlusterConv(GlusterModule):
             if self.Dw_cur.shape != Dw.shape:
                 self.Dw_cur = torch.zeros_like(Dw).cuda()
             self.Dw_cur.copy_(Dw)
+        if self.do_whiten:
+            Ai = self.whitener.whiten('Ai', Ai)
+            Go = self.whitener.whiten('Go', Go)
         return Ai, Go
 
     def get_centers(self):
