@@ -1293,6 +1293,249 @@ def cifar10_gvar_adam_svrg_epoch0(args):
     return args, log_dir, module_name, exclude
 
 
+def cifar10_gvar_adam_svrg_freq_snap(args):
+    dataset = 'cifar10'
+    module_name = 'main.gvar'
+    log_dir = 'runs_%s_gvar_resnet_adam_svrg_freq_snap' % dataset
+    exclude = ['dataset', 'epochs', 'weight_decay',
+               'g_epoch', 'resume', 'ckpt_name', 'lr_decay_epoch',
+               'gvar_log_iter', 'gvar_start', 'g_debug', 'g_bsnap_iter',
+               'niters']
+    # epoch_iters = 390
+    shared_args = [('dataset', dataset),
+                   # ('arch', 'resnet32'),
+                   # ('arch', 'resnet20'),
+                   # ('arch', 'resnet56'),
+                   ('arch', 'resnet8'),
+                   # ('epochs', 200),
+                   # ('epochs', [
+                   #     (200, OrderedDict([('lr_decay_epoch', '100,150')])),
+                   # ]),
+                   # ('niters', 80000),
+                   # ('lr_decay_epoch', '40000,60000'),
+                   ('niters', 20000),
+                   ('lr_decay_epoch', '10000,15000'),
+                   ('epoch_iters', 100),
+                   # ('lr', 0.1),
+                   ('weight_decay', 1e-4),
+                   # ('arch', 'cnn'),
+                   # ('lr', [0.01]),
+                   # ('momentum', [0.9]),
+                   # ('optim', ['adam']),
+                   # ('batch_size', [
+                   #     # (128, OrderedDict([
+                   #     #     ('lr', [.2, .1, .05]),
+                   #     #     ('gvar_estim_iter', 10),
+                   #     #     ('gvar_log_iter', 1000),
+                   #     #     ])),
+                   #     (128, OrderedDict([('lr', .01)])),
+                   # ]),
+                   # ('resume',
+                   #  'runs/runs_cifar10_blup/g_estim_gluster,epoch_100,120'),
+                   # ('ckpt_name', 'model_best.pth.tar'),
+                   ('gvar_log_iter', 200),
+                   # ('batch_size', [128, 256]),  # [128, 64]),
+                   ]
+    gvar_args = [
+                  # ('gvar_estim_iter', 10),  # default
+                  # ('gvar_log_iter', 100),  # default
+                  # ('gvar_start', 101),
+                  # ('g_bsnap_iter', 1),
+                  # ('g_optim', ''),
+                  # ('g_optim_start', 101),
+                  ('g_epoch', ''),
+                  ('gvar_start', 0),
+                  ('g_bsnap_iter', 2),
+                  # ('g_optim_start', [5, 10, 20]),
+                  ]
+    args_sgd = [('g_estim', ['sgd']),
+                # ('batch_size', [128, 64]),  # [128, 256]),  # [128, 64]),
+                ('batch_size', [2**10, 2**11]),  # [256, 512]),
+                # ('lr', [0.01]),
+                # ('lr', [1e-3, 5e-4, 1e-4]),
+                # ('optim', ['sgd', 'adam']),
+                ('optim', [
+                    ('sgd', OrderedDict([('lr', [.1, .2])])),
+                    ('adam', OrderedDict([('lr', [1e-3, 2e-3])])),
+                    # ('adamw', OrderedDict([('lr', [.01, 1e-3])])),
+                    ]),
+                ]
+    args += [OrderedDict(shared_args+args_sgd+gvar_args)]
+
+    # args_svrg = [('g_estim', ['svrg']),
+    #              ('batch_size', 64),
+    #              ('lr', [1e-2, 1e-3]),  # 1e-4
+    #              ('g_optim', ''),
+    #              ('g_optim_start', [20]),  # 5, 10, 20]),
+    #              ('g_mlr', [1, 2]),  # 0.1, 10]),
+    #              ('optim', ['adamw']),  # 'adam'
+    #              # ('g_optim_start', [
+    #              #     5, 10, 20,
+    #              #     (5, OrderedDict([('lr_decay_epoch', '5,100,150')])),
+    #              #     (10, OrderedDict([('lr_decay_epoch', '10,100,150')])),
+    #              #     (20, OrderedDict([('lr_decay_epoch', '20,100,150')])),
+    #              #     ]),
+    #              # ('lr', [0.01, 5e-3, 1e-3, 5e-4, 1e-4]),
+    #              # ('lr', [4e-4, 3e-4, 2e-4, 9e-5, 8e-5, 7e-5, 6e-5, 5e-5]),
+    #              # [1e-3, 5e-4, 1e-4, 1e]),
+    #              # ('lr', [0.01, .001]),
+    #              # ('g_avg', [1, 10]),
+    #              # ('g_msnap_iter', [10]),
+    #              # ('optim', 'adamw'),
+    #              # ('lr', [1e-4, 1e-4]),  # 1e-3
+    #              # ('optim', [
+    #              #     # ('sgd', OrderedDict([('lr', 0.01)])),
+    #              #     ('adam', OrderedDict([
+    #              #          # [('lr', [1e-4, 1e-3]),
+    #              #          # [1e-1, 1e-2, 1e-3]),2e-3, 5e-3
+    #              #          # [1e-3, 5e-4, 2e-4, 1e-4]),
+    #              #          # ('adam_betas',
+    #              #          #     # ["'(.9,.9995)'",
+    #              #          #     # "'(.9,.999)'", "'(.9,.997)'",
+    #              #          #     #  "'(.9,.99)'", "'(.5,.95)'"]),
+    #              #          #     ["'(.5,.999)'"]),
+    #              #          # ('adam_eps', [1e-8, 1e-3, .1]),
+    #              #          # [1e-2, 1e-3, 1e-4]),
+    #              #          ])),
+    #              #     # ('adamw', OrderedDict(
+    #              #     #     [('lr', [1e-3, 5e-4, 1e-4, 5e-5])])),
+    #              #     ]),
+    #              ]
+    # args += [OrderedDict(shared_args+args_svrg+gvar_args)]
+
+    # # Frequent snaps
+    # args_svrg = [('g_estim', ['svrg']),
+    #              # ('batch_size', 64),
+    #              ('batch_size', 256),
+    #              ('lr', 1e-3),  # [1e-2, 1e-3]),  # 1e-4
+    #              ('g_optim', ''),
+    #              # ('g_optim_start', [5, 10, 20]),
+    #              ('g_optim_start', 20*100),  # 20*390),
+    #              # ('g_mlr', [1, 0.1, 10]),
+    #              # ('g_mlr', [1, 2, 5]),
+    #              ('gvar_start', 20*100),  # 20*390),
+    #              ('g_bsnap_iter', [10]),  # [50]),
+    #              ('svrg_bsnap_num', [256*5, 256*10, 256*20, 256*40]),
+    #              ('optim', 'adam')
+    #              ]
+    # args += [OrderedDict(shared_args+args_svrg)]
+
+    # gluster_args = [
+    #         ('g_estim', 'gluster'),
+    #         ('batch_size', 64),
+    #         ('g_nclusters', 64),  # [10, 100]),  # 2
+    #         # ('g_active_only', ['module.fc2', 'module.fc1,module.fc2']),
+    #         ('g_debug', ''),
+    #         # ('g_optim_max', 50)
+    #         # ('g_active_only', ['layer3', 'layer2', 'layer1']),
+    #         # ('lr', [0.01]),
+    #         # ('g_avg', [1, 10]),
+    #         # ('g_msnap_iter', [10]),
+    #         # ('optim', 'adamw'),
+    #         # ('lr', [1e-3, 5e-4]),
+    #         ('lr', [1e-2, 1e-3]),  # 1e-4
+    #         ('optim', 'adamw'),  # 'adam'
+    #         ('g_optim', ''),
+    #         ('g_optim_start', [5]),  # , 10, 20]),
+    #         ('g_mlr', [1, 2]),  # , 5]),
+    #         ]
+
+    # # args_3 = [('gb_citers', 2),
+    # #           ('g_min_size', 100),
+    # #           ('gvar_start', 0),
+    # #           ('g_bsnap_iter', 1),  # citers*4*bsnap_svrg
+    # #           ('g_optim', ''),
+    # #           ('g_optim_start', 5),
+    # #           ('g_epoch', ''),
+    # #           # ('g_stable', [1, 1e4]),  # [1000, 10]),
+    # #           ]
+    # # args += [OrderedDict(shared_args+gluster_args+args_3)]
+    # args_4 = [('g_online', ''),
+    #           ('g_osnap_iter', 10),  # [5, 10]),
+    #           ('g_beta', .99),  # [.9, .99]),  # 1-lr (the desired lr)
+    #           ('g_min_size', .001),  # 100x diff in probabilities
+    #           # ('g_reinit', 'largest')
+    #           ('g_init_mul', 2),
+    #           ('g_reinit_iter', 10),
+    #           ]
+    # args += [OrderedDict(shared_args+gvar_args+gluster_args+args_4)]
+    return args, log_dir, module_name, exclude
+
+
+def imagenet_gvar_adam(args):
+    dataset = 'imagenet'
+    module_name = 'main.gvar'
+    log_dir = 'runs_%s_gvar_half_adam' % dataset
+    exclude = ['dataset', 'arch', 'epochs', 'weight_decay',
+               'g_epoch', 'resume', 'ckpt_name', 'lr_decay_epoch',
+               'gvar_log_iter', 'gvar_start', 'g_debug', 'g_bsnap_iter',
+               'half_trained']
+    shared_args = [('dataset', dataset),
+                   # ('optim', 'sgd'),  # 'sgd', 'adam'
+                   ('arch', 'resnet18'),
+                   # ('arch', 'resnet34'),
+                   # ('arch', 'resnet50'),
+                   # ('batch_size', 128),
+                   # ('test_batch_size', 64),
+                   ('weight_decay', 1e-4),
+                   #  ### pretrained
+                   ('half_trained', ['']),
+                   ('epochs', [45]),
+                   # ('lr', [.01]),
+                   ('lr_decay_epoch', ['15,45']),
+                   # ('exp_lr', [None]),
+                   ]
+    shared_args += [('gvar_estim_iter', 10),  # 100
+                    ('gvar_log_iter', 1000),
+                    ('gvar_start', 0),
+                    ('g_bsnap_iter', 5),
+                    ('g_epoch', ''),
+                    ]
+    args_sgd = [('g_estim', ['sgd']),
+                ('batch_size', [128, 64]),
+                ('optim', [
+                    ('sgd', OrderedDict([('lr', .01)])),
+                    ('adam', OrderedDict([('lr', 1e-4)])),
+                    # ('adamw', OrderedDict([('lr', 1e-4)])),
+                ]),
+                ]
+    args += [OrderedDict(shared_args+args_sgd)]
+
+    args_svrg = [('g_estim', ['svrg']),
+                 ('batch_size', 64),
+                 ('lr', 1e-4),  # 1e-4
+                 ('g_optim', ''),
+                 ('g_optim_start', 0),  # 5, 10, 20]),
+                 ('g_mlr', [1, 2]),  # 0.1, 10]),
+                 ('optim', ['adam']),
+                 ]
+    args += [OrderedDict(shared_args+args_svrg)]
+
+    gluster_args = [('g_estim', 'gluster'),
+                    ('g_nclusters', 64),  # [10, 100]),
+                    ('g_debug', ''),
+                    ('batch_size', 64),
+                    ('lr', 1e-4),  # 1e-4
+                    ('g_optim', ''),
+                    ('g_optim_start', 1),  # 5, 10, 20]),
+                    ('g_mlr', [1, 2]),  # 0.1, 10]),
+                    ('optim', ['adam']),
+                    ]
+
+    # args_3 = [('gb_citers', 10)]
+    # args += [OrderedDict(shared_args+snap_args+gluster_args+args_3)]
+    args_4 = [('g_online', ''),
+              ('g_osnap_iter', 10),
+              ('g_beta', .99),  # 1-lr (the desired learning rate)
+              ('g_min_size', .001),  # roughly .1*batch_size/nclusters
+              # ('g_reinit', 'largest')  # default
+              ('g_init_mul', 2),
+              ('g_reinit_iter', 10),
+              ]
+    args += [OrderedDict(shared_args+gluster_args+args_4)]
+    return args, log_dir, module_name, exclude
+
+
 def main():
     args = []
     # args, log_dir, module_name, exclude = mnist_gvar(args)

@@ -21,7 +21,7 @@ from log_utils import Profiler
 from log_utils import LogCollector
 from estim.gvar import MinVarianceGradient
 tb_logger = TBXWrapper()
-torch.multiprocessing.set_sharing_strategy('file_system')
+# torch.multiprocessing.set_sharing_strategy('file_system')
 
 
 class OptimizerFactory(object):
@@ -262,7 +262,11 @@ def main():
         else:
             print("=> no checkpoint found at '{}'".format(model_path))
 
-    while optimizer.niters < opt.epochs * opt.epoch_iters:
+    if opt.niters > 0:
+        max_iters = opt.niters
+    else:
+        max_iters = opt.epochs * opt.epoch_iters
+    while optimizer.niters < max_iters:
         optimizer.epoch = epoch
         utils.adjust_lr(optimizer, opt)
         ecode = train(

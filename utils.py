@@ -55,12 +55,14 @@ def base_lr(optimizer, opt):
 
 
 def adjust_lr(optimizer, opt):
-    if isinstance(opt.lr_decay_epoch, str):
-        adjust_learning_rate_multi(
-                optimizer, optimizer.niters//opt.epoch_iters, opt)
+    if opt.niters > 0:
+        niters = optimizer.niters
     else:
-        adjust_learning_rate(
-                optimizer, optimizer.niters//opt.epoch_iters, opt)
+        niters = optimizer.niters//opt.epoch_iters
+    if isinstance(opt.lr_decay_epoch, str):
+        adjust_learning_rate_multi(optimizer, niters, opt)
+    else:
+        adjust_learning_rate(optimizer, niters, opt)
 
 
 def adjust_learning_rate(optimizer, epoch, opt):

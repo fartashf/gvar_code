@@ -251,6 +251,10 @@ def add_args():
                         default=argparse.SUPPRESS, type=float)
     parser.add_argument('--g_whiten',
                         default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--svrg_bsnap_num',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--niters',
+                        default=argparse.SUPPRESS, type=int)
     args = parser.parse_args()
     return args
 

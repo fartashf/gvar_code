@@ -24,6 +24,9 @@ class SVRGEstimator(GradientEstimator):
         for batch_idx, data in enumerate(self.data_loader):
             idx = data[2]
             num += len(idx)
+            if (self.opt.svrg_bsnap_num > 0
+                    and num >= self.opt.svrg_bsnap_num):
+                break
             loss = model.criterion(model, data, reduction='sum')
             grad_params = torch.autograd.grad(loss, model.parameters())
             for m, g in zip(self.mu, grad_params):
@@ -35,6 +38,7 @@ class SVRGEstimator(GradientEstimator):
                         'SVRG Snap> [{0}/{1}]: {bt}'.format(
                             batch_idx, len(self.data_loader),
                             bt=str(batch_time)))
+        # TODO: do it when summing?
         for m in self.mu:
             m /= num
 

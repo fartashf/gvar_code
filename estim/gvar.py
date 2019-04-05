@@ -67,17 +67,18 @@ class MinVarianceGradient(object):
         tb_logger.log_value('est_snr', float(snr_e), step=niters)
         tb_logger.log_value('sgd_snr', float(snr_s), step=niters)
         sgd_x, est_x = ('', '[X]') if self.gest_used else ('[X]', '')
-        neo = torch.sqrt(torch.sum(torch.cat([(ee*ee).flatten() for ee in
-                         self.Esgd])))
-        nen = torch.sqrt(torch.sum(torch.cat([(ee*ee).flatten() for ee in
-                         Esgd])))
-        eed = torch.sum(torch.cat(
-            [(ee/neo*gg/nen).flatten() for ee, gg in zip(self.Esgd, Esgd)]))
+        # neo = torch.sqrt(torch.sum(torch.cat([(ee*ee).flatten() for ee in
+        #                  self.Esgd])))
+        # nen = torch.sqrt(torch.sum(torch.cat([(ee*ee).flatten() for ee in
+        #                  Esgd])))
+        # eed = torch.sum(torch.cat(
+        #     [(ee/neo*gg/nen).flatten() for ee, gg in zip(self.Esgd, Esgd)]))
         return ('G Bias: %.8f\t'
                 '%sSGD Var: %.8f\t %sEst Var: %.8f\t'
-                'SGD SNR: %.8f\t Est SNR: %.8f\t'
-                'Esgd cos sim: %.8f' % (
-                    bias, sgd_x, var_s, est_x, var_e, snr_s, snr_e, eed))
+                # 'SGD SNR: %.8f\t Est SNR: %.8f\t'
+                # 'Esgd cos sim: %.8f' % (
+                #     bias, sgd_x, var_s, est_x, var_e, snr_s, snr_e, eed))
+                % (bias, sgd_x, var_s, est_x, var_e))
 
     def grad(self, niters):
         model = self.model

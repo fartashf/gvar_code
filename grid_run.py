@@ -86,16 +86,16 @@ if __name__ == '__main__':
     # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2',
     #           'bolt1_gpu0,1', 'bolt1_gpu2,3',
     #           ]
-    jobs_0 = ['bolt2_gpu1', 'bolt2_gpu2', 'bolt2_gpu3',
-              'bolt1_gpu1', 'bolt1_gpu2', 'bolt1_gpu3',
-              'bolt1_gpu0', 'bolt2_gpu0',
+    jobs_0 = ['bolt2_gpu0', 'bolt2_gpu1', 'bolt2_gpu2', 'bolt2_gpu3',
+              'bolt1_gpu3',
+              'bolt1_gpu0', 'bolt1_gpu1', 'bolt1_gpu2',
               # 'bolt2_gpu0', 'bolt2_gpu1', 'bolt2_gpu2', 'bolt2_gpu3',
               # 'bolt1_gpu2', 'bolt1_gpu3',
               # 'bolt1_gpu0', 'bolt1_gpu1', 'bolt1_gpu2', 'bolt1_gpu3',
               # 'bolt0_gpu0', 'bolt0_gpu1', 'bolt0_gpu2', 'bolt0_gpu3'
               ]
     # njobs = [3] * 4 + [2] * 4  # validate start.sh
-    njobs = [4]*6 + [2]*2
+    njobs = [2]*5 + [1]*3
     # njobs = [2, 2, 1, 1]
     jobs = []
     for s, n in zip(jobs_0, njobs):
@@ -103,7 +103,7 @@ if __name__ == '__main__':
         # jobs += ['%s_job%d' % (s, i) for s in jobs_0]
 
     run_single = RunSingle(log_dir, module_name, exclude)
-    # run_single.num = 41
+    run_single.num = 22
 
     # args = OrderedDict([('lr', [1, 2]), ('batch_size', [10, 20])])
     # args = OrderedDict([('lr', [(1, OrderedDict([('batch_size', [10])])),

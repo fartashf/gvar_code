@@ -33,7 +33,7 @@ import torch.nn.functional as F
 import torch.nn.init as init
 
 
-__all__ = ['ResNet', 'resnet20', 'resnet32',
+__all__ = ['ResNet', 'resnet8', 'resnet20', 'resnet32',
            'resnet44', 'resnet56', 'resnet110', 'resnet1202']
 
 
@@ -127,6 +127,10 @@ class ResNet(nn.Module):
         out = out.view(out.size(0), -1)
         out = self.linear(out)
         return F.log_softmax(out, dim=-1)
+
+
+def resnet8():
+    return ResNet(BasicBlock, [1, 1, 1])
 
 
 def resnet20():

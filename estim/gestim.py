@@ -13,6 +13,7 @@ class GradientEstimator(object):
         self.model = None
         self.data_loader = data_loader
         self.tb_logger = tb_logger
+        self.exp_avg_sq = None
 
     def init_data_iter(self):
         self.data_iter = iter(InfiniteLoader(self.data_loader))
@@ -36,6 +37,8 @@ class GradientEstimator(object):
         dt = self.data_iter
         self.data_iter = self.estim_iter
         ret = self.grad(model)
+        if self.div_avg_sq:
+            self.update_avg_sq(self, ret)
         self.data_iter = dt
         return ret
 
@@ -121,3 +124,12 @@ class GradientEstimator(object):
             g.data.copy_(s.data).div_(opt.g_avg)
             s.data.fill_(0)
         self.g_avg_iter = 0
+
+    def update_avg_sq(self, grad):
+        if self.exp_avg_sq is None:
+            self.exp_avg_sq = [torch.zeros_like(g) for g in grad]
+            self.step = 0
+        beta2 = self.opt.adam_betas[1]
+        self.step += 1
+        for v, g in zip(self.exp_avg_sq, grad):
+            v.mul_(beta2).addcmul_(1 - beta2, g, g)
