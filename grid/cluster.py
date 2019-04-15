@@ -39,11 +39,11 @@ def vector(sargs):
     vaughan(vremote): p100, t4
 
     rm jobs/*.sh jobs/log/* -f && python grid_run.py --grid G --run_name X \
-    --cluster_args 5,4,gpu
+    --cluster_args 4,4,p100,t4
     pattern=""; for i in 1 2; do ./kill.sh $i $pattern; done
     sbatch jobs/slurm.sbatch
     """
-    njobs, ntasks, partition = sargs.split(',')
+    njobs, ntasks, partition = sargs.split(',', 2)
     njobs = int(njobs)
     ntasks = int(ntasks)
     # njobs = 5  # Number of array jobs
@@ -54,13 +54,13 @@ def vector(sargs):
 
 #SBATCH --job-name=array
 #SBATCH --output=jobs/log/array_%A_%a.log
-#SBATCH --array=0-{njobs}
+#SBATCH --array=0-{njobs}%{ntasks}
 #SBATCH --time=24:00:00
 #SBATCH --gres=gpu:1              # Number of GPUs (per node)
 #SBATCH -c 12
 #SBATCH --mem=16G
 #SBATCH -p {partition}
-#SBATCH --ntasks={ntasks}
+#SBATCH --ntasks=1
 
 date; hostname; pwd
 python -c "import torch; print(torch.__version__)"

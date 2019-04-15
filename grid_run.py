@@ -81,7 +81,7 @@ if __name__ == '__main__':
     parser.add_argument('--grid', default='gvar', type=str)
     parser.add_argument('--run_name', default='', type=str)
     parser.add_argument('--cluster', default='bolt', type=str)
-    parser.add_argument('--cluster_args', default='5,4,gpu', type=str)
+    parser.add_argument('--cluster_args', default='8,4,gpu', type=str)
     args = parser.parse_args()
     val = grid.__dict__[args.grid].__dict__[args.run_name]([])
     jobs, parallel = grid.cluster.__dict__[args.cluster](args.cluster_args)
