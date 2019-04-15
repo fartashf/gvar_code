@@ -35,6 +35,9 @@ def bolt(sargs):
 
 def vector(sargs):
     """
+    vector(q): gpu, wsgpu
+    vaughan(vremote): p100, t4
+
     rm jobs/*.sh jobs/log/* -f && python grid_run.py --grid G --run_name X \
     --cluster_args 5,4,gpu
     pattern=""; for i in 1 2; do ./kill.sh $i $pattern; done
@@ -50,21 +53,22 @@ def vector(sargs):
     sbatch_f = """#!/bin/bash
 
 #SBATCH --job-name=array
-#SBATCH --output=jobs/log/array_%A_%a.out
-#SBATCH --error=jobs/log/array_%A_%a.err
+#SBATCH --output=jobs/log/array_%A_%a.log
 #SBATCH --array=0-{njobs}
 #SBATCH --time=24:00:00
 #SBATCH --gres=gpu:1              # Number of GPUs (per node)
-#SBATCH --partition={partition}
+#SBATCH -c 8
+#SBATCH --mem=4G
+#SBATCH -p {partition}
 #SBATCH --ntasks={ntasks}
 
-# vector(q): gpu, wsgpu
-# vaughan(vremote): p100, t4
+date; hostname; pwd
+nvidia-smi
 
 # the environment variable SLURM_ARRAY_TASK_ID contains
 # the index corresponding to the current job step
 source $HOME/export_p1.sh
-sh jobs/$SLURM_ARRAY_TASK_ID.sh
+bash jobs/$SLURM_ARRAY_TASK_ID.sh
 """.format(njobs=njobs-1, ntasks=ntasks, partition=partition)
     with open('jobs/slurm.sbatch', 'w') as f:
         print(sbatch_f, file=f)

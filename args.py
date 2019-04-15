@@ -281,7 +281,7 @@ def opt_to_gluster_kwargs(opt):
 def yaml_opt(yaml_path):
     opt = {}
     with open(yaml_path, 'r') as handle:
-        opt = yaml.load(handle)
+        opt = yaml.load(handle, Loader=yaml.FullLoader)
     return opt
 
 
