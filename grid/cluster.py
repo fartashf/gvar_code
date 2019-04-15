@@ -1,7 +1,7 @@
 from __future__ import print_function
 
 
-def bolt():
+def bolt(sargs):
     """
     rm jobs/*.sh jobs/log/* -f && python grid_run.py --grid G --run_name X
     pattern=""; for i in 1 2; do ./kill.sh $i $pattern; done
@@ -33,14 +33,17 @@ def bolt():
     return jobs, parallel
 
 
-def vector():
+def vector(sargs):
     """
-    rm jobs/*.sh jobs/log/* -f && python grid_run.py --grid G --run_name X
+    rm jobs/*.sh jobs/log/* -f && python grid_run.py --grid G --run_name X \
+    --cluster_args 5,4,gpu
     pattern=""; for i in 1 2; do ./kill.sh $i $pattern; done
     sbatch jobs/slurm.sbatch
     """
-    njobs = 5  # Number of array jobs
-    ntasks = 4  # Number of running jobs
+    njobs, ntasks, partition = sargs.split(',')
+    # njobs = 5  # Number of array jobs
+    # ntasks = 4  # Number of running jobs
+    # partition = 'gpu'
     jobs = [str(i) for i in range(njobs)]
     sbatch_f = """#!/bin/bash
 
@@ -50,7 +53,7 @@ def vector():
 #SBATCH --array=0-{njobs}
 #SBATCH --time=24:00:00
 #SBATCH --gres=gpu:1              # Number of GPUs (per node)
-#SBATCH --partition=gpu
+#SBATCH --partition={partition}
 #SBATCH --ntasks={ntasks}
 
 # vector(q): gpu, wsgpu
@@ -60,7 +63,7 @@ def vector():
 # the index corresponding to the current job step
 source $HOME/export_p1.sh
 sh jobs/$SLURM_ARRAY_TASK_ID.sh
-""".format(njobs=njobs-1, ntasks=ntasks)
+""".format(njobs=njobs-1, ntasks=ntasks, partition=partition)
     with open('jobs/slurm.sbatch', 'w') as f:
         print(sbatch_f, file=f)
     parallel = True  # each script runs in parallel
