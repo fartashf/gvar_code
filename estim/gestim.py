@@ -37,8 +37,8 @@ class GradientEstimator(object):
         dt = self.data_iter
         self.data_iter = self.estim_iter
         ret = self.grad(model)
-        if self.div_avg_sq:
-            self.update_avg_sq(self, ret)
+        # if self.div_avg_sq:
+        #     self.update_avg_sq(self, ret)
         self.data_iter = dt
         return ret
 
