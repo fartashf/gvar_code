@@ -57,13 +57,14 @@ def vector(sargs):
 #SBATCH --array=0-{njobs}
 #SBATCH --time=24:00:00
 #SBATCH --gres=gpu:1              # Number of GPUs (per node)
-#SBATCH -c 8
-#SBATCH --mem=4G
+#SBATCH -c 12
+#SBATCH --mem=16G
 #SBATCH -p {partition}
 #SBATCH --ntasks={ntasks}
 
 date; hostname; pwd
-nvidia-smi
+python -c "import torch; print(torch.__version__)"
+(while true; do nvidia-smi; top -b -n 1 | head -20; sleep 10; done) &
 
 # the environment variable SLURM_ARRAY_TASK_ID contains
 # the index corresponding to the current job step

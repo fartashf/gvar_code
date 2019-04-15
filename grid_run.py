@@ -96,3 +96,5 @@ if __name__ == '__main__':
         with open('jobs/{}.sh'.format(job), 'w') as f:
             for i in range(j, len(cmds), len(jobs)):
                 print(cmds[i], file=f)
+            if parallel:
+                print('wait', file=f)
