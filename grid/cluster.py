@@ -41,6 +41,8 @@ def vector(sargs):
     sbatch jobs/slurm.sbatch
     """
     njobs, ntasks, partition = sargs.split(',')
+    njobs = int(njobs)
+    ntasks = int(ntasks)
     # njobs = 5  # Number of array jobs
     # ntasks = 4  # Number of running jobs
     # partition = 'gpu'
