@@ -1588,7 +1588,7 @@ def cifar10_gvar_adam_active(args):
         ('g_nclusters', 64),  # [10, 100]),  # 2
         # ('g_active_only', ['module.fc2', 'module.fc1,module.fc2']),
         ('g_debug', ''),
-        ('g_active_only', [None, 'layer1', 'layer2', 'layer3', 'linear']),
+        # ('g_active_only', [None, 'layer1', 'layer2', 'layer3', 'linear']),
         # ('g_msnap_iter', [10]),
         ('lr', [1e-3]),  # , 5e-4
         ('optim', 'adam'),  # 'adamw'
@@ -1598,8 +1598,9 @@ def cifar10_gvar_adam_active(args):
     ]
     disj_args = [
         # [],
-        OrderedDict([('g_nograd', '')]),
-        OrderedDict([('g_noact', '')]),
+        # OrderedDict([('g_nograd', '')]),
+        # OrderedDict([('g_noact', '')]),
+        OrderedDict([('g_whiten', '')]),
     ]
 
     # args_3 = [('gb_citers', 2),

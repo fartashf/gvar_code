@@ -19,7 +19,6 @@ class Whitener(object):
     def __init__(self, betas, eps):
         self.beta1, self.beta2 = betas
         self.eps = eps
-        self.m_dict = {}
         self.v_dict = {}
         self.s_dict = {}
 
@@ -32,40 +31,47 @@ class Whitener(object):
                                                 A.shape[0]*A.shape[2])
         return Am
 
-    def whiten(self, name, A):
-        # A:
-        # fc: B x DDD
-        # conv: B x DDD x T
-
+    def update_v(self, name, A):
         # Current mean
         Am = self.mean(A)
-        Av = self.mean((A-Am)*(A-Am))
+        Av = self.mean(Am*Am)
 
         # Stored stats
-        if name not in self.m_dict:
-            self.m_dict[name] = torch.zeros_like(Am)
-            self.v_dict[name] = torch.zeros_like(Am)
+        if name not in self.v_dict:
+            self.v_dict[name] = torch.zeros_like(Av)
             self.s_dict[name] = 0
         self.s_dict[name] += 1
-        m, v, step = self.m_dict[name], self.v_dict[name], self.s_dict[name]
+        v = self.v_dict[name]
 
-        # Bias correction
-        beta1, beta2, eps = self.beta1, self.beta2, self.eps
-        bias_correction1 = 1 - beta1 ** step
-        bias_correction2 = 1 - beta2 ** step
-
-        # Mean
-        m.mul_(beta1).add_(1-beta1, Am)
-        mh = m/bias_correction1
+        beta2 = self.beta2
 
         # Variance
         # v.mul_(beta2).addcmul_(1-beta2, Azm, Azm)
         v.mul_(beta2).add_(1-beta2, Av)
+
+    def whiten(self, name, A, update=True):
+        # A:
+        # fc: B x DDD
+        # conv: B x DDD x T
+
+        if update:
+            self.update_v(name, A)
+        if name in self.v_dict:
+            v, step = self.v_dict[name], self.s_dict[name]
+        else:
+            v, step = torch.ones_like(A), 1
+
+        # Bias correction
+        beta2, eps = self.beta2, self.eps
+        bias_correction2 = 1 - beta2 ** step
+
         vh = v/bias_correction2
         sh = vh.sqrt().add(eps)
 
         # Whiten
-        Aw = (A-mh)/sh
+        Aw = A/sh
+        # if step > 100:
+        #     import ipdb; ipdb.set_trace()
         return Aw
 
 
@@ -543,8 +549,8 @@ class GlusterLinear(GlusterModule):
             self.Dw_cur.copy_(Dw)
         Ai, Go = self.Ai0, Go0
         if self.do_whiten:
-            Ai = self.whitener.whiten('Ai', Ai)
-            Go = self.whitener.whiten('Go', Go)
+            Ai = self.whitener.whiten('Ai', Ai, not self.is_eval)
+            Go = self.whitener.whiten('Go', Go, not self.is_eval)
         return Ai, Go
 
     def get_centers(self):
@@ -788,8 +794,8 @@ class GlusterConv(GlusterModule):
                 self.Dw_cur = torch.zeros_like(Dw).cuda()
             self.Dw_cur.copy_(Dw)
         if self.do_whiten:
-            Ai = self.whitener.whiten('Ai', Ai)
-            Go = self.whitener.whiten('Go', Go)
+            Ai = self.whitener.whiten('Ai', Ai, not self.is_eval)
+            Go = self.whitener.whiten('Go', Go, not self.is_eval)
         return Ai, Go
 
     def get_centers(self):
