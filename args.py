@@ -184,7 +184,8 @@ def add_args():
                         default=argparse.SUPPRESS, type=int)
     parser.add_argument('--run_dir', default='runs/runX')
     parser.add_argument('--ckpt_name', default='model_best.pth.tar')
-    parser.add_argument('--g_no_grad', action='store_true')
+    parser.add_argument('--g_nograd', action='store_true')
+    parser.add_argument('--g_noact', action='store_true')
     parser.add_argument('--g_active_only', default='')
     parser.add_argument('--g_inactive_mods', default='')
     parser.add_argument('--g_online', action='store_true')
@@ -266,7 +267,8 @@ def opt_to_gluster_kwargs(opt):
                      if opt.g_inactive_mods != '' else [])
     return {'beta': opt.g_beta, 'min_size': opt.g_min_size,
             'nclusters': opt.g_nclusters, 'reinit_method': opt.g_reinit,
-            'no_grad': opt.g_no_grad, 'active_only': active_only,
+            'no_grad': opt.g_nograd, 'no_act': opt.g_noact,
+            'active_only': active_only,
             'inactive_mods': inactive_mods,
             'debug': opt.g_debug, 'mul_Nk': (not opt.g_noMulNk),
             'do_svd': opt.g_svd, 'add_CZ': opt.g_CZ,

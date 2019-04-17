@@ -71,7 +71,7 @@ class Whitener(object):
 
 class GlusterModule(object):
     def __init__(
-            self, module, eps, nclusters, no_grad=False,
+            self, module, eps, nclusters, no_grad=False, no_act=False,
             inactive_mods=[], active_only=[], name='', do_svd=False,
             debug=True, add_GG=False, add_CZ=False,
             cluster_size=None, rank=1, stable=100,
@@ -84,6 +84,7 @@ class GlusterModule(object):
         self.is_active = True
         self.is_eval = False
         self.no_grad = no_grad  # grad=1 => clustring in the input space
+        self.no_act = no_act  # act=1 => clustring in the grad wrt act space
         self.inactive_mods = inactive_mods
         self.name = name
         # TODO: unnamed children
@@ -531,6 +532,8 @@ class GlusterLinear(GlusterModule):
     def _post_proc(self, Go0):
         if self.no_grad:
             Go0.fill_(1e-3)  # TODO: /Go0.numel())
+        if self.no_act:
+            self.Ai0.fill_(1e-3)  # TODO: /Go0.numel())
         self.Ais = self.Ai0/self.stable
         self.Gos = Go0*self.stable
         if self.do_svd:
@@ -760,6 +763,8 @@ class GlusterConv(GlusterModule):
     def _post_proc(self, Go0):
         if self.no_grad:
             Go0.fill_(1e-3)  # TODO: /Go0.numel())
+        if self.no_act:
+            self.Ai0.fill_(1e-3)  # TODO: /Go0.numel())
         module = self.module
         Ai = F.unfold(
                 self.Ai0, module.kernel_size,

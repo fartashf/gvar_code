@@ -1573,29 +1573,34 @@ def cifar10_gvar_adam_active(args):
                   ('g_bsnap_iter', 2),
                   # ('g_optim_start', [5, 10, 20]),
                   ]
-    args_sgd = [('g_estim', ['sgd']),
-                ('batch_size', [128, 64]),  # [128, 256]),  # [128, 64]),
-                ('optim', [
-                    ('sgd', OrderedDict([('lr', [.1])])),
-                    ('adam', OrderedDict([('lr', [1e-3])])),
-                    # ('adamw', OrderedDict([('lr', [.01, 1e-3])])),
-                    ]),
-                ]
+    # args_sgd = [('g_estim', ['sgd']),
+    #             ('batch_size', [128, 64]),  # [128, 256]),  # [128, 64]),
+    #             ('optim', [
+    #                 ('sgd', OrderedDict([('lr', [.1])])),
+    #                 ('adam', OrderedDict([('lr', [1e-3])])),
+    #                 # ('adamw', OrderedDict([('lr', [.01, 1e-3])])),
+    #                 ]),
+    #             ]
 
     gluster_args = [
-            ('g_estim', 'gluster'),
-            ('batch_size', 64),
-            ('g_nclusters', 64),  # [10, 100]),  # 2
-            # ('g_active_only', ['module.fc2', 'module.fc1,module.fc2']),
-            ('g_debug', ''),
-            ('g_active_only', [None, 'layer1', 'layer2', 'layer3', 'linear']),
-            # ('g_msnap_iter', [10]),
-            ('lr', [1e-3]),  # , 5e-4
-            ('optim', 'adam'),  # 'adamw'
-            ('g_optim', ''),
-            ('g_optim_start', [5]),  # , 10, 20]),
-            # ('g_mlr', [1, 2]),  # , 5]),
-            ]
+        ('g_estim', 'gluster'),
+        ('batch_size', 64),
+        ('g_nclusters', 64),  # [10, 100]),  # 2
+        # ('g_active_only', ['module.fc2', 'module.fc1,module.fc2']),
+        ('g_debug', ''),
+        ('g_active_only', [None, 'layer1', 'layer2', 'layer3', 'linear']),
+        # ('g_msnap_iter', [10]),
+        ('lr', [1e-3]),  # , 5e-4
+        ('optim', 'adam'),  # 'adamw'
+        ('g_optim', ''),
+        ('g_optim_start', [5]),  # , 10, 20]),
+        # ('g_mlr', [1, 2]),  # , 5]),
+    ]
+    disj_args = [
+        # [],
+        OrderedDict([('g_nograd', '')]),
+        OrderedDict([('g_noact', '')]),
+    ]
 
     # args_3 = [('gb_citers', 2),
     #           ('g_min_size', 100),
@@ -1615,8 +1620,10 @@ def cifar10_gvar_adam_active(args):
               ('g_init_mul', 2),
               ('g_reinit_iter', 10),
               ]
-    args += [OrderedDict(shared_args+gvar_args+gluster_args+args_4)]
-    args += [OrderedDict(shared_args+args_sgd+gvar_args)]
+    # args += [OrderedDict(shared_args+gvar_args+gluster_args+args_4)]
+    # args += [OrderedDict(shared_args+args_sgd+gvar_args)]
+    args += [tuple((OrderedDict(shared_args+gvar_args+gluster_args+args_4),
+                    disj_args))]
     return args, log_dir, module_name, exclude
 
 
