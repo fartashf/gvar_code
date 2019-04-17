@@ -1,6 +1,3 @@
-# using event multiplexer from tensorboard
-import tensorboard_extract as tb_extract
-from tensorboard.backend.event_processing import plugin_event_multiplexer as event_multiplexer  # NOQA
 from scipy.interpolate import spline
 import numpy as np
 import os
@@ -20,6 +17,8 @@ class TBMultiplexer:
     def __init__(self, logdir):
         self.logdir = logdir
         SIZE_GUIDANCE = {'scalars': 1000}
+        # using event multiplexer from tensorboard
+        from tensorboard.backend.event_processing import plugin_event_multiplexer as event_multiplexer  # NOQA
         self.multiplexer = event_multiplexer.EventMultiplexer(
             tensor_size_guidance=SIZE_GUIDANCE)
         self.multiplexer.AddRunsFromDirectory(logdir)
@@ -36,6 +35,7 @@ class TBMultiplexer:
         data = []
         for run_name in run_names:
             d = {}
+            import tensorboard_extract as tb_extract
             for tag_name in tag_names:
                 js = tb_extract.extract_scalars(self.multiplexer, run_name[
                                                 len(self.logdir):], tag_name)
