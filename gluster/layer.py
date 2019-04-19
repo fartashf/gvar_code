@@ -19,6 +19,7 @@ class Whitener(object):
     def __init__(self, betas, eps):
         self.beta1, self.beta2 = betas
         self.eps = eps
+        self.m_dict = {}
         self.v_dict = {}
         self.s_dict = {}
 
@@ -38,18 +39,22 @@ class Whitener(object):
 
         # Stored stats
         if name not in self.v_dict:
+            self.m_dict[name] = torch.zeros_like(Am)
             self.v_dict[name] = torch.zeros_like(Av)
             self.s_dict[name] = 0
         self.s_dict[name] += 1
+        m = self.m_dict[name]
         v = self.v_dict[name]
 
-        beta2 = self.beta2
+        beta1, beta2 = self.beta1, self.beta2
 
         # Variance
         # v.mul_(beta2).addcmul_(1-beta2, Azm, Azm)
+        m.mul_(beta1).add_(1-beta1, Am)
         v.mul_(beta2).add_(1-beta2, Av)
 
     def whiten(self, name, A, update=True):
+        # It defies Gluster?!!
         # A:
         # fc: B x DDD
         # conv: B x DDD x T
@@ -57,16 +62,19 @@ class Whitener(object):
         if update:
             self.update_v(name, A)
         if name in self.v_dict:
-            v, step = self.v_dict[name], self.s_dict[name]
+            m, v, step = (self.m_dict[name],
+                          self.v_dict[name], self.s_dict[name])
         else:
-            v, step = torch.ones_like(A), 1
+            m, v, step = torch.ones_like(A), torch.ones_like(A), 1
 
         # Bias correction
-        beta2, eps = self.beta2, self.eps
+        beta1, beta2, eps = self.beta1, self.beta2, self.eps
+        bias_correction1 = 1 - beta1 ** step
         bias_correction2 = 1 - beta2 ** step
 
+        mh = m/bias_correction1
         vh = v/bias_correction2
-        sh = vh.sqrt().add(eps)
+        sh = (vh-mh*mh).abs().sqrt().add(eps)
 
         # Whiten
         Aw = A/sh
