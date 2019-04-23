@@ -77,8 +77,10 @@ class Whitener(object):
         sh = (vh-mh*mh).abs().sqrt().add(eps)
 
         # Whiten
-        Aw = A/sh
+        Aw = A*sh
         # if step > 100:
+        #     print("%.4f %.4f" % (A.min(), A.max()))
+        #     print("%.4f %.4f" % (Aw.min(), Aw.max()))
         #     import ipdb; ipdb.set_trace()
         return Aw
 
@@ -548,6 +550,9 @@ class GlusterLinear(GlusterModule):
             Go0.fill_(1e-3)  # TODO: /Go0.numel())
         if self.no_act:
             self.Ai0.fill_(1e-3)  # TODO: /Go0.numel())
+        if self.do_whiten:
+            self.Ai0 = self.whitener.whiten('Ai', self.Ai0, not self.is_eval)
+            Go0 = self.whitener.whiten('Go', Go0, not self.is_eval)
         self.Ais = self.Ai0/self.stable
         self.Gos = Go0*self.stable
         if self.do_svd:
@@ -556,9 +561,6 @@ class GlusterLinear(GlusterModule):
                 self.Dw_cur = torch.zeros_like(Dw).cuda()
             self.Dw_cur.copy_(Dw)
         Ai, Go = self.Ai0, Go0
-        if self.do_whiten:
-            Ai = self.whitener.whiten('Ai', Ai, not self.is_eval)
-            Go = self.whitener.whiten('Go', Go, not self.is_eval)
         return Ai, Go
 
     def get_centers(self):
@@ -785,6 +787,9 @@ class GlusterConv(GlusterModule):
                 padding=module.padding,
                 stride=module.stride, dilation=module.dilation)
         Go = Go0.reshape(Go0.shape[:-2]+(np.prod(Go0.shape[-2:]), ))
+        if self.do_whiten:
+            Ai = self.whitener.whiten('Ai', Ai, not self.is_eval)
+            Go = self.whitener.whiten('Go', Go, not self.is_eval)
         # mean/sum? sqrt(mean)
         # TODO: overflow, try /T only for Ais
         T = Go.shape[-1]
@@ -801,9 +806,6 @@ class GlusterConv(GlusterModule):
             if self.Dw_cur.shape != Dw.shape:
                 self.Dw_cur = torch.zeros_like(Dw).cuda()
             self.Dw_cur.copy_(Dw)
-        if self.do_whiten:
-            Ai = self.whitener.whiten('Ai', Ai, not self.is_eval)
-            Go = self.whitener.whiten('Go', Go, not self.is_eval)
         return Ai, Go
 
     def get_centers(self):
