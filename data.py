@@ -124,7 +124,8 @@ class IndexedDataset(data.Dataset):
             subindex = self.dup_ids[(index-len(self.ds))//self.dup_cnt]
         img, target = self.ds[subindex]
         if int(index) in self.cr_ids:
-            target = torch.tensor(self.cr_labels[index])
+            # target = torch.tensor(self.cr_labels[index])
+            target = self.cr_labels[index]
         return img, target, index
 
     def __len__(self):

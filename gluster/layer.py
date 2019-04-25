@@ -74,13 +74,14 @@ class Whitener(object):
 
         mh = m/bias_correction1
         vh = v/bias_correction2
-        sh = (vh-mh*mh).abs().sqrt().add(eps)
+        sh = (vh-mh*mh).abs().sqrt().add(eps)  # 1
 
         # Whiten
         Aw = A*sh
         # if step > 100:
-        #     print("%.4f %.4f" % (A.min(), A.max()))
-        #     print("%.4f %.4f" % (Aw.min(), Aw.max()))
+        #     # print("%.4f %.4f" % (A.min(), A.max()))
+        #     # print("%.4f %.4f" % (Aw.min(), Aw.max()))
+        #     print((v-m*m).mean())
         #     import ipdb; ipdb.set_trace()
         return Aw
 
