@@ -256,6 +256,13 @@ def add_args():
                         default=argparse.SUPPRESS, type=int)
     parser.add_argument('--niters',
                         default=argparse.SUPPRESS, type=int)
+    # KFAC
+    parser.add_argument('--kf_stat_decay', default=0.95, type=float)
+    parser.add_argument('--kf_damping', default=1e-3, type=float)
+    parser.add_argument('--kf_kl_clip', default=1e-2, type=float)
+    parser.add_argument('--kf_TCov', default=10, type=int)
+    parser.add_argument('--kf_TScal', default=10, type=int)
+    parser.add_argument('--kf_TInv', default=100, type=int)
     args = parser.parse_args()
     return args
 

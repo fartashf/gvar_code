@@ -3,12 +3,15 @@ import numpy as np
 import logging
 import os
 import sys
-from optim.adamw import AdamW
+import optim
+import optim.adamw
+import optim.kfac
+import optim.ekfac
 
 import torch
 import torch.nn
 import torch.backends.cudnn as cudnn
-import torch.optim as optim
+import torch.optim
 import torch.nn.functional as F
 import torch.multiprocessing
 
@@ -40,23 +43,47 @@ class OptimizerFactory(object):
         model = self.model
         opt = self.opt
         if opt.optim == 'sgd':
-            optimizer = optim.SGD(model.parameters(),
-                                  lr=opt.lr, momentum=opt.momentum,
-                                  weight_decay=opt.weight_decay,
-                                  nesterov=opt.nesterov)
+            optimizer = torch.optim.SGD(model.parameters(),
+                                        lr=opt.lr, momentum=opt.momentum,
+                                        weight_decay=opt.weight_decay,
+                                        nesterov=opt.nesterov)
         elif opt.optim == 'adam':
-            optimizer = optim.Adam(model.parameters(),
-                                   lr=opt.lr,
-                                   betas=opt.adam_betas,
-                                   eps=opt.adam_eps,
-                                   weight_decay=opt.weight_decay)
+            optimizer = torch.optim.Adam(model.parameters(),
+                                         lr=opt.lr,
+                                         betas=opt.adam_betas,
+                                         eps=opt.adam_eps,
+                                         weight_decay=opt.weight_decay)
         elif opt.optim == 'adamw':
-            optimizer = AdamW(model.parameters(),
-                              lr=opt.lr,
-                              betas=opt.adam_betas,
-                              eps=opt.adam_eps,
-                              weight_decay=opt.weight_decay,
-                              l2_reg=False)
+            optimizer = optim.adamw.AdamW(
+                model.parameters(),
+                lr=opt.lr,
+                betas=opt.adam_betas,
+                eps=opt.adam_eps,
+                weight_decay=opt.weight_decay,
+                l2_reg=False)
+        elif opt.optim == 'kfac':
+            optimizer = optim.kfac.KFACOptimizer(
+                model,
+                lr=opt.lr,
+                momentum=opt.momentum,
+                stat_decay=opt.kf_stat_decay,
+                damping=opt.kf_damping,
+                kl_clip=opt.kf_kl_clip,
+                weight_decay=opt.weight_decay,
+                TCov=opt.kf_TCov,
+                TInv=opt.kf_TInv)
+        elif opt.optim == 'ekfac':
+            optimizer = optim.ekfac.EKFACOptimizer(
+                model,
+                lr=opt.lr,
+                momentum=opt.momentum,
+                stat_decay=opt.kf_stat_decay,
+                damping=opt.kf_damping,
+                kl_clip=opt.kf_kl_clip,
+                weight_decay=opt.weight_decay,
+                TCov=opt.kf_TCov,
+                TScal=opt.kf_TScal,
+                TInv=opt.kf_TInv)
         self.optimizer = optimizer
         if self.param_groups is not None:
             self.optimizer.param_groups = self.param_groups
