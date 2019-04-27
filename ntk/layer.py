@@ -17,12 +17,11 @@ def get_module(module):
 
 class Module(object):
     def __init__(
-            self, module, eps, no_grad=False, no_act=False,
+            self, module, no_grad=False, no_act=False,
             inactive_mods=[], active_only=[], name='',
             debug=True, stable=100, *args, **kwargs):
         self.module = module
-        self.eps = eps
-        self.batch_dist = None
+        self.batch_kernel = None
         self.is_active = True
         self.is_eval = False
         self.no_grad = no_grad  # grad=1 => clustring in the input space
@@ -52,13 +51,17 @@ class Module(object):
     def _register_hooks(self):
         if not self.has_param:
             return
+        param = self.module.weight
+        self.din = np.prod(param.shape[1:])
+        self.dout = param.shape[0]
+
         if self.debug:
             logging.info(
                     '> register hooks {} {}'.format(
                         self.name, self.module))
         # https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/blob/master/algo/kfac.py
         self.module.register_forward_pre_hook(self._save_input_hook)
-        self.module.register_backward_hook(self._save_dist_hook)
+        self.module.register_backward_hook(self._save_kernel_hook)
 
     def _save_input_hook(self, m, Ai):
         if not self.is_active:
@@ -70,7 +73,7 @@ class Module(object):
             self.Ai0 = torch.zeros_like(Ai0).cuda()
         self.Ai0.copy_(Ai0)
 
-    def _save_dist_hook(self, m, grad_input, grad_output):
+    def _save_kernel_hook(self, m, grad_input, grad_output):
         if not self.is_active:
             return
         if not self.has_param:
@@ -82,17 +85,16 @@ class Module(object):
             Ai, Go = self._post_proc(Go0)
             O = []
             if self.has_bias:
-                O += [self._save_dist_hook_bias(Ai, Go)]
+                O += [self._save_kernel_hook_bias(Ai, Go)]
             if self.has_weight:
-                O += [self._save_dist_hook_weight(Ai, Go)]
-            # TODO: per-layer clusters
-            self.batch_dist = O
+                O += [self._save_kernel_hook_weight(Ai, Go)]
+            self.batch_kernel = O
 
-    def get_dist(self):
+    def get_kernel(self):
         if not self.has_param:
             return
         # called after a backward
-        return self.batch_dist
+        return self.batch_kernel
 
     def activate(self):
         # Both EM steps
@@ -129,7 +131,6 @@ class LoopFunction(object):
 class Container(Module):
     def __init__(self, *args, **kwargs):
         super(Container, self).__init__(*args, **kwargs)
-        # logging.info('> container {}'.format(self.module))
         self._init_children(*args, **kwargs)
         self._set_default_loop()
 
@@ -146,7 +147,7 @@ class Container(Module):
                 self.children[m] = glayer(*((m, )+args[1:]), **kwargs)
 
     def _set_default_loop(self):
-        loop_functions = ['get_dist', 'deactivate', 'activate', 'eval']
+        loop_functions = ['get_kernel', 'deactivate', 'activate', 'eval']
         for fname in loop_functions:
             setattr(self, fname, LoopFunction(self, self.children, fname))
 
@@ -154,13 +155,11 @@ class Container(Module):
 class Linear(Module):
     def __init__(self, *args, **kwargs):
         super(Linear, self).__init__(*args, **kwargs)
-        weight = self.module.weight
-        dout, din = weight.shape
 
-    def _save_dist_hook_bias(self, Ai, Go):
+    def _save_kernel_hook_bias(self, Ai, Go):
         raise Exception('not implemented')
 
-    def _save_dist_hook_weight(self, Ai, Go):
+    def _save_kernel_hook_weight(self, Ai, Go):
         B = Ai.shape[0]
 
         AiAi = torch.matmul(Ai, Ai.t())
@@ -183,19 +182,15 @@ class Conv2d(Module):
         # TODO: Roger, Martens, A Kronecker-factored approximate Fisher matrix
         # for convolution layer
         super(Conv2d, self).__init__(*args, **kwargs)
-        self.param = self.module.weight
-        self._gnorm = None
         self._conv_dot = None
 
-    def _save_dist_hook_bias(self, Ai, Go):
+    def _save_kernel_hook_bias(self, Ai, Go):
         raise Exception('not implemented')
 
-    def _save_dist_hook_weight(self, Ai, Go):
-        param = self.param
+    def _save_kernel_hook_weight(self, Ai, Go):
         B = Ai.shape[0]
-        din = np.prod(param.shape[1:])
-        dout = param.shape[0]
         T = Go.shape[-1]
+        din, dout = self.din, self.dout
 
         assert Go.shape == (B, dout, T), 'Go: B x dout x T'
         assert Ai.shape == (B, din, T), 'Ai: B x din x T'
@@ -203,16 +198,17 @@ class Conv2d(Module):
         if self._conv_dot is None:
             self._conv_dot = self._conv_dot_choose(Ai, Go)
         GoG = self._conv_dot(Ai, Go)
-        assert GoG.shape == (B, B), 'GoG: G x B.'
+        assert GoG.shape == (B, B), 'GoG: B x B.'
 
         return GoG
 
     def _conv_dot_choose(self, Ai, Go):
-        B, din = Ai.shape
-        B, dout, T = Go.shape
+        din, dout = self.din, self.dout
+        B = Ai.shape[0]
+        T = Go.shape[-1]
         self.cost1 = cost1 = B*din*B*T*T + B*dout*B*T*T + B*B*T
         self.cost2 = cost2 = B*din*T*dout + B*B*din*dout
-        if self.batch_dist is None and self.debug:
+        if self.batch_kernel is None and self.debug:
             logging.info(
                     'GoG Cost ratio %s: %.4f'
                     % (self.name, 1.*self.cost1/self.cost2))
@@ -232,40 +228,11 @@ class Conv2d(Module):
         GoG = torch.einsum('kbts,kbts->kb', [AiAi, GoGo])  # /T
         return GoG
 
-    def _conv_dot_type2(self, Ci, Ai, Co, Go):
+    def _conv_dot_type2(self, Ai, Go):
         AiGo = torch.einsum('bit,bot->bio', [Ai, Go])
         # mean/sum? sum
         GoG = torch.einsum('kio,bio->kb', [AiGo, AiGo])  # /T
         return GoG
-
-    def _gnorm_choose(self, Ai, Go):
-        B, din, T = Ai.shape
-        B, dout, T = Go.shape
-        self.cost1 = cost1 = B*din*T*T + B*dout*T*T + B*T*T
-        self.cost2 = cost2 = B*din*dout*T + B*din*dout
-        if self.batch_dist is None and self.debug:
-            logging.info(
-                    'GG Cost ratio %s: %.4f'
-                    % (self.name, 1.*self.cost1/self.cost2))
-        if cost1 < cost2:
-            return self._gnorm_type1
-        return self._gnorm_type2
-
-    def _gnorm_type1(self, Ai, Go):
-        AiAi = torch.einsum('bis,bit->bst', [Ai, Ai])
-        GoGo = torch.einsum('bos,bot->bst', [Go, Go])
-        # GG = torch.einsum('bst,bst->b', [AiAi, GoGo])
-        GG = (AiAi*GoGo).sum(-1).sum(-1)
-        return GG
-
-    def _gnorm_type2(self, Ai, Go):
-        # return Ai[:, 0, 0]*0+1
-        AiGo = torch.einsum('bit,bot->bio', [Ai, Go])
-        # return AiGo[:, 0, 0]*0+1
-        # TODO: why?!!!!
-        # GG = torch.einsum('bio,bio->b', [AiGo, AiGo])
-        GG = (AiGo*AiGo).sum(-1).sum(-1)
-        return GG
 
     def _post_proc(self, Go0):
         if self.no_grad:
