@@ -3,11 +3,12 @@ import ntk.layer
 
 
 class NeuralTangentKernel(object):
-    def __init__(self, model, damping=1e-3, debug=True, **kwargs):
+    def __init__(self, model, damping=1e-3, debug=True, cpu=True, **kwargs):
         self.model = model
         self.damping = damping
         self.debug = debug
         self.ntk = ntk.layer.Container(model, debug=debug, **kwargs)
+        self.cpu = cpu
 
     def activate(self):
         self.ntk.activate()
@@ -30,9 +31,11 @@ class NeuralTangentKernel(object):
     def get_kernel_inverse(self):
         with torch.no_grad():
             K = self.get_kernel()
-            # K += self.damping*torch.eye(
-            #     K.shape[0], dtype=K.dtype, device=K.device)
-            # Ki = K.pinverse().detach()
-            U, S, V = K.cpu().svd()
-            Ki = U @ (1./(S+self.damping)).diag() @ V.t()
+            if not self.cpu:
+                K += self.damping*torch.eye(
+                    K.shape[0], dtype=K.dtype, device=K.device)
+                Ki = K.pinverse().detach()
+            else:
+                U, S, V = K.cpu().svd()
+                Ki = U @ (1./(S+self.damping)).diag() @ V.t()
         return Ki.cuda()

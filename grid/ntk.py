@@ -43,17 +43,18 @@ def cifar10(args):
                    # ('arch', 'resnet32'),
                    # ('arch', 'resnet20'),
                    # ('arch', 'resnet56'),
-                   ('arch', 'resnet56'),
+                   ('arch', 'resnet8'),
                    # ('epochs', [
                    #     (200, OrderedDict([('lr_decay_epoch', '100,150')])),
                    # ]),
-                   ('niters', 80000),
-                   ('lr_decay_epoch', '40000,60000'),
+                   # ('niters', 80000),
+                   # ('lr_decay_epoch', '40000,60000'),
+                   ('epochs', 5),
                    # ('lr', 0.1),
                    ('weight_decay', [0, 1e-4]),
                    ('gvar_log_iter', 200),
-                   ('batch_size', 128),  # [128, 256]),  # [128, 64]),
-                   ('lr', [.1, .05, .01]),
+                   ('batch_size', 1024),  # [128, 256]),  # [128, 64]),
+                   ('lr', [.1]),  # [.1, .05, .02, .01]),
                    ]
     gvar_args = [
         # ('gvar_estim_iter', 10),  # default
@@ -61,13 +62,14 @@ def cifar10(args):
         ('gvar_start', 0),
         # ('g_bsnap_iter', 1),
         ('g_optim', ''),
-        ('g_optim_start', [0, 10, 20]),
+        ('g_optim_start', 0),  # [0, 10, 20]),
         ('g_epoch', ''),
     ]
-    args_sgd = [('g_estim', ['sgd'])]
-    args += [OrderedDict(shared_args+gvar_args+args_sgd)]
+    # args_sgd = [('g_estim', ['sgd'])]
+    # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
     args_ntk = [('g_estim', ['ntk']),
-                ('ntk_damping', [1e-3, 1e-1])]
+                ('ntk_damping', [1e-4, 1e-5]),  # [1e-3, 1e-1]),
+                ('ntk_cpu', '')]
     args += [OrderedDict(shared_args+gvar_args+args_ntk)]
     return args, log_dir, module_name, exclude

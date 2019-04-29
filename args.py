@@ -265,6 +265,7 @@ def add_args():
     parser.add_argument('--kf_TInv', default=100, type=int)
     # NTK
     parser.add_argument('--ntk_damping', default=1e-3, type=float)
+    parser.add_argument('--ntk_cpu', action='store_true')
     args = parser.parse_args()
     return args
 
@@ -290,7 +291,7 @@ def opt_to_gluster_kwargs(opt):
 
 
 def opt_to_ntk_kwargs(opt):
-    return {'damping': opt.ntk_damping}
+    return {'damping': opt.ntk_damping, 'cpu': opt.ntk_cpu}
 
 
 def yaml_opt(yaml_path):
