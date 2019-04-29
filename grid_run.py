@@ -5,6 +5,7 @@ import grid.dmom
 import grid.gvar
 import grid.cluster
 # from itertools import product
+import grid.ntk
 
 
 class RunSingle(object):

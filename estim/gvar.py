@@ -5,6 +5,7 @@ import torch.multiprocessing
 from estim.sgd import SGDEstimator
 from estim.gluster import GlusterOnlineEstimator, GlusterBatchEstimator
 from estim.svrg import SVRGEstimator
+from estim.ntk import NTKEstimator
 
 
 class MinVarianceGradient(object):
@@ -23,6 +24,8 @@ class MinVarianceGradient(object):
             gest = SVRGEstimator(data_loader, opt, tb_logger)
         elif opt.g_estim == 'sgd':
             gest = SGDEstimator(data_loader, opt, tb_logger)
+        elif opt.g_estim == 'ntk':
+            gest = NTKEstimator(data_loader, opt, tb_logger)
         self.sgd = sgd
         self.gest = gest
         self.opt = opt

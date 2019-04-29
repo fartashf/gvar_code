@@ -53,7 +53,7 @@ def test_mnist(model, batch_size, epochs, **kwargs):
     # shuffle doesn't matter to gluster as long as dataset is returning index
 
     modelg = copy.deepcopy(model)
-    ntk = NeuralTangentKernel(modelg, eps=1e-3, **kwargs)
+    ntk = NeuralTangentKernel(modelg, damping=1e-3, **kwargs)
     # Test if NTK can be disabled
     # gluster.deactivate()
 
