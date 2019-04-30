@@ -55,6 +55,7 @@ def cifar10(args):
                    ('gvar_log_iter', 200),
                    ('batch_size', 1024),  # [128, 256]),  # [128, 64]),
                    ('lr', [.1]),  # [.1, .05, .02, .01]),
+                   ('momentum', 0.9),
                    ]
     gvar_args = [
         # ('gvar_estim_iter', 10),  # default

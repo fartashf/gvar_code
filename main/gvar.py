@@ -3,10 +3,6 @@ import numpy as np
 import logging
 import os
 import sys
-import optim
-import optim.adamw
-import optim.kfac
-import optim.ekfac
 
 import torch
 import torch.nn
@@ -17,84 +13,13 @@ import torch.multiprocessing
 
 import utils
 import models
-from data import get_loaders, get_minvar_loader
+from data import get_loaders
 from args import get_opt
 from log_utils import TBXWrapper
 from log_utils import Profiler
-from log_utils import LogCollector
-from estim.gvar import MinVarianceGradient
+from estim.optim import OptimizerFactory
 tb_logger = TBXWrapper()
 # torch.multiprocessing.set_sharing_strategy('file_system')
-
-
-class OptimizerFactory(object):
-
-    def __init__(self, model, opt):
-        self.model = model
-        self.opt = opt
-        self.niters = 0
-        self.optimizer = None
-        self.logger = LogCollector(opt)
-        self.param_groups = None
-        self.gest_used = False
-        self.reset()
-
-    def reset(self):
-        model = self.model
-        opt = self.opt
-        if opt.optim == 'sgd':
-            optimizer = torch.optim.SGD(model.parameters(),
-                                        lr=opt.lr, momentum=opt.momentum,
-                                        weight_decay=opt.weight_decay,
-                                        nesterov=opt.nesterov)
-        elif opt.optim == 'adam':
-            optimizer = torch.optim.Adam(model.parameters(),
-                                         lr=opt.lr,
-                                         betas=opt.adam_betas,
-                                         eps=opt.adam_eps,
-                                         weight_decay=opt.weight_decay)
-        elif opt.optim == 'adamw':
-            optimizer = optim.adamw.AdamW(
-                model.parameters(),
-                lr=opt.lr,
-                betas=opt.adam_betas,
-                eps=opt.adam_eps,
-                weight_decay=opt.weight_decay,
-                l2_reg=False)
-        elif opt.optim == 'kfac':
-            optimizer = optim.kfac.KFACOptimizer(
-                model,
-                lr=opt.lr,
-                momentum=opt.momentum,
-                stat_decay=opt.kf_stat_decay,
-                damping=opt.kf_damping,
-                kl_clip=opt.kf_kl_clip,
-                weight_decay=opt.weight_decay,
-                TCov=opt.kf_TCov,
-                TInv=opt.kf_TInv)
-        elif opt.optim == 'ekfac':
-            optimizer = optim.ekfac.EKFACOptimizer(
-                model,
-                lr=opt.lr,
-                momentum=opt.momentum,
-                stat_decay=opt.kf_stat_decay,
-                damping=opt.kf_damping,
-                kl_clip=opt.kf_kl_clip,
-                weight_decay=opt.weight_decay,
-                TCov=opt.kf_TCov,
-                TScal=opt.kf_TScal,
-                TInv=opt.kf_TInv)
-        self.optimizer = optimizer
-        if self.param_groups is not None:
-            self.optimizer.param_groups = self.param_groups
-        else:
-            self.param_groups = self.optimizer.param_groups
-
-    def zero_grad(self):
-        self.optimizer.zero_grad()
-
-    def step(self):
-        self.optimizer.step()
 
 
 def test(tb_logger, model, test_loader,
@@ -132,53 +57,16 @@ def test(tb_logger, model, test_loader,
 
 
 def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
-          save_checkpoint, train_test_loader, gvar):
+          save_checkpoint, train_test_loader):
     batch_time = Profiler()
     model.train()
     profiler = Profiler()
     epoch_iters = int(np.ceil(1. * len(train_loader.dataset) / opt.batch_size))
     optimizer.logger.reset()
-    # for batch_idx, (data, target, idx) in enumerate(train_loader):
     for batch_idx in range(opt.epoch_iters):
         profiler.start()
         # sgd step
-        optimizer.zero_grad()
-        # if optimizer.niters == 1050:
-        #     print('Sampler repermuted')
-        #     gvar.gest.init_data_iter()
-        pg_used = gvar.gest_used
-        loss = gvar.grad(optimizer.niters)
-        if gvar.gest_used != pg_used:
-            logging.info('Optimizer reset.')
-            optimizer.gest_used = gvar.gest_used
-            utils.adjust_lr(optimizer, opt)
-            optimizer.reset()
-        optimizer.step()
-        profiler.toc('optim')
-        # snapshot
-        # if ((optimizer.niters-opt.gvar_start) % opt.g_msnap_iter == 0
-        #         and optimizer.niters >= opt.gvar_start):
-        if ((optimizer.niters % opt.g_msnap_iter == 0 and opt.g_avg > 1)
-                or (optimizer.niters == 0 and opt.g_avg == 1)):
-            # Update model snaps
-            # logging.info('Snap Model')
-            gvar.snap_model(model)
-            profiler.toc('snap_model')
-        if ((optimizer.niters - opt.gvar_start) % opt.g_osnap_iter == 0
-                and optimizer.niters >= opt.gvar_start):
-            # Frequent snaps
-            # logging.info('Snap Online')
-            gvar.snap_online(model, optimizer.niters)
-            profiler.toc('snap_online')
-        if ((optimizer.niters - opt.gvar_start) % opt.g_bsnap_iter == 0
-                and optimizer.niters >= opt.gvar_start):
-            # Rare snaps
-            logging.info('Batch Snapshot')
-            gvar.snap_batch(model, optimizer.niters)
-            profiler.toc('snap_batch')
-            profiler.end()
-            logging.info('%s' % str(profiler))
-        profiler.end()
+        loss = optimizer.step(profiler)
 
         batch_time.toc('Time')
         batch_time.end()
@@ -191,7 +79,7 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
             prof_log = ''
             if (batch_idx % opt.gvar_log_iter == 0
                     and optimizer.niters >= opt.gvar_start):
-                gvar_log = '\t' + gvar.log_var(model, niters)
+                gvar_log = '\t' + optimizer.gvar.log_var(model, niters)
             if opt.log_profiler:
                 prof_log = '\t' + str(profiler)
 
@@ -213,12 +101,8 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
             tb_logger.log_value('lr', lr, step=niters)
             tb_logger.log_value('niters', niters, step=niters)
             tb_logger.log_value('batch_idx', batch_idx, step=niters)
-            # tb_logger.log_value('batch_time', batch_time.val,
-            #                     step=niters)
             tb_logger.log_value('loss', loss, step=niters)
             optimizer.logger.tb_log(tb_logger, step=niters)
-        # pretrained_accuracy = opt.half_trained and optimizer.niters == 1
-        # if optimizer.niters % epoch_iters == 0 or pretrained_accuracy:
         if optimizer.niters % epoch_iters == 0:
             if opt.train_accuracy:
                 test(tb_logger,
@@ -226,7 +110,8 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
                      'Train', 'T')
             prec1 = test(tb_logger,
                          model, test_loader, opt, optimizer.niters)
-            save_checkpoint(model, float(prec1), opt, optimizer, gvar=gvar)
+            save_checkpoint(model, float(prec1), opt, optimizer,
+                            gvar=optimizer.gvar)
             tb_logger.save_log()
 
 
@@ -251,7 +136,6 @@ def main():
     cudnn.benchmark = True
 
     train_loader, test_loader, train_test_loader = get_loaders(opt)
-    minvar_loader = get_minvar_loader(train_loader, opt)
 
     if opt.epoch_iters == 0:
         opt.epoch_iters = int(
@@ -265,9 +149,8 @@ def main():
     opt.g_reinit_iter = int(opt.g_reinit_iter)
 
     model = models.init_model(opt)
-    gvar = MinVarianceGradient(model, minvar_loader, opt, tb_logger)
 
-    optimizer = OptimizerFactory(model, opt)
+    optimizer = OptimizerFactory(model, train_loader, tb_logger, opt)
     epoch = 0
     save_checkpoint = utils.SaveCheckpoint()
 
@@ -279,7 +162,7 @@ def main():
             checkpoint = torch.load(model_path)
             best_prec1 = checkpoint['best_prec1']
             if opt.g_resume:
-                gvar.load_state_dict(checkpoint['gvar'])
+                optimizer.gvar.load_state_dict(checkpoint['gvar'])
             else:
                 epoch = checkpoint['epoch']
                 model.load_state_dict(checkpoint['model'])
@@ -299,7 +182,7 @@ def main():
         ecode = train(
             tb_logger,
             epoch, train_loader, model, optimizer, opt, test_loader,
-            save_checkpoint, train_test_loader, gvar)
+            save_checkpoint, train_test_loader)
         if ecode == -1:
             break
         epoch += 1
