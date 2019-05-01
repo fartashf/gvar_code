@@ -51,7 +51,10 @@ def init_model(opt):
     elif opt.dataset == '5class':
         model = models.logreg.Linear(opt.dim, opt.num_class)
 
-    model.criterion = models.loss.nll_loss
+    if opt.optim == 'kfac' or opt.optim == 'ekfac':
+        model.criterion = models.loss.KFACNLL()
+    else:
+        model.criterion = models.loss.nll_loss
     if opt.cuda:
         model.cuda()
 

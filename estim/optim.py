@@ -59,6 +59,7 @@ class OptimizerFactory(object):
                 weight_decay=opt.weight_decay,
                 TCov=opt.kf_TCov,
                 TInv=opt.kf_TInv)
+            model.criterion.optim = optimizer
         elif opt.optim == 'ekfac':
             optimizer = optim.ekfac.EKFACOptimizer(
                 model,
@@ -71,6 +72,7 @@ class OptimizerFactory(object):
                 TCov=opt.kf_TCov,
                 TScal=opt.kf_TScal,
                 TInv=opt.kf_TInv)
+            model.criterion.optim = optimizer
         self.optimizer = optimizer
         if self.param_groups is not None:
             self.optimizer.param_groups = self.param_groups
@@ -90,7 +92,8 @@ class OptimizerFactory(object):
             logging.info('Optimizer reset.')
             self.gest_used = gvar.gest_used
             utils.adjust_lr(self, opt)
-            self.reset()
+            if not (opt.optim == 'kfac' or opt.optim == 'ekfac'):
+                self.reset()
         self.optimizer.step()
         profiler.toc('optim')
 

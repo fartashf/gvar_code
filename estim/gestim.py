@@ -29,7 +29,7 @@ class GradientEstimator(object):
         pass
 
     def grad(self, model_new, in_place=False):
-        raise NotImplemented('grad not implemented')
+        raise NotImplementedError('grad not implemented')
 
     def grad_estim(self, model):
         # insuring continuity of data seen in training

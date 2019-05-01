@@ -38,8 +38,8 @@ class MinVarianceGradient(object):
     def snap_batch(self, model, niters):
         # model.eval()  # done inside SVRG
         model.train()
-        gviter = self.opt.gvar_estim_iter
-        self.Esgd = self.sgd.get_Ege_var(model, gviter)[0]
+        # gviter = self.opt.gvar_estim_iter
+        # self.Esgd = self.sgd.get_Ege_var(model, gviter)[0]
         self.gest.snap_batch(model, niters)
         self.init_snapshot = True
         self.gest_counter = 0
@@ -86,15 +86,19 @@ class MinVarianceGradient(object):
     def grad(self, niters):
         model = self.model
         model.train()
-        use_sgd = not self.opt.g_optim or niters < self.opt.g_optim_start
-        use_sgd = use_sgd or (self.opt.g_optim_max > 0 and
-                              self.gest_counter >= self.opt.g_optim_max)
+        use_sgd = self.use_sgd(niters)
         if use_sgd:
             self.gest_used = False
             return self.sgd.grad(model, in_place=True)
         self.gest_used = True
         self.gest_counter += 1
         return self.gest.grad(model, in_place=True)
+
+    def use_sgd(self, niters):
+        use_sgd = not self.opt.g_optim or niters < self.opt.g_optim_start
+        use_sgd = use_sgd or (self.opt.g_optim_max > 0 and
+                              self.gest_counter >= self.opt.g_optim_max)
+        return use_sgd
 
     def state_dict(self):
         return self.gest.state_dict()

@@ -83,12 +83,12 @@ class Module(object):
             # Gi = grad_input[0].clone().detach()  # has 3 elements, 1 is Gi?
             Go0 = grad_output[0]
             Ai, Go = self._post_proc(Go0)
-            O = []
+            K = []
             if self.has_bias:
-                O += [self._save_kernel_hook_bias(Ai, Go)]
+                K += [self._save_kernel_hook_bias(Ai, Go)]
             if self.has_weight:
-                O += [self._save_kernel_hook_weight(Ai, Go)]
-            self.batch_kernel = O
+                K += [self._save_kernel_hook_weight(Ai, Go)]
+            self.batch_kernel = K
 
     def get_kernel(self):
         if not self.has_param:
@@ -217,6 +217,8 @@ class Conv2d(Module):
         return self._conv_dot_type2
 
     def _conv_dot_type1(self, Ai, Go):
+        # T = Go.shape[-1]
+
         # TODO: can we get rid of s?
         AiAi = torch.einsum('kit,bis->kbts', [Ai, Ai])
         GoGo = torch.einsum('kot,bos->kbts', [Go, Go])
@@ -225,10 +227,12 @@ class Conv2d(Module):
         # CiAi = torch.matmul(Ci.unsqueeze(1).unsqueeze(1), Ai).squeeze(2)
         # CoGo = torch.matmul(Co.unsqueeze(1).unsqueeze(1), Go).squeeze(2)
         # mean/sum? sum
-        GoG = torch.einsum('kbts,kbts->kb', [AiAi, GoGo])  # /T
+        GoG = torch.einsum('kbts,kbts->kb', [AiAi, GoGo])  # /T/T
         return GoG
 
     def _conv_dot_type2(self, Ai, Go):
+        # T = Go.shape[-1]
+
         AiGo = torch.einsum('bit,bot->bio', [Ai, Go])
         # mean/sum? sum
         GoG = torch.einsum('kio,bio->kb', [AiGo, AiGo])  # /T

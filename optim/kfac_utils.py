@@ -179,7 +179,6 @@ class ComputeCovG:
         return cov_g
 
 
-
 if __name__ == '__main__':
     def test_ComputeCovA():
         pass

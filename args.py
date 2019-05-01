@@ -291,7 +291,14 @@ def opt_to_gluster_kwargs(opt):
 
 
 def opt_to_ntk_kwargs(opt):
-    return {'damping': opt.ntk_damping, 'cpu': opt.ntk_cpu}
+    active_only = (list(opt.g_active_only.split(','))
+                   if opt.g_active_only != '' else [])
+    inactive_mods = (list(opt.g_inactive_mods.split(','))
+                     if opt.g_inactive_mods != '' else [])
+    return {'damping': opt.ntk_damping, 'cpu': opt.ntk_cpu,
+            'active_only': active_only,
+            'inactive_mods': inactive_mods,
+            }
 
 
 def yaml_opt(yaml_path):

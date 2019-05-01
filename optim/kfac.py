@@ -8,6 +8,7 @@ from .kfac_utils import update_running_stat
 
 
 class KFACOptimizer(optim.Optimizer):
+
     def __init__(self,
                  model,
                  lr=0.001,
@@ -24,7 +25,8 @@ class KFACOptimizer(optim.Optimizer):
         if momentum < 0.0:
             raise ValueError("Invalid momentum value: {}".format(momentum))
         if weight_decay < 0.0:
-            raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
+            raise ValueError(
+                "Invalid weight_decay value: {}".format(weight_decay))
         defaults = dict(lr=lr, momentum=momentum, damping=damping,
                         weight_decay=weight_decay)
         # TODO (CW): KFAC optimizer now only support model as input
@@ -63,7 +65,8 @@ class KFACOptimizer(optim.Optimizer):
     def _save_grad_output(self, module, grad_input, grad_output):
         # Accumulate statistics for Fisher matrices
         if self.acc_stats and self.steps % self.TCov == 0:
-            gg = self.CovGHandler(grad_output[0].data, module, self.batch_averaged)
+            gg = self.CovGHandler(
+                grad_output[0].data, module, self.batch_averaged)
             # Initialize buffers
             if self.steps == 0:
                 self.m_gg[module] = torch.diag(gg.new(gg.size(0)).fill_(1))
@@ -102,14 +105,17 @@ class KFACOptimizer(optim.Optimizer):
         """
         :param m: the layer
         :param classname: the class name of the layer
-        :return: a matrix form of the gradient. it should be a [output_dim, input_dim] matrix.
+        :return: a matrix form of the gradient.
+        it should be a [output_dim, input_dim] matrix.
         """
         if classname == 'Conv2d':
-            p_grad_mat = m.weight.grad.data.view(m.weight.grad.data.size(0), -1)  # n_filters * (in_c * kw * kh)
+            p_grad_mat = m.weight.grad.data.view(
+                m.weight.grad.data.size(0), -1)  # n_filters * (in_c * kw * kh)
         else:
             p_grad_mat = m.weight.grad.data
         if m.bias is not None:
-            p_grad_mat = torch.cat([p_grad_mat, m.bias.grad.data.view(-1, 1)], 1)
+            p_grad_mat = torch.cat(
+                [p_grad_mat, m.bias.grad.data.view(-1, 1)], 1)
         return p_grad_mat
 
     def _get_natural_grad(self, m, p_grad_mat, damping):
@@ -119,9 +125,11 @@ class KFACOptimizer(optim.Optimizer):
         :return: a list of gradients w.r.t to the parameters in `m`
         """
         # p_grad_mat is of output_dim * input_dim
-        # inv((ss')) p_grad_mat inv(aa') = [ Q_g (1/R_g) Q_g^T ] @ p_grad_mat @ [Q_a (1/R_a) Q_a^T]
+        # inv((ss')) p_grad_mat inv(aa') = [ Q_g (1/R_g) Q_g^T ] @ p_grad_mat @
+        # [Q_a (1/R_a) Q_a^T]
         v1 = self.Q_g[m].t() @ p_grad_mat @ self.Q_a[m]
-        v2 = v1 / (self.d_g[m].unsqueeze(1) * self.d_a[m].unsqueeze(0) + damping)
+        v2 = v1 / (self.d_g[m].unsqueeze(1) *
+                   self.d_a[m].unsqueeze(0) + damping)
         v = self.Q_g[m] @ v2 @ self.Q_a[m].t()
         if m.bias is not None:
             # we always put gradient w.r.t weight in [0]
@@ -153,8 +161,10 @@ class KFACOptimizer(optim.Optimizer):
                 m.bias.grad.data.mul_(nu)
 
     def _step(self, closure):
-        # FIXME (CW): Modified based on SGD (removed nestrov and dampening in momentum.)
-        # FIXME (CW): 1. no nesterov, 2. buf.mul_(momentum).add_(1 <del> - dampening </del>, d_p)
+        # FIXME (CW): Modified based on SGD
+        # (removed nestrov and dampening in momentum.)
+        # FIXME (CW): 1. no nesterov, 2. buf.mul_(momentum).add_(1 <del> -
+        # dampening </del>, d_p)
         for group in self.param_groups:
             weight_decay = group['weight_decay']
             momentum = group['momentum']
@@ -168,7 +178,8 @@ class KFACOptimizer(optim.Optimizer):
                 if momentum != 0:
                     param_state = self.state[p]
                     if 'momentum_buffer' not in param_state:
-                        buf = param_state['momentum_buffer'] = torch.zeros_like(p.data)
+                        buf = param_state[
+                            'momentum_buffer'] = torch.zeros_like(p.data)
                         buf.mul_(momentum).add_(d_p)
                     else:
                         buf = param_state['momentum_buffer']

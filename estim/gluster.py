@@ -49,13 +49,15 @@ class GlusterEstimator(SGDEstimator):
         # Nk = Nk[:C]
         # data[0], data[1], data[2] = data[0][:C], data[1][:C], data[2][:C]
 
-        loss_i = model.criterion(model, data, reduction='none')
         # multiply by the size of the cluster
         if self.opt.g_imbalance:
             w = 1.*M/N
         else:
             w = 1.*M*Nk/N
-        loss = (loss_i*w).mean()
+        loss_i = model.criterion(model, data, reduction='none',
+                                 weights=w)
+        loss = loss_i.mean()
+
         # print(loss.item())
         # import ipdb; ipdb.set_trace()
         # if loss > 0.05:
