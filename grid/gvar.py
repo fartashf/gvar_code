@@ -1628,6 +1628,105 @@ def cifar10_gvar_adam_active(args):
     return args, log_dir, module_name, exclude
 
 
+def cifar10_gvar_kfac(args):
+    dataset = 'cifar10'
+    module_name = 'main.gvar'
+    log_dir = 'runs_%s_gvar_kfac' % dataset
+    exclude = ['dataset', 'epochs', 'weight_decay',
+               'g_epoch', 'resume', 'ckpt_name', 'lr_decay_epoch',
+               'gvar_log_iter', 'gvar_start', 'g_debug', 'g_bsnap_iter',
+               'niters', 'g_osnap_iter', 'g_beta', 'g_min_size', 'g_init_mul',
+               'g_reinit_iter']
+    # epoch_iters = 390
+    shared_args = [('dataset', dataset),
+                   # ('arch', 'resnet32'),
+                   # ('arch', 'resnet20'),
+                   # ('arch', 'resnet56'),
+                   ('arch', 'resnet8'),
+                   # ('epochs', [
+                   #     (200, OrderedDict([('lr_decay_epoch', '100,150')])),
+                   # ]),
+                   ('niters', 80000),
+                   ('lr_decay_epoch', '40000,60000'),
+                   # ('lr', 0.1),
+                   ('weight_decay', 1e-4),
+                   ('gvar_log_iter', 200),
+                   # ('batch_size', [128, 256]),  # [128, 64]),
+                   # ('batch_size', [32, 128, 1024]),
+                   ]
+    gvar_args = [
+                  # ('gvar_estim_iter', 10),  # default
+                  # ('gvar_log_iter', 100),  # default
+                  # ('gvar_start', 101),
+                  # ('g_bsnap_iter', 1),
+                  # ('g_optim', ''),
+                  # ('g_optim_start', 101),
+                  ('g_epoch', ''),
+                  ('gvar_start', 0),
+                  ('g_bsnap_iter', 2),
+                  # ('g_optim_start', [5, 10, 20]),
+                  ]
+    args_sgd = [('g_estim', ['sgd']),
+                ('batch_size', [32, 64]),  # 128, 1024]),
+                # ('batch_size', [128, 64]),  # [128, 256]),  # [128, 64]),
+                ('optim', [
+                    # ('sgd', OrderedDict([('lr', [.1])])),
+                    # ('adam', OrderedDict([('lr', [1e-3])])),
+                    ('kfac', OrderedDict([('lr', 0.02),  # 0.01),
+                                          ('kf_damping', 0.03)])),
+                    # ('adamw', OrderedDict([('lr', [.01, 1e-3])])),
+                    ]),
+                ]
+    args += [OrderedDict(shared_args+args_sgd+gvar_args)]
+
+    # gluster_args = [
+    #     ('g_estim', 'gluster'),
+    #     ('batch_size', [
+    #         (32, OrderedDict([('g_nclusters', 64)])),  # 32
+    #         # (64, OrderedDict([('g_nclusters', 64)])),
+    #         # (128, OrderedDict([('g_nclusters', 128)])),
+    #         # (1024, OrderedDict([('g_nclusters', 128)])),
+    #         ]),
+    #     # ('batch_size', 64),
+    #     # ('g_nclusters', 64),  # [10, 100]),  # 2
+    #     # ('g_active_only', ['module.fc2', 'module.fc1,module.fc2']),
+    #     ('g_debug', ''),
+    #     # ('g_active_only', [None, 'layer1', 'layer2', 'layer3', 'linear']),
+    #     # ('g_msnap_iter', [10]),
+    #     # ('lr', [1e-3]),  # , 5e-4
+    #     # ('optim', 'adam'),  # 'adamw'
+    #     ('optim', [('kfac', OrderedDict([('lr', [0.02, 0.01]),
+    #                                      ('kf_damping', 0.03)])),
+    #                ]),
+    #     ('gvar_start', 0),
+    #     ('g_optim', ''),
+    #     ('g_optim_start', 2),  # , 10, 20]),
+    #     # ('g_mlr', [1, 2]),  # , 5]),
+    # ]
+
+    # args_3 = [('gb_citers', 5),
+    #           ('g_min_size', 100),
+    #           # ('gvar_start', 0),
+    #           # ('g_bsnap_iter', 1),  # citers*4*bsnap_svrg
+    #           # ('g_optim', ''),
+    #           # ('g_optim_start', 2),
+    #           # ('g_epoch', ''),
+    #           # ('g_stable', [1, 1e4]),  # [1000, 10]),
+    #           ]
+    # args += [OrderedDict(shared_args+gluster_args+gvar_args+args_3)]
+    # args_4 = [('g_online', ''),
+    #           ('g_osnap_iter', 10),  # [5, 10]),
+    #           ('g_beta', .99),  # [.9, .99]),  # 1-lr (the desired lr)
+    #           ('g_min_size', .001),  # 100x diff in probabilities
+    #           # ('g_reinit', 'largest')
+    #           ('g_init_mul', 2),
+    #           ('g_reinit_iter', 10),
+    #           ]
+    # args += [OrderedDict(shared_args+gvar_args+gluster_args+args_4)]
+    # args += [tuple((OrderedDict(shared_args+gvar_args+gluster_args+args_4)))]
+    return args, log_dir, module_name, exclude
+
+
 def main():
     args = []
     # args, log_dir, module_name, exclude = mnist_gvar(args)

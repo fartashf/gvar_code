@@ -21,7 +21,7 @@ class KFACNLL(object):
         model.zero_grad()
         output = model(data)
         loss = F.nll_loss(output, target, reduction=reduction)*weights
-        if optim.steps % optim.TCov == 0:
+        if self.optim is not None and optim.steps % optim.TCov == 0:
             # compute true fisher
             optim.acc_stats = True
             with torch.no_grad():

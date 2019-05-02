@@ -1,5 +1,5 @@
 import logging
-import copy
+# import copy
 
 import torch
 import torch.nn
@@ -7,6 +7,7 @@ import torch.multiprocessing
 
 from log_utils import Profiler
 from .gestim import GradientEstimator
+import models
 
 
 class SVRGEstimator(GradientEstimator):
@@ -17,7 +18,11 @@ class SVRGEstimator(GradientEstimator):
 
     def snap_batch(self, model, niters):
         # model.eval()  # SVRG's trouble with dropout/batchnorm/data aug
-        self.model = model = copy.deepcopy(model)
+        # self.model = model = copy.deepcopy(model)
+        # deepcopy does not work with kfac, hooks are also copied
+        self.model = models.init_model(self.opt)
+        self.model.load_state_dict(model.state_dict())
+        model = self.model
         self.mu = [torch.zeros_like(g) for g in model.parameters()]
         num = 0
         batch_time = Profiler()
