@@ -1,26 +1,22 @@
 from __future__ import print_function
 import numpy as np
 import logging
-import yaml
 import os
-import glob
 import sys
 
 import torch
 import torch.nn
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
-import torch.optim as optim
 import torch.nn.functional as F
 import torch.multiprocessing
 
 import utils
 from data import get_loaders
-from args import add_args
 from log_utils import TBXWrapper
 from log_utils import Profiler
-from log_utils import LogCollector
-from estim.gvar import MinVarianceGradient
+from args import get_opt
+from estim.optim import OptimizerFactory
 tb_logger = TBXWrapper()
 torch.multiprocessing.set_sharing_strategy('file_system')
 
@@ -70,11 +66,11 @@ def loss_function(recon_x, x, mu, logvar):
     return BCE + KLD
 
 
-def vae_loss(model, data, reduction='mean'):
+def vae_loss(model, data, reduction='mean', weights=1):
     data = data[0].cuda()
     model.zero_grad()
     recon_batch, mu, logvar = model(data)
-    loss = loss_function(recon_batch, data, mu, logvar)
+    loss = loss_function(recon_batch, data, mu, logvar)*weights
     if reduction == 'mean':
         return loss.mean()
     elif reduction == 'sum':
@@ -95,49 +91,31 @@ def test(tb_logger, model, test_loader,
 
 
 def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
-          save_checkpoint, train_test_loader, gvar):
-    batch_time = Profiler(k=100)
+          save_checkpoint, train_test_loader):
+    batch_time = Profiler()
     model.train()
     profiler = Profiler()
-    epoch_iters = int(np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
+    epoch_iters = int(np.ceil(1. * len(train_loader.dataset) / opt.batch_size))
     optimizer.logger.reset()
-    # for batch_idx, (data, target, idx) in enumerate(train_loader):
     for batch_idx in range(opt.epoch_iters):
         profiler.start()
         # sgd step
-        optimizer.zero_grad()
-        loss = gvar.grad(optimizer.niters)
-        optimizer.step()
-        optimizer.niters += 1
-        profiler.toc('optim')
-        # snapshot
-        if optimizer.niters % opt.g_osnap_iter == 0:
-            # Frequent snaps
-            gvar.snap_online(model, optimizer.niters)
-            profiler.toc('snap_online')
-        if ((optimizer.niters-opt.gvar_start) % opt.g_bsnap_iter == 0
-                and optimizer.niters >= opt.gvar_start):
-            # Rare snaps
-            logging.info('Batch Snapshot')
-            gvar.snap_batch(model, optimizer.niters)
-            profiler.toc('snap_batch')
-            profiler.end()
-            logging.info('%s' % str(profiler))
-        profiler.end()
+        loss = optimizer.step(profiler)
 
         batch_time.toc('Time')
         batch_time.end()
+        optimizer.niters += 1
         niters = optimizer.niters
 
         # if True:
-        # if batch_idx % opt.log_interval == 0:
-        if optimizer.niters % opt.gvar_log_iter == 0:
+        if batch_idx % opt.log_interval == 0:
             gvar_log = ''
             prof_log = ''
-            if optimizer.niters % opt.gvar_log_iter == 0:
-                gvar_log = '\t'+gvar.log_var(model, niters)
+            if (batch_idx % opt.gvar_log_iter == 0
+                    and optimizer.niters >= opt.gvar_start):
+                gvar_log = '\t' + optimizer.gvar.log_var(model, niters)
             if opt.log_profiler:
-                prof_log = '\t'+str(profiler)
+                prof_log = '\t' + str(profiler)
 
             logging.info(
                 'Epoch: [{0}][{1}/{2}]({niters})\t'
@@ -157,8 +135,6 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
             tb_logger.log_value('lr', lr, step=niters)
             tb_logger.log_value('niters', niters, step=niters)
             tb_logger.log_value('batch_idx', batch_idx, step=niters)
-            # tb_logger.log_value('batch_time', batch_time.val,
-            #                     step=niters)
             tb_logger.log_value('loss', loss, step=niters)
             optimizer.logger.tb_log(tb_logger, step=niters)
         if optimizer.niters % epoch_iters == 0:
@@ -167,30 +143,18 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
                      model, train_test_loader, opt, optimizer.niters,
                      'Train', 'T')
             test(tb_logger, model, test_loader, opt, optimizer.niters)
-            # save_checkpoint(model, float(prec1), opt, optimizer)
+            # save_checkpoint(model, float(prec1), opt, optimizer,
+            #                 gvar=optimizer.gvar)
             tb_logger.save_log()
 
 
 def main():
-    args = add_args()
-    yaml_path = os.path.join('options/{}/{}'.format(args.dataset,
-                                                    args.path_opt))
-    opt = {}
-    with open(yaml_path, 'r') as handle:
-        opt = yaml.load(handle)
-    od = vars(args)
-    for k, v in od.items():
-        opt[k] = v
-    opt = utils.DictWrapper(opt)
-
-    opt.cuda = not opt.no_cuda and torch.cuda.is_available()
-    opt.no_transform = True
-
+    opt = get_opt()
     tb_logger.configure(opt.logger_name, flush_secs=5, opt=opt)
     logfname = os.path.join(opt.logger_name, 'log.txt')
     logging.basicConfig(
-            filename=logfname,
-            format='%(asctime)s %(message)s', level=logging.INFO)
+        filename=logfname,
+        format='%(asctime)s %(message)s', level=logging.INFO)
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
     logging.info(str(opt.d))
@@ -204,62 +168,56 @@ def main():
     # helps with wide-resnet by reducing memory and time 2x
     cudnn.benchmark = True
 
+    opt.no_transform = True
     train_loader, test_loader, train_test_loader = get_loaders(opt)
 
     if opt.epoch_iters == 0:
         opt.epoch_iters = int(
-                np.ceil(1.*len(train_loader.dataset)/opt.batch_size))
+            np.ceil(1. * len(train_loader.dataset) / opt.batch_size))
     opt.maxiter = opt.epoch_iters * opt.epochs
+    if opt.g_epoch:
+        opt.gvar_start *= opt.epoch_iters
+        opt.g_bsnap_iter *= opt.epoch_iters
+        opt.g_optim_start = (opt.g_optim_start * opt.epoch_iters) + 1
+        opt.g_reinit_iter = opt.g_reinit_iter * opt.epoch_iters
+    opt.g_reinit_iter = int(opt.g_reinit_iter)
 
     model = VAE().cuda()
     model.criterion = vae_loss
 
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
-
-    # if opt.optim == 'sgd':
-    #     optimizer = optim.SGD(model.parameters(),
-    #                           lr=opt.lr, momentum=opt.momentum,
-    #                           weight_decay=opt.weight_decay,
-    #                           nesterov=opt.nesterov)
-    # elif opt.optim == 'adam':
-    #     optimizer = optim.Adam(model.parameters(),
-    #                            lr=opt.lr,
-    #                            weight_decay=opt.weight_decay)
-    optimizer.niters = 0
-    optimizer.logger = LogCollector(opt)
+    optimizer = OptimizerFactory(model, train_loader, tb_logger, opt)
     epoch = 0
     save_checkpoint = utils.SaveCheckpoint()
 
     # optionally resume from a checkpoint
-    model_path = os.path.join(opt.run_dir, opt.ckpt_name)
-    if opt.resume:
-        resume = glob.glob(opt.resume)
-        resume = resume[0] if len(resume) > 0 else opt.resume
+    model_path = os.path.join(opt.resume, opt.ckpt_name)
+    if opt.resume != '':
         if os.path.isfile(model_path):
             print("=> loading checkpoint '{}'".format(model_path))
             checkpoint = torch.load(model_path)
-            epoch = checkpoint['epoch']
-            model.load_state_dict(checkpoint['model'])
             best_prec1 = checkpoint['best_prec1']
-            save_checkpoint.best_prec1 = best_prec1
+            if opt.g_resume:
+                optimizer.gvar.load_state_dict(checkpoint['gvar'])
+            else:
+                epoch = checkpoint['epoch']
+                model.load_state_dict(checkpoint['model'])
+                save_checkpoint.best_prec1 = best_prec1
             print("=> loaded checkpoint '{}' (epoch {}, best_prec {})"
                   .format(model_path, epoch, best_prec1))
         else:
             print("=> no checkpoint found at '{}'".format(model_path))
 
-    gvar = MinVarianceGradient(model, train_loader, opt, tb_logger)
-    while optimizer.niters < opt.epochs*opt.epoch_iters:
+    if opt.niters > 0:
+        max_iters = opt.niters
+    else:
+        max_iters = opt.epochs * opt.epoch_iters
+    while optimizer.niters < max_iters:
         optimizer.epoch = epoch
-        if isinstance(opt.lr_decay_epoch, str):
-            utils.adjust_learning_rate_multi(
-                    optimizer, optimizer.niters//opt.epoch_iters, opt)
-        else:
-            utils.adjust_learning_rate(
-                    optimizer, optimizer.niters//opt.epoch_iters, opt)
+        utils.adjust_lr(optimizer, opt)
         ecode = train(
-                tb_logger,
-                epoch, train_loader, model, optimizer, opt, test_loader,
-                save_checkpoint, train_test_loader, gvar)
+            tb_logger,
+            epoch, train_loader, model, optimizer, opt, test_loader,
+            save_checkpoint, train_test_loader)
         if ecode == -1:
             break
         epoch += 1

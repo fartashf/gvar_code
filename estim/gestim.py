@@ -77,7 +77,8 @@ class GradientEstimator(object):
         snr_e = sum(
                 [((ss+1e-10).log()-(nn+1e-10).log()).sum()
                     for ss, nn in zip(Es, En)])/nw
-        return Ege, var_e, snr_e
+        nv_e = sum([(nn/(ss+1e-7)).sum() for ss, nn in zip(Es, En)])/nw
+        return Ege, var_e, snr_e, nv_e
 
     def state_dict(self):
         return {}

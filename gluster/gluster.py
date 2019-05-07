@@ -1,6 +1,4 @@
 import torch
-import torch.nn.functional as F
-from torch.autograd import Variable
 import numpy as np
 from .layer import GlusterContainer
 import logging
@@ -50,10 +48,10 @@ class GradientCluster(object):
             g.data.copy_(m.data)
 
     def assign(self):
-        raise NotImplemented('assign not implemented')
+        raise NotImplementedError('assign not implemented')
 
     def update(self, assign_i):
-        raise NotImplemented('update not implemented')
+        raise NotImplementedError('update not implemented')
 
     def get_centers(self):
         return self.G.get_centers()
@@ -153,21 +151,23 @@ class GradientClusterBatch(GradientCluster):
                     'Gluster batch> Save distortions'
                     ' and assign data to clusters.')
         batch_time = Profiler()
-        for batch_idx, (data, target, idx) in enumerate(data_loader):
-            data, target = data.to(device), target.to(device)
-            model.zero_grad()
-            output = self.model(data)
-            loss = F.nll_loss(output, target, reduction='none')
+        for batch_idx, data in enumerate(data_loader):
+            idx = data[2]
+            # data, target = data.to(device), target.to(device)
+            # model.zero_grad()
+            # output = model(data)
+            # loss = F.nll_loss(output, target, reduction='none')
+            loss = model.criterion(model, data, reduction='none')
             if do_log:
-                pred_i[idx] = output.max(
-                        1, keepdim=True)[1].cpu().numpy()[:, 0]
-                if output.shape[1] >= 5:
-                    _, pred = output.topk(5, 1, True, True)
-                    pred = pred.t()
-                    correct = pred.eq(target.view(1, -1).expand_as(pred))
-                    topk_i[idx, 0] = correct[:1].float().sum(0).cpu().numpy()
-                    topk_i[idx, 1] = correct.float().sum(0).cpu().numpy()
-                target_i[idx] = target.cpu().numpy()
+                # pred_i[idx] = output.max(
+                #         1, keepdim=True)[1].cpu().numpy()[:, 0]
+                # if output.shape[1] >= 5:
+                #     _, pred = output.topk(5, 1, True, True)
+                #     pred = pred.t()
+                #     correct = pred.eq(target.view(1, -1).expand_as(pred))
+                #     topk_i[idx, 0] = correct[:1].float().sum(0).cpu().numpy()
+                #     topk_i[idx, 1] = correct.float().sum(0).cpu().numpy()
+                # target_i[idx] = target.cpu().numpy()
                 loss_i[idx] = loss.detach().cpu().numpy()
             loss = loss.mean()
             loss.backward()
@@ -229,12 +229,14 @@ class GradientClusterBatch(GradientCluster):
         # self._init_centers(0)
         self.G.zero_new_centers()
         batch_time = Profiler()
-        for batch_idx, (data, target, idx) in enumerate(data_loader):
-            data, target = Variable(data), Variable(target)
-            data, target = data.to(device), target.to(device)
-            model.zero_grad()
-            output = self.model(data)
-            loss = F.nll_loss(output, target)
+        for batch_idx, data in enumerate(data_loader):
+            idx = data[2]
+            # data, target = Variable(data), Variable(target)
+            # data, target = data.to(device), target.to(device)
+            # model.zero_grad()
+            # output = model(data)
+            # loss = F.nll_loss(output, target)
+            loss = model.criterion(model, data)
             loss.backward()
             # recompute A, G but don't do reassign as clusters change
             self.assign()

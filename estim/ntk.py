@@ -30,7 +30,7 @@ class NTKEstimator(GradientEstimator):
         # optim
         model.zero_grad()
         n = data[0].shape[0]
-        loss_ntk = Ki.sum(0).dot(loss)/n/n
+        loss_ntk = Ki.sum(0).dot(loss)/n
 
         if in_place:
             loss_ntk.backward()

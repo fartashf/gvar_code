@@ -38,6 +38,7 @@ class MinVarianceGradient(object):
     def snap_batch(self, model, niters):
         # model.eval()  # done inside SVRG
         model.train()
+        # Cosine sim
         # gviter = self.opt.gvar_estim_iter
         # self.Esgd = self.sgd.get_Ege_var(model, gviter)[0]
         self.gest.snap_batch(model, niters)
@@ -58,8 +59,8 @@ class MinVarianceGradient(object):
         if not self.init_snapshot:
             return ''
         gviter = self.opt.gvar_estim_iter
-        Ege, var_e, snr_e = self.gest.get_Ege_var(model, gviter)
-        Esgd, var_s, snr_s = self.sgd.get_Ege_var(model, gviter)
+        Ege, var_e, snr_e, nv_e = self.gest.get_Ege_var(model, gviter)
+        Esgd, var_s, snr_s, nv_s = self.sgd.get_Ege_var(model, gviter)
         bias = torch.mean(torch.cat(
             [(ee-gg).abs().flatten() for ee, gg in zip(Ege, Esgd)]))
         # print(np.sum([ee.pow(2).sum().item() for ee in Esgd]))
@@ -69,6 +70,8 @@ class MinVarianceGradient(object):
         tb_logger.log_value('sgd_var', float(var_s), step=niters)
         tb_logger.log_value('est_snr', float(snr_e), step=niters)
         tb_logger.log_value('sgd_snr', float(snr_s), step=niters)
+        tb_logger.log_value('est_nvar', float(nv_e), step=niters)
+        tb_logger.log_value('sgd_nvar', float(nv_s), step=niters)
         sgd_x, est_x = ('', '[X]') if self.gest_used else ('[X]', '')
         # neo = torch.sqrt(torch.sum(torch.cat([(ee*ee).flatten() for ee in
         #                  self.Esgd])))
@@ -76,12 +79,17 @@ class MinVarianceGradient(object):
         #                  Esgd])))
         # eed = torch.sum(torch.cat(
         #     [(ee/neo*gg/nen).flatten() for ee, gg in zip(self.Esgd, Esgd)]))
+        # return ('G Bias: %.8f\t'
+        #         '%sSGD Var: %.8f\t %sEst Var: %.8f\t'
+        #         'SGD SNR: %.8f\t Est SNR: %.8f\t'
+        #         # 'Esgd cos sim: %.8f' % (
+        #         # bias, sgd_x, var_s, est_x, var_e, snr_s, snr_e, eed))
+        #         # % (bias, sgd_x, var_s, est_x, var_e))
+        #         % (bias, sgd_x, var_s, est_x, var_e, snr_s, snr_e))
         return ('G Bias: %.8f\t'
                 '%sSGD Var: %.8f\t %sEst Var: %.8f\t'
-                # 'SGD SNR: %.8f\t Est SNR: %.8f\t'
-                # 'Esgd cos sim: %.8f' % (
-                #     bias, sgd_x, var_s, est_x, var_e, snr_s, snr_e, eed))
-                % (bias, sgd_x, var_s, est_x, var_e))
+                'SGD N-Var: %.8f\t Est N-Var: %.8f\t'
+                % (bias, sgd_x, var_s, est_x, var_e, nv_s, nv_e))
 
     def grad(self, niters):
         model = self.model

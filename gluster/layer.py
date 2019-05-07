@@ -189,7 +189,7 @@ class GlusterModule(object):
             # del Go0
             # Go = self.Go
             # print('%s %s' % (Ai.shape, Ai.shape))
-            O = []
+            D = []
             # self.batch_dist = [(
             #     torch.zeros(self.nclusters, 1).cuda(),
             #     torch.zeros(self.nclusters, grad_output[0].shape[0]).cuda(),
@@ -199,16 +199,16 @@ class GlusterModule(object):
             # return
             # s = 0
             if self.has_bias:
-                O += [self._save_dist_hook_bias(Ai, Go)]
+                D += [self._save_dist_hook_bias(Ai, Go)]
                 # s += O[-1].sum()
             if self.has_weight:
-                O += [self._save_dist_hook_weight(Ai, Go)]
+                D += [self._save_dist_hook_weight(Ai, Go)]
                 # s += O[-1].sum()
             # if s < -10000:
             #     # TODO: seed 1 this happens, try toy tests
             #     import ipdb; ipdb.set_trace()
             # TODO: per-layer clusters
-            self.batch_dist = O
+            self.batch_dist = D
 
     def get_dist(self):
         if not self.has_param:
@@ -463,8 +463,8 @@ class GlusterLinear(GlusterModule):
         assert CC.shape == (C, 1), 'CC: C x 1.'
         CG = torch.matmul(Cb, Go.t())
         assert CG.shape == (C, B), 'CG: C x B.'
-        O = CC-2*CG
-        return O
+        D = CC-2*CG
+        return D
 
     def _save_dist_hook_weight(self, Ai, Go):
         C = self.nclusters
@@ -642,8 +642,8 @@ class GlusterConv(GlusterModule):
         # mean/sum? sum
         CG = torch.einsum('ko,bot->kb', [Cb, Go])  # /T
         assert CG.shape == (C, B), 'CG: C x B.'
-        O = CC-2*CG
-        return O
+        D = CC-2*CG
+        return D
 
     def _save_dist_hook_weight(self, Ai, Go):
         param = self.param
