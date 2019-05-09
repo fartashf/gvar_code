@@ -66,4 +66,7 @@ class NeuralTangentKernel(object):
                 # Ki = torch.Tensor(scipy.linalg.inv(K.cpu().numpy()))
                 # U, S, V = K.cpu().svd()
                 # Ki = U @ (1./(S+self.damping)).diag() @ V.t()
-        return Ki.cuda()
+        if torch.cuda.is_available():
+            return Ki.cuda()
+        else:
+            return Ki

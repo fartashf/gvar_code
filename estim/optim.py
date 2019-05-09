@@ -22,7 +22,8 @@ class OptimizerFactory(object):
         self.logger = LogCollector(opt)
         self.param_groups = None
         self.gest_used = False
-        minvar_loader = get_minvar_loader(train_loader, opt)
+        # minvar_loader = get_minvar_loader(train_loader, opt)
+        minvar_loader = train_loader
         self.gvar = MinVarianceGradient(model, minvar_loader, opt, tb_logger)
         self.reset()
 
@@ -98,23 +99,23 @@ class OptimizerFactory(object):
         profiler.toc('optim')
 
         # snapshot
-        if ((self.niters % opt.g_msnap_iter == 0 and opt.g_avg > 1)
-                or (self.niters == 0 and opt.g_avg == 1)):
-            # Update model snaps
-            gvar.snap_model(model)
-            profiler.toc('snap_model')
-        if ((self.niters - opt.gvar_start) % opt.g_osnap_iter == 0
-                and self.niters >= opt.gvar_start):
-            # Frequent snaps
-            gvar.snap_online(model, self.niters)
-            profiler.toc('snap_online')
-        if ((self.niters - opt.gvar_start) % opt.g_bsnap_iter == 0
-                and self.niters >= opt.gvar_start):
-            # Rare snaps
-            logging.info('Batch Snapshot')
-            gvar.snap_batch(model, self.niters)
-            profiler.toc('snap_batch')
-            profiler.end()
-            logging.info('%s' % str(profiler))
+        # if ((self.niters % opt.g_msnap_iter == 0 and opt.g_avg > 1)
+        #         or (self.niters == 0 and opt.g_avg == 1)):
+        #     # Update model snaps
+        #     gvar.snap_model(model)
+        #     profiler.toc('snap_model')
+        # if ((self.niters - opt.gvar_start) % opt.g_osnap_iter == 0
+        #         and self.niters >= opt.gvar_start):
+        #     # Frequent snaps
+        #     gvar.snap_online(model, self.niters)
+        #     profiler.toc('snap_online')
+        # if ((self.niters - opt.gvar_start) % opt.g_bsnap_iter == 0
+        #         and self.niters >= opt.gvar_start):
+        #     # Rare snaps
+        #     logging.info('Batch Snapshot')
+        #     gvar.snap_batch(model, self.niters)
+        #     profiler.toc('snap_batch')
+        #     profiler.end()
+        #     logging.info('%s' % str(profiler))
         profiler.end()
         return loss

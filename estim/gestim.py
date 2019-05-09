@@ -16,8 +16,10 @@ class GradientEstimator(object):
         self.exp_avg_sq = None
 
     def init_data_iter(self):
-        self.data_iter = iter(InfiniteLoader(self.data_loader))
-        self.estim_iter = iter(InfiniteLoader(self.data_loader))
+        # self.data_iter = iter(InfiniteLoader(self.data_loader))
+        self.data_iter = self.data_loader
+        # self.estim_iter = iter(InfiniteLoader(self.data_loader))
+        self.estim_iter = self.data_loader
 
     def snap_batch(self, model, niters):
         pass

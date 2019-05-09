@@ -70,7 +70,11 @@ class Module(object):
             return
         Ai0 = Ai[0]
         if self.Ai0.shape != Ai0.shape:
-            self.Ai0 = torch.zeros_like(Ai0).cuda()
+            if torch.cuda.is_available():
+                self.Ai0 = torch.zeros_like(Ai0).cuda()
+            else:
+                self.Ai0 = torch.zeros_like(Ai0)
+
         self.Ai0.copy_(Ai0)
 
     def _save_kernel_hook(self, m, grad_input, grad_output):
@@ -160,12 +164,32 @@ class Linear(Module):
         raise Exception('not implemented')
 
     def _save_kernel_hook_weight(self, Ai, Go):
-        B = Ai.shape[0]
+        if len(Ai.shape) == 2:
+            B = Ai.shape[0]
 
-        AiAi = torch.matmul(Ai, Ai.t())
-        GoGo = torch.matmul(Go, Go.t())
-        GoG = (AiAi)*(GoGo)
-        assert GoG.shape == (B, B), 'GoG: B x B.'
+            AiAi = torch.matmul(Ai, Ai.t())
+            GoGo = torch.matmul(Go, Go.t())
+            GoG = (AiAi)*(GoGo)
+            assert GoG.shape == (B, B), 'GoG: B x B.'
+            return GoG
+        else:
+            T = Ai.shape[0]
+            B = Ai.shape[1]
+            din, dout = self.din, self.dout
+
+            assert Go.shape == (T, B, dout), 'Go: B x dout x T'
+            assert Ai.shape == (T, B, din), 'Ai: B x din x T'
+            # TODO: multi-GPU
+            GoG = self._conv_dot_type2(Ai, Go)
+            assert GoG.shape == (B, B), 'GoG: B x B.'
+            return GoG
+
+    def _conv_dot_type2(self, Ai, Go):
+        # T = Go.shape[-1]
+
+        AiGo = torch.einsum('tbi,tbo->bio', [Ai, Go])
+        # mean/sum? sum
+        GoG = torch.einsum('kio,bio->kb', [AiGo, AiGo])  # /T
         return GoG
 
     def _post_proc(self, Go0):
