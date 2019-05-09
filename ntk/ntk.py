@@ -38,4 +38,7 @@ class NeuralTangentKernel(object):
             else:
                 U, S, V = K.cpu().svd()
                 Ki = U @ (1./(S+self.damping)).diag() @ V.t()
-        return Ki.cuda()
+        if torch.cuda.is_available():
+            return Ki.cuda()
+        else:
+            return Ki
