@@ -3,25 +3,26 @@
 if [[ $1 == 'train' ]]; then
     echo 'Run training...'
     python train.py \
+        --cuda \
         --data ../data/text8/ \
         --dataset text8 \
-        --n_layer 2 \
-        --d_model 64 \
-        --n_head 4 \
-        --d_head 32 \
-        --d_inner 128 \
+        --n_layer 6 \
+        --d_model 256  \
+        --n_head 8 \
+        --d_head 64 \
+        --d_inner 1024 \
         --dropout 0.1 \
         --dropatt 0.0 \
         --optim sgd \
-        --lr 0.01 \
+        --lr 0.0003 \
         --warmup_step 0 \
         --max_step 400000 \
-        --tgt_len 256 \
+        --tgt_len 512 \
         --mem_len 0 \
         --attn_type 2 \
         --eval_tgt_len 128 \
-        --log-interval 1 \
-        --batch_size 22 \
+        --log-interval 200 \
+        --batch_size 44 \
         --g_estim ntk \
         --momentum 0.9 \
         --gvar_start 0 \
@@ -29,7 +30,7 @@ if [[ $1 == 'train' ]]; then
         --g_optim_start 0 \
         --g_epoch \
         --g_estim ntk \
-        --ntk_damping 0.03 \
+        --ntk_damping 0.01 \
         --ntk_cpu \
         --weight_decay 0 \
         --gvar_log_iter 200 \
