@@ -15,7 +15,7 @@ from data_utils import get_lm_corpus
 from mem_transformer import MemTransformerLM
 from t2t_utils.exp_utils import create_exp_dir
 from t2t_utils.data_parallel import BalancedDataParallel
-sys.path.append('/Users/tonywu/Documents/research/ntk/dmom_code')
+sys.path.append('/h/ywu/Documents/dmom_code')
 from estim.optim import OptimizerFactory
 from log_utils import TBXWrapper
 from log_utils import Profiler
@@ -576,8 +576,8 @@ def train():
                 if not args.debug:
                     with open(os.path.join(args.work_dir, 'model.pt'), 'wb') as f:
                         torch.save(model, f)
-                    with open(os.path.join(args.work_dir, 'optimizer.pt'), 'wb') as f:
-                        torch.save(optimizer.state_dict(), f)
+                    #with open(os.path.join(args.work_dir, 'optimizer.pt'), 'wb') as f:
+                    #    torch.save(optimizer.state_dict(), f)
                 best_val_loss = val_loss
 
             # dev-performance based learning rate annealing

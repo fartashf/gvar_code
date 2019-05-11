@@ -13,8 +13,8 @@ if [[ $1 == 'train' ]]; then
         --d_inner 1024 \
         --dropout 0.1 \
         --dropatt 0.0 \
-        --optim sgd \
-        --lr 0.0003 \
+        --optim adam \
+        --lr 0.003 \
         --warmup_step 0 \
         --max_step 400000 \
         --tgt_len 512 \
