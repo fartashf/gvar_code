@@ -19,6 +19,7 @@ sys.path.append('/Users/tonywu/Documents/research/ntk/dmom_code')
 from estim.optim import OptimizerFactory
 from log_utils import TBXWrapper
 from log_utils import Profiler
+from ast import literal_eval as make_tuple
 from args import yaml_opt
 tb_logger = TBXWrapper()
 
@@ -178,6 +179,10 @@ parser.add_argument('--g_mlr',
                     default=1, type=float)
 parser.add_argument('--lr_decay_rate',
                     default=0.1, type=float)
+parser.add_argument('--adam_betas',
+                    default="(.9,.999)", type=str)
+parser.add_argument('--adam_eps',
+                    default=1e-8, type=float)
 # NTK
 parser.add_argument('--ntk_damping', default=1e-3, type=float)
 parser.add_argument('--ntk_cpu', action='store_true')
@@ -347,36 +352,40 @@ else:
     para_model = model.to(device)
 
 #### optimizer
-if args.optim.lower() == 'sgd':
-    if args.sample_softmax > 0:
-        dense_params, sparse_params = [], []
-        for param in model.parameters():
-            if param.size() == model.word_emb.weight.size():
-                sparse_params.append(param)
-            else:
-                dense_params.append(param)
-        optimizer_sparse = optim.SGD(sparse_params, lr=args.lr * 2)
-        optimizer = optim.SGD(dense_params, lr=args.lr, momentum=args.mom)
-    else:
-        optimizer = optim.SGD(model.parameters(), lr=args.lr,
-            momentum=args.mom)
-elif args.optim.lower() == 'adam':
-    if args.sample_softmax > 0:
-        dense_params, sparse_params = [], []
-        for param in model.parameters():
-            if param.size() == model.word_emb.weight.size():
-                sparse_params.append(param)
-            else:
-                dense_params.append(param)
-        optimizer_sparse = optim.SparseAdam(sparse_params, lr=args.lr)
-        optimizer = optim.Adam(dense_params, lr=args.lr)
-    else:
-        optimizer = optim.Adam(model.parameters(), lr=args.lr)
-elif args.optim.lower() == 'adagrad':
-    optimizer = optim.Adagrad(model.parameters(), lr=args.lr)
+# if args.optim.lower() == 'sgd':
+#     if args.sample_softmax > 0:
+#         dense_params, sparse_params = [], []
+#         for param in model.parameters():
+#             if param.size() == model.word_emb.weight.size():
+#                 sparse_params.append(param)
+#             else:
+#                 dense_params.append(param)
+#         optimizer_sparse = optim.SGD(sparse_params, lr=args.lr * 2)
+#         optimizer = optim.SGD(dense_params, lr=args.lr, momentum=args.mom)
+#     else:
+#         optimizer = optim.SGD(model.parameters(), lr=args.lr,
+#             momentum=args.mom)
+# elif args.optim.lower() == 'adam':
+#     if args.sample_softmax > 0:
+#         dense_params, sparse_params = [], []
+#         for param in model.parameters():
+#             if param.size() == model.word_emb.weight.size():
+#                 sparse_params.append(param)
+#             else:
+#                 dense_params.append(param)
+#         optimizer_sparse = optim.SparseAdam(sparse_params, lr=args.lr)
+#         optimizer = optim.Adam(dense_params, lr=args.lr)
+#     else:
+#         optimizer = optim.Adam(model.parameters(), lr=args.lr)
+# elif args.optim.lower() == 'adagrad':
+#     optimizer = optim.Adagrad(model.parameters(), lr=args.lr)
 
 # opt = {}
 # opt.update(vars(args).items())
+
+# if args.g_batch_size == -1:
+#     args.g_batch_size = args.batch_size
+args.adam_betas = make_tuple(args.adam_betas)
 train_iter = tr_iter.get_varlen_iter() if args.varlen else tr_iter
 optimizer = OptimizerFactory(model, train_iter, tb_logger, args)
 
