@@ -184,6 +184,7 @@ parser.add_argument('--adam_betas',
 parser.add_argument('--adam_eps',
                     default=1e-8, type=float)
 # NTK
+parser.add_argument('--logger_name', default='runs/runX')
 parser.add_argument('--ntk_damping', default=1e-3, type=float)
 parser.add_argument('--ntk_cpu', action='store_true')
 parser.add_argument('--weight_decay', '--wd', default=argparse.SUPPRESS,
@@ -193,6 +194,8 @@ parser.add_argument('--weight_decay', '--wd', default=argparse.SUPPRESS,
 
 args = parser.parse_args()
 args.tied = not args.not_tied
+
+tb_logger.configure(args.logger_name, flush_secs=5, opt=args)
 
 if args.d_embed < 0:
     args.d_embed = args.d_model
@@ -545,6 +548,7 @@ def train():
 
         if train_step % args.log_interval == 0:
             cur_loss = train_loss / args.log_interval
+            tb_logger.log_value('Tloss', cur_loss, step=train_step)
             elapsed = time.time() - log_start_time
             log_str = '| epoch {:3d} step {:>8d} | {:>6d} batches | lr {:.3g} ' \
                       '| ms/batch {:5.2f} | loss {:5.2f}'.format(
@@ -552,14 +556,19 @@ def train():
                 elapsed * 1000 / args.log_interval, cur_loss)
             if args.dataset in ['enwik8', 'text8']:
                 log_str += ' | bpc {:9.5f}'.format(cur_loss / math.log(2))
+                tb_logger.log_value('Tbpc', cur_loss / math.log(2),
+                                    step=train_step)
             else:
                 log_str += ' | ppl {:9.3f}'.format(math.exp(cur_loss))
+                tb_logger.log_value('Tppl', math.exp(cur_loss),
+                                    step=train_step)
             logging(log_str)
             train_loss = 0
             log_start_time = time.time()
 
         if train_step % args.eval_interval == 0:
             val_loss = evaluate(va_iter)
+            tb_logger.log_value('Vloss', val_loss, step=train_step)
             logging('-' * 100)
             log_str = '| Eval {:3d} at step {:>8d} | time: {:5.2f}s ' \
                       '| valid loss {:5.2f}'.format(
@@ -567,8 +576,12 @@ def train():
                 (time.time() - eval_start_time), val_loss)
             if args.dataset in ['enwik8', 'text8']:
                 log_str += ' | bpc {:9.5f}'.format(val_loss / math.log(2))
+                tb_logger.log_value('Vbpc', cur_loss / math.log(2),
+                                    step=train_step)
             else:
                 log_str += ' | valid ppl {:9.3f}'.format(math.exp(val_loss))
+                tb_logger.log_value('Vppl', math.exp(cur_loss),
+                                    step=train_step)
             logging(log_str)
             logging('-' * 100)
             # Save the model if the validation loss is the best we've seen so far.
