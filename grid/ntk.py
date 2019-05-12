@@ -52,7 +52,8 @@ def cifar10(args):
                    # ('epochs', 5),
                    # ('lr', 0.1),
                    ('weight_decay', 0),  # [0, 1e-4]),
-                   ('gvar_log_iter', 200),
+                   ('gvar_log_iter', 200),  # 200),
+                   ('gvar_estim_iter', 5),  # 200),
                    ('batch_size', 1024),  # 1024, 128),
                    # ('lr', [.1]),  # [.1, .05, .02, .01]),
                    ('momentum', 0.9),
@@ -79,10 +80,10 @@ def cifar10(args):
     args += [OrderedDict(shared_args+gvar_args+args_kfac)]
 
     args_ntk = [('g_estim', ['ntk']),
-                ('lr', [5e-3, 2e-3, 1e-3, 5e-2, 2e-2, 1e-2]),  # , 5e-4]),
-                ('ntk_damping', [5e-2, 3e-2, 1e-2, 5e-3, 2e-3, 1e-3]),
+                ('lr', [5e-3, 1e-2, 2e-2, 5e-2]),  # , 5e-4]),, 2e-3, 1e-3
+                ('ntk_damping', [5e-2, 3e-2, 1e-2]),  # , 5e-3, 2e-3, 1e-3]),
                 # 1e-3, 1e-5, 1e-1]),  # [1e-3, 1e-1]),
-                ('ntk_cpu', ''),
+                # ('ntk_cpu', ''),
                 ]
     args += [OrderedDict(shared_args+gvar_args+args_ntk)]
     return args, log_dir, module_name, exclude

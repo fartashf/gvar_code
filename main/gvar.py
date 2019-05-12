@@ -77,8 +77,7 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
         if batch_idx % opt.log_interval == 0:
             gvar_log = ''
             prof_log = ''
-            if (batch_idx % opt.gvar_log_iter == 0
-                    and optimizer.niters >= opt.gvar_start):
+            if optimizer.gvar.is_log_iter(niters):
                 gvar_log = '\t' + optimizer.gvar.log_var(model, niters)
             if opt.log_profiler:
                 prof_log = '\t' + str(profiler)
