@@ -266,6 +266,7 @@ def add_args():
     # NTK
     parser.add_argument('--ntk_damping', default=1e-3, type=float)
     parser.add_argument('--ntk_cpu', action='store_true')
+    parser.add_argument('--ntk_sweeps', default=100, type=int)
     args = parser.parse_args()
     return args
 
@@ -298,6 +299,7 @@ def opt_to_ntk_kwargs(opt):
     return {'damping': opt.ntk_damping, 'cpu': opt.ntk_cpu,
             'active_only': active_only,
             'inactive_mods': inactive_mods,
+            'max_sweeps': opt.ntk_sweeps,
             }
 
 

@@ -15,7 +15,7 @@ from data_utils import get_lm_corpus
 from mem_transformer import MemTransformerLM
 from t2t_utils.exp_utils import create_exp_dir
 from t2t_utils.data_parallel import BalancedDataParallel
-sys.path.append('/Users/tonywu/Documents/research/ntk/dmom_code')
+sys.path.append('../')
 from estim.optim import OptimizerFactory
 from log_utils import TBXWrapper
 from log_utils import Profiler
@@ -184,24 +184,29 @@ parser.add_argument('--adam_betas',
 parser.add_argument('--adam_eps',
                     default=1e-8, type=float)
 # NTK
+parser.add_argument('--logger_name', default='runs/runX')
 parser.add_argument('--ntk_damping', default=1e-3, type=float)
 parser.add_argument('--ntk_cpu', action='store_true')
 parser.add_argument('--weight_decay', '--wd', default=argparse.SUPPRESS,
                     type=float,
                     metavar='W', help='weight decay (default: 5e-4)')
+parser.add_argument('--ntk_sweeps', default=100, type=int)
+parser.add_argument('--log_nex', action='store_true')
 
 
 args = parser.parse_args()
 args.tied = not args.not_tied
 
+tb_logger.configure(args.logger_name, flush_secs=5, opt=args)
 if args.d_embed < 0:
     args.d_embed = args.d_model
 
 assert args.ext_len >= 0, 'extended context length must be non-negative'
 assert args.batch_size % args.batch_chunk == 0
 
-args.work_dir = '{}-{}'.format(args.work_dir, args.dataset)
-args.work_dir = os.path.join(args.work_dir, time.strftime('%Y%m%d-%H%M%S'))
+# args.work_dir = '{}-{}'.format(args.work_dir, args.dataset)
+# args.work_dir = os.path.join(args.work_dir, time.strftime('%Y%m%d-%H%M%S'))
+args.work_dir = os.path.join(args.logger_name, time.strftime('%Y%m%d-%H%M%S'))
 logging = create_exp_dir(args.work_dir,
     scripts_to_save=['train.py', 'mem_transformer.py'], debug=args.debug)
 
@@ -318,6 +323,18 @@ def update_dropatt(m):
     if hasattr(m, 'dropatt'):
         m.dropatt.p = args.dropatt
 
+def transformer_loss(model, data, reduction='mean', weights=1):
+    data, target = data[0], data[1]
+    # model.zero_grad()
+    mems = tuple()
+    ret = model(data, target, *mems)
+    loss, mems = ret[0], ret[1:]
+    loss = loss.mean(0)*weights
+    if reduction == 'mean':
+        loss = loss.mean()
+    return loss
+
+
 if args.restart:
     with open(os.path.join(args.restart_dir, 'model.pt'), 'rb') as f:
         model = torch.load(f)
@@ -335,6 +352,7 @@ else:
         clamp_len=args.clamp_len, sample_softmax=args.sample_softmax)
     model.apply(weights_init)
     model.word_emb.apply(weights_init) # ensure embedding init is not overridden by out_layer in case of weight sharing
+model.criterion = transformer_loss
 args.n_all_param = sum([p.nelement() for p in model.parameters()])
 args.n_nonemb_param = sum([p.nelement() for p in model.layers.parameters()])
 
@@ -545,6 +563,7 @@ def train():
 
         if train_step % args.log_interval == 0:
             cur_loss = train_loss / args.log_interval
+            tb_logger.log_value('Tloss', cur_loss, step=train_step)
             elapsed = time.time() - log_start_time
             log_str = '| epoch {:3d} step {:>8d} | {:>6d} batches | lr {:.3g} ' \
                       '| ms/batch {:5.2f} | loss {:5.2f}'.format(
@@ -552,14 +571,19 @@ def train():
                 elapsed * 1000 / args.log_interval, cur_loss)
             if args.dataset in ['enwik8', 'text8']:
                 log_str += ' | bpc {:9.5f}'.format(cur_loss / math.log(2))
+                tb_logger.log_value('Tbpc', cur_loss / math.log(2),
+                                    step=train_step)
             else:
                 log_str += ' | ppl {:9.3f}'.format(math.exp(cur_loss))
+                tb_logger.log_value('Tppl', math.exp(cur_loss),
+                                    step=train_step)
             logging(log_str)
             train_loss = 0
             log_start_time = time.time()
 
         if train_step % args.eval_interval == 0:
             val_loss = evaluate(va_iter)
+            tb_logger.log_value('Vloss', val_loss, step=train_step)
             logging('-' * 100)
             log_str = '| Eval {:3d} at step {:>8d} | time: {:5.2f}s ' \
                       '| valid loss {:5.2f}'.format(
@@ -567,8 +591,12 @@ def train():
                 (time.time() - eval_start_time), val_loss)
             if args.dataset in ['enwik8', 'text8']:
                 log_str += ' | bpc {:9.5f}'.format(val_loss / math.log(2))
+                tb_logger.log_value('Vbpc', cur_loss / math.log(2),
+                                    step=train_step)
             else:
                 log_str += ' | valid ppl {:9.3f}'.format(math.exp(val_loss))
+                tb_logger.log_value('Vppl', math.exp(cur_loss),
+                                    step=train_step)
             logging(log_str)
             logging('-' * 100)
             # Save the model if the validation loss is the best we've seen so far.
@@ -576,8 +604,8 @@ def train():
                 if not args.debug:
                     with open(os.path.join(args.work_dir, 'model.pt'), 'wb') as f:
                         torch.save(model, f)
-                    with open(os.path.join(args.work_dir, 'optimizer.pt'), 'wb') as f:
-                        torch.save(optimizer.state_dict(), f)
+                    #with open(os.path.join(args.work_dir, 'optimizer.pt'), 'wb') as f:
+                    #    torch.save(optimizer.state_dict(), f)
                 best_val_loss = val_loss
 
             # dev-performance based learning rate annealing

@@ -19,14 +19,15 @@ class NTKEstimator(GradientEstimator):
             self.ntk = NeuralTangentKernel(
                 model, **opt_to_ntk_kwargs(self.opt))
 
-        data, target, _ = next(self.data_iter)
+        # data, target, _ = next(self.data_iter)
+        data = next(self.data_iter)
 
-        # loss = model.criterion(model, data, reduction='none')
-        mems = tuple()
-        ret = model(data, target, *mems)
-        loss, mems = ret[0], ret[1:]
-        loss = loss.mean(0)
-        # loss = loss.float().mean().type_as(loss)
+        loss = model.criterion(model, data, reduction='none')
+        # mems = tuple()
+        # ret = model(data, target, *mems)
+        # loss, mems = ret[0], ret[1:]
+        # loss = loss.mean(0)
+        # # loss = loss.float().mean().type_as(loss)
 
         loss0 = loss.mean()
 
