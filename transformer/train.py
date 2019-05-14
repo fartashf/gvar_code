@@ -15,7 +15,8 @@ from data_utils import get_lm_corpus
 from mem_transformer import MemTransformerLM
 from t2t_utils.exp_utils import create_exp_dir
 from t2t_utils.data_parallel import BalancedDataParallel
-sys.path.append('/h/ywu/Documents/dmom_code')
+# sys.path.append('/h/ywu/Documents/dmom_code')
+sys.path.append('../')
 from estim.optim import OptimizerFactory
 from log_utils import TBXWrapper
 from log_utils import Profiler
@@ -190,6 +191,8 @@ parser.add_argument('--ntk_cpu', action='store_true')
 parser.add_argument('--weight_decay', '--wd', default=argparse.SUPPRESS,
                     type=float,
                     metavar='W', help='weight decay (default: 5e-4)')
+parser.add_argument('--ntk_sweeps', default=100, type=int)
+parser.add_argument('--log_nex', action='store_true')
 
 
 args = parser.parse_args()
@@ -203,8 +206,9 @@ if args.d_embed < 0:
 assert args.ext_len >= 0, 'extended context length must be non-negative'
 assert args.batch_size % args.batch_chunk == 0
 
-args.work_dir = '{}-{}'.format(args.work_dir, args.dataset)
-args.work_dir = os.path.join(args.work_dir, time.strftime('%Y%m%d-%H%M%S'))
+# args.work_dir = '{}-{}'.format(args.work_dir, args.dataset)
+# args.work_dir = os.path.join(args.work_dir, time.strftime('%Y%m%d-%H%M%S'))
+args.work_dir = os.path.join(args.logger_name, time.strftime('%Y%m%d-%H%M%S'))
 logging = create_exp_dir(args.work_dir,
     scripts_to_save=['train.py', 'mem_transformer.py'], debug=args.debug)
 
@@ -321,6 +325,19 @@ def update_dropatt(m):
     if hasattr(m, 'dropatt'):
         m.dropatt.p = args.dropatt
 
+
+def transformer_loss(model, data, reduction='mean', weights=1):
+    data, target = data[0], data[1]
+    # model.zero_grad()
+    mems = tuple()
+    ret = model(data, target, *mems)
+    loss, mems = ret[0], ret[1:]
+    loss = loss.mean(0)*weights
+    if reduction == 'mean':
+        loss = loss.mean()
+    return loss
+
+
 if args.restart:
     with open(os.path.join(args.restart_dir, 'model.pt'), 'rb') as f:
         model = torch.load(f)
@@ -338,6 +355,7 @@ else:
         clamp_len=args.clamp_len, sample_softmax=args.sample_softmax)
     model.apply(weights_init)
     model.word_emb.apply(weights_init) # ensure embedding init is not overridden by out_layer in case of weight sharing
+model.criterion = transformer_loss
 args.n_all_param = sum([p.nelement() for p in model.parameters()])
 args.n_nonemb_param = sum([p.nelement() for p in model.layers.parameters()])
 
