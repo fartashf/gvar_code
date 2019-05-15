@@ -754,10 +754,20 @@ class MemTransformerLM(nn.Module):
             loss = self.crit(pred_hid.view(-1, pred_hid.size(-1)), target.view(-1))
             loss = loss.view(tgt_len, -1)
 
+        # if new_mems is None:
+        #     return [loss]
+        # else:
+        #     return [loss] + new_mems
         if new_mems is None:
-            return [loss]
+            return [loss, pred_hid]
         else:
-            return [loss] + new_mems
+            return [loss, pred_hid] + new_mems
+
+    def loss_sample(self, pred_hid):
+        assert self.sample_softmax <= 0, "Sample Softmax is not supported yet."
+        loss_sample = self.crit.loss_sample(
+            pred_hid.view(-1, pred_hid.size(-1)))
+        return loss_sample.view(pred_hid.shape[0], pred_hid.shape[1])
 
 if __name__ == '__main__':
     import argparse

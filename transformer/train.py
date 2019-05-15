@@ -19,6 +19,8 @@ sys.path.append('../')
 from estim.optim import OptimizerFactory
 from log_utils import TBXWrapper
 from log_utils import Profiler
+import models
+import models.loss
 from ast import literal_eval as make_tuple
 from args import yaml_opt
 tb_logger = TBXWrapper()
@@ -58,7 +60,7 @@ parser.add_argument('--init_std', type=float, default=0.02,
 parser.add_argument('--proj_init_std', type=float, default=0.01,
                     help='parameters initialized by N(0, init_std)')
 parser.add_argument('--optim', default='adam', type=str,
-                    choices=['adam', 'sgd', 'adagrad'],
+                    choices=['adam', 'sgd', 'adagrad', 'kfac', 'ekfac'],
                     help='optimizer to use.')
 parser.add_argument('--lr', type=float, default=0.00025,
                     help='initial learning rate (0.00025|5 for adam|sgd)')
@@ -155,20 +157,13 @@ parser.add_argument('--g_estim', default=argparse.SUPPRESS, type=str)
 parser.add_argument('--momentum', type=float, default=argparse.SUPPRESS,
                     metavar='M',
                     help='SGD momentum (default: 0.5)')
-parser.add_argument('--g_optim',
-                    default=argparse.SUPPRESS, action='store_true')
-parser.add_argument('--g_optim_start',
-                    default=argparse.SUPPRESS, type=int)
-parser.add_argument('--gvar_start',
-                    default=argparse.SUPPRESS, type=int)
-parser.add_argument('--g_epoch',
-                    default=argparse.SUPPRESS, action='store_true')
-parser.add_argument('--gvar_log_iter',
-                    default=argparse.SUPPRESS, type=int)
-parser.add_argument('--nesterov',
-                    default=False, action='store_true')
-parser.add_argument('--g_optim_max',
-                    default=-1, type=int)
+parser.add_argument('--g_optim', action='store_true')
+parser.add_argument('--g_optim_start', default=0, type=int)
+parser.add_argument('--gvar_start', default=0, type=int)
+parser.add_argument('--g_epoch', action='store_true')
+parser.add_argument('--gvar_log_iter', default=100, type=int)
+parser.add_argument('--nesterov', default=False, action='store_true')
+parser.add_argument('--g_optim_max', default=-1, type=int)
 parser.add_argument('--g_active_only', default='')
 parser.add_argument('--g_inactive_mods', default='')
 parser.add_argument('--lr_decay_epoch',
@@ -192,6 +187,14 @@ parser.add_argument('--weight_decay', '--wd', default=argparse.SUPPRESS,
                     metavar='W', help='weight decay (default: 5e-4)')
 parser.add_argument('--ntk_sweeps', default=100, type=int)
 parser.add_argument('--log_nex', action='store_true')
+
+# KFAC
+parser.add_argument('--kf_stat_decay', default=0.95, type=float)
+parser.add_argument('--kf_damping', default=1e-3, type=float)
+parser.add_argument('--kf_kl_clip', default=1e-2, type=float)
+parser.add_argument('--kf_TCov', default=10, type=int)
+parser.add_argument('--kf_TScal', default=10, type=int)
+parser.add_argument('--kf_TInv', default=100, type=int)
 
 
 args = parser.parse_args()
@@ -325,10 +328,10 @@ def update_dropatt(m):
 
 def transformer_loss(model, data, reduction='mean', weights=1):
     data, target = data[0], data[1]
-    # model.zero_grad()
+    model.zero_grad()
     mems = tuple()
     ret = model(data, target, *mems)
-    loss, mems = ret[0], ret[1:]
+    loss, mems = ret[0], ret[2:]
     loss = loss.mean(0)*weights
     if reduction == 'mean':
         loss = loss.mean()
@@ -352,7 +355,10 @@ else:
         clamp_len=args.clamp_len, sample_softmax=args.sample_softmax)
     model.apply(weights_init)
     model.word_emb.apply(weights_init) # ensure embedding init is not overridden by out_layer in case of weight sharing
-model.criterion = transformer_loss
+if args.optim == 'kfac' or args.optim == 'ekfac':
+    model.criterion = models.loss.TransformerLossKFAC()
+else:
+    model.criterion = transformer_loss
 args.n_all_param = sum([p.nelement() for p in model.parameters()])
 args.n_nonemb_param = sum([p.nelement() for p in model.layers.parameters()])
 

@@ -71,6 +71,18 @@ class ProjectedAdaptiveLogSoftmax(nn.Module):
 
         return logit
 
+    def loss_sample(self, hidden):
+        assert self.n_clusters == 0, "n_clusters > 0 not supported yet."
+        # logit = self._compute_logit(hidden, self.out_layers[0].weight,
+        #                             self.out_layers[0].bias, self.out_projs[0])
+        assert self.out_projs[0] is None, "Projection not supported yet."
+        logit = self.out_layers[0](hidden)
+        with torch.no_grad():
+            sampled_y = torch.multinomial(
+                torch.nn.functional.softmax(logit, dim=1), 1)
+        nll = -F.log_softmax(logit, dim=-1).gather(1, sampled_y).squeeze(1)
+        return nll
+
     def forward(self, hidden, target, keep_order=False):
         '''
             hidden :: [len*bsz x d_proj]
