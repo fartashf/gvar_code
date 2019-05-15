@@ -34,6 +34,16 @@ class MinVarianceGradient(object):
         self.gest_used = False
         self.gest_counter = 0
         self.Esgd = 0
+        self.last_log_iter = 0
+        self.opt = opt
+
+    def is_log_iter(self, niters):
+        opt = self.opt
+        if (niters-self.last_log_iter >= opt.gvar_log_iter
+                and niters >= opt.gvar_start):
+            self.last_log_iter = niters
+            return True
+        return False
 
     def snap_batch(self, model, niters):
         # model.eval()  # done inside SVRG

@@ -42,12 +42,16 @@ def vector(sargs):
 
     rm jobs/*.sh jobs/log/* -f && python grid_run.py --grid G --run_name X \
     --cluster_args 4,4,p100,t4
-    pattern=""; for i in 1 2; do ./kill.sh $i $pattern; done
+    scancel -u <user>
     sbatch jobs/slurm.sbatch
     """
     njobs, ntasks, partition = sargs.split(',', 2)
     njobs = int(njobs)
     ntasks = int(ntasks)
+    # 1,1 runs 1 slurm job with all scripts running in parallel
+    # 4,1 runs 4 slurm array jobs with limit 1 running task
+    # 4,2 4 slurm jobs total but 2 running at each time,
+    # njobs>=ntasks
     # njobs = 5  # Number of array jobs
     # ntasks = 4  # Number of running jobs
     # partition = 'gpu'
@@ -70,7 +74,7 @@ python -c "import torch; print(torch.__version__)"
 
 # the environment variable SLURM_ARRAY_TASK_ID contains
 # the index corresponding to the current job step
-source $HOME/export_p1.sh
+source export.sh
 bash jobs/$SLURM_ARRAY_TASK_ID.sh
 """.format(njobs=njobs-1, ntasks=ntasks, partition=partition)
     with open('jobs/slurm.sbatch', 'w') as f:

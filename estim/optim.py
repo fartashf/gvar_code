@@ -92,7 +92,7 @@ class OptimizerFactory(object):
         if gvar.gest_used != pg_used:
             logging.info('Optimizer reset.')
             self.gest_used = gvar.gest_used
-            utils.adjust_lr(self, opt)
+            # utils.adjust_lr(self, opt)  # TODO: learning rate
             if not (opt.optim == 'kfac' or opt.optim == 'ekfac'):
                 self.reset()
         self.optimizer.step()
