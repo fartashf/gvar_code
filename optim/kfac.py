@@ -74,7 +74,7 @@ class KFACOptimizer(optim.Optimizer):
 
     def _prepare_model(self):
         count = 0
-        print(self.model)
+        # print(self.model)
         print("=> We keep following layers in KFAC. ")
         for module in self.model.modules():
             classname = module.__class__.__name__
