@@ -73,7 +73,7 @@ parser.add_argument('--decay_rate', type=float, default=0.5,
                     help='decay factor when ReduceLROnPlateau is used')
 parser.add_argument('--lr_min', type=float, default=0.0,
                     help='minimum learning rate during annealing')
-parser.add_argument('--clip', type=float, default=0.25,
+parser.add_argument('--clip', type=float, default=500.0,
                     help='gradient clipping')
 parser.add_argument('--clip_nonemb', action='store_true',
                     help='only clip the gradient of non-embedding params')
@@ -408,33 +408,33 @@ train_iter = tr_iter.get_varlen_iter() if args.varlen else tr_iter
 optimizer = OptimizerFactory(model, train_iter, tb_logger, args)
 
 #### scheduler
-# if args.scheduler == 'cosine':
-#     # here we do not set eta_min to lr_min to be backward compatible
-#     # because in previous versions eta_min is default to 0
-#     # rather than the default value of lr_min 1e-6
-#     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer,
-#         args.max_step, eta_min=args.eta_min) # should use eta_min arg
-#     if args.sample_softmax > 0:
-#         scheduler_sparse = optim.lr_scheduler.CosineAnnealingLR(optimizer_sparse,
-#             args.max_step, eta_min=args.eta_min) # should use eta_min arg
-# elif args.scheduler == 'inv_sqrt':
-#     # originally used for Transformer (in Attention is all you need)
-#     def lr_lambda(step):
-#         # return a multiplier instead of a learning rate
-#         if step == 0 and args.warmup_step == 0:
-#             return 1.
-#         else:
-#             return 1. / (step ** 0.5) if step > args.warmup_step \
-#                    else step / (args.warmup_step ** 1.5)
-#     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
-# elif args.scheduler == 'dev_perf':
-#     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer,
-#         factor=args.decay_rate, patience=args.patience, min_lr=args.lr_min)
-#     if args.sample_softmax > 0:
-#         scheduler_sparse = optim.lr_scheduler.ReduceLROnPlateau(optimizer_sparse,
-#             factor=args.decay_rate, patience=args.patience, min_lr=args.lr_min)
-# elif args.scheduler == 'constant':
-#     pass
+if args.scheduler == 'cosine':
+    # here we do not set eta_min to lr_min to be backward compatible
+    # because in previous versions eta_min is default to 0
+    # rather than the default value of lr_min 1e-6
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer.optimizer,
+        args.max_step, eta_min=args.eta_min) # should use eta_min arg
+    if args.sample_softmax > 0:
+        scheduler_sparse = optim.lr_scheduler.CosineAnnealingLR(optimizer_sparse,
+            args.max_step, eta_min=args.eta_min) # should use eta_min arg
+elif args.scheduler == 'inv_sqrt':
+    # originally used for Transformer (in Attention is all you need)
+    def lr_lambda(step):
+        # return a multiplier instead of a learning rate
+        if step == 0 and args.warmup_step == 0:
+            return 1.
+        else:
+            return 1. / (step ** 0.5) if step > args.warmup_step \
+                   else step / (args.warmup_step ** 1.5)
+    scheduler = optim.lr_scheduler.LambdaLR(optimizer.optimizer, lr_lambda=lr_lambda)
+elif args.scheduler == 'dev_perf':
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer.optimizer,
+        factor=args.decay_rate, patience=args.patience, min_lr=args.lr_min)
+    if args.sample_softmax > 0:
+        scheduler_sparse = optim.lr_scheduler.ReduceLROnPlateau(optimizer_sparse,
+            factor=args.decay_rate, patience=args.patience, min_lr=args.lr_min)
+elif args.scheduler == 'constant':
+    pass
 
 if args.cuda and args.fp16:
     # If args.dynamic_loss_scale is False, static_loss_scale will be used.
@@ -540,39 +540,42 @@ def train():
         # else:
         #     torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
 
-        train_loss += optimizer.step(profiler)
+        new_train_loss, grad_norm = optimizer.step(profiler)
+        train_loss += new_train_loss
         if args.sample_softmax > 0:
             optimizer_sparse.step()
 
         # step-wise learning rate annealing
         train_step += 1
-        # if args.scheduler in ['cosine', 'constant', 'dev_perf']:
-        #     # linear warmup stage
-        #     if train_step < args.warmup_step:
-        #         curr_lr = args.lr * train_step / args.warmup_step
-        #         optimizer.param_groups[0]['lr'] = curr_lr
-        #         if args.sample_softmax > 0:
-        #             optimizer_sparse.param_groups[0]['lr'] = curr_lr * 2
-        #     else:
-        #         if args.scheduler == 'cosine':
-        #             scheduler.step(train_step)
-        #             if args.sample_softmax > 0:
-        #                 scheduler_sparse.step(train_step)
-        # elif args.scheduler == 'inv_sqrt':
-        #     scheduler.step(train_step)
+        if args.scheduler in ['cosine', 'constant', 'dev_perf']:
+            # linear warmup stage
+            if train_step < args.warmup_step:
+                curr_lr = args.lr * train_step / args.warmup_step
+                optimizer.param_groups[0]['lr'] = curr_lr
+                if args.sample_softmax > 0:
+                    optimizer_sparse.param_groups[0]['lr'] = curr_lr * 2
+            else:
+                if args.scheduler == 'cosine':
+                    scheduler.step(train_step)
+                    if args.sample_softmax > 0:
+                        scheduler_sparse.step(train_step)
+        elif args.scheduler == 'inv_sqrt':
+            scheduler.step(train_step)
 
         if train_step % args.log_interval == 0:
             cur_loss = train_loss / args.log_interval
             tb_logger.log_value('Tloss', cur_loss, step=train_step)
             elapsed = time.time() - log_start_time
             log_str = '| epoch {:3d} step {:>8d} | {:>6d} batches | lr {:.3g} ' \
-                      '| ms/batch {:5.2f} | loss {:5.2f}'.format(
+                    '| ms/batch {:5.2f} | loss {:5.2f} | norm {:.3g}'.format(
                 epoch, train_step, batch+1, optimizer.param_groups[0]['lr'],
-                elapsed * 1000 / args.log_interval, cur_loss)
+                elapsed * 1000 / args.log_interval, cur_loss, grad_norm)
             if args.dataset in ['enwik8', 'text8']:
                 log_str += ' | bpc {:9.5f}'.format(cur_loss / math.log(2))
                 tb_logger.log_value('Tbpc', cur_loss / math.log(2),
                                     step=train_step)
+                tb_logger.log_value('norm', grad_norm, step=train_step)
+
             else:
                 log_str += ' | ppl {:9.3f}'.format(math.exp(cur_loss))
                 tb_logger.log_value('Tppl', math.exp(cur_loss),
