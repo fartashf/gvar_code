@@ -36,7 +36,7 @@ def mnist(args):
 def cifar10(args):
     dataset = 'cifar10'
     module_name = 'main.gvar'
-    log_dir = 'runs_%s_gvar_ntk_bs1024' % dataset
+    log_dir = 'runs_%s_gvar_ntk_bs1024_sgd' % dataset
     exclude = ['dataset', 'epochs',
                'g_epoch', 'lr_decay_epoch', 'gvar_log_iter', 'niters']
     shared_args = [('dataset', dataset),
@@ -68,24 +68,26 @@ def cifar10(args):
         ('g_epoch', ''),
     ]
     args_sgd = [('g_estim', ['sgd']),
-                ('lr', [.1]),  # [.1, .05, .02, .01]),
+                ('lr', [.12, .15, .2]),  # [.1]),  # [.1, .05, .02, .01]),
                 ]
     args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
     args_kfac = [('g_estim', ['sgd']),
                  ('optim', ['kfac']),
-                 ('lr', 0.02),  # [.1, .05, .02, .01]),
-                 ('kf_damping',  0.03),  # [0.03, 0.02, 0.01, 0.005, 0.002]),
+                 # ('lr', 0.02),
+                 # ('kf_damping',  0.03),
+                 ('lr', [.1, .05, .02, .01]),
+                 ('kf_damping',  [0.05, 0.03, 0.01]),
                  ]
     args += [OrderedDict(shared_args+gvar_args+args_kfac)]
 
-    args_ntk = [('g_estim', ['ntk']),
-                ('lr', [5e-3, 1e-2, 2e-2, 5e-2]),  # , 5e-4]),, 2e-3, 1e-3
-                ('ntk_damping', [5e-2, 3e-2, 1e-2]),  # , 5e-3, 2e-3, 1e-3]),
-                # 1e-3, 1e-5, 1e-1]),  # [1e-3, 1e-1]),
-                # ('ntk_cpu', ''),
-                ]
-    args += [OrderedDict(shared_args+gvar_args+args_ntk)]
+    # args_ntk = [('g_estim', ['ntk']),
+    #             ('lr', [5e-3, 1e-2, 2e-2, 5e-2]),  # , 5e-4]),, 2e-3, 1e-3
+    #             ('ntk_damping', [5e-2, 3e-2, 1e-2]),  # , 5e-3, 2e-3, 1e-3]),
+    #             # 1e-3, 1e-5, 1e-1]),  # [1e-3, 1e-1]),
+    #             # ('ntk_cpu', ''),
+    #             ]
+    # args += [OrderedDict(shared_args+gvar_args+args_ntk)]
     return args, log_dir, module_name, exclude
 
 

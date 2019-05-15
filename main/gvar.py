@@ -82,6 +82,16 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
             if opt.log_profiler:
                 prof_log = '\t' + str(profiler)
 
+            # if opt.g_estim == 'ntk' and optimizer.gvar.gest.ntk is not None:
+            #     Ki = optimizer.gvar.gest.ntk.Ki
+            #     print('%.4f %4f' % (Ki.diag().abs().mean(), Ki.abs().mean()))
+            #     S = optimizer.gvar.gest.ntk.S
+            #     print('%.4f+-%.4f in [%.4f, %.4f]'
+            #           % (S.mean(), S.std(), S.min(), S.max()))
+            #     Si = 1./(S+optimizer.gvar.gest.ntk.damping)
+            #     print('%.4f+-%.4f in [%.4f, %.4f]'
+            #           % (Si.mean(), Si.std(), Si.min(), Si.max()))
+            #     torch.save({'Si': Si.cpu().numpy()}, 'Si.pth.tar')
             logging.info(
                 'Epoch: [{0}][{1}/{2}]({niters})\t'
                 'Loss: {loss:.6f}\t'

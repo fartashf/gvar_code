@@ -13,13 +13,16 @@ from cusvd import svdj
 
 class NeuralTangentKernel(object):
     def __init__(self, model, damping=1e-3, debug=True, cpu=True,
-                 max_sweeps=100, **kwargs):
+                 max_sweeps=100, divn=False, **kwargs):
         self.model = model
         self.damping = damping
         self.debug = debug
         self.ntk = ntk.layer.Container(model, debug=debug, **kwargs)
         self.cpu = cpu
         self.max_sweeps = max_sweeps
+        self.Ki = None
+        self.S = None
+        self.divn = divn
 
     def activate(self):
         self.ntk.activate()
@@ -37,6 +40,8 @@ class NeuralTangentKernel(object):
     def get_kernel(self):
         batch_kernel = self.ntk.get_kernel()
         total_kernel = torch.stack(batch_kernel).sum(0)
+        if self.divn:
+            return total_kernel/total_kernel.shape[0]
         return total_kernel
 
     def get_kernel_inverse(self):
@@ -44,6 +49,7 @@ class NeuralTangentKernel(object):
             K = self.get_kernel()
             if not self.cpu:
                 U, S, V = svdj(K, max_sweeps=self.max_sweeps)
+                # self.S = S.clone()
                 Ki = U @ (1./(S+self.damping)).diag() @ V.t()
                 # K += self.damping*torch.eye(
                 #     K.shape[0], dtype=K.dtype, device=K.device)
@@ -66,4 +72,5 @@ class NeuralTangentKernel(object):
                 # Ki = torch.Tensor(scipy.linalg.inv(K.cpu().numpy()))
                 # U, S, V = K.cpu().svd()
                 # Ki = U @ (1./(S+self.damping)).diag() @ V.t()
+            # self.Ki = Ki.clone()
         return Ki.cuda()
