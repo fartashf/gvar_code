@@ -15,13 +15,15 @@ if [[ $1 == 'train' ]]; then
         --dropatt 0.0 \
         --optim adam \
         --lr 0.003 \
+        --clip 1000.0 \
         --warmup_step 0 \
         --max_step 400000 \
         --tgt_len 512 \
         --mem_len 0 \
         --attn_type 2 \
         --eval_tgt_len 128 \
-        --log-interval 200 \
+        --log-interval 1 \
+        --logger_name "/scratch/gobi1/ywu/ntk/runs/runX" \
         --batch_size 44 \
         --g_estim ntk \
         --momentum 0.9 \
@@ -30,7 +32,7 @@ if [[ $1 == 'train' ]]; then
         --g_optim_start 0 \
         --g_epoch \
         --g_estim ntk \
-        --ntk_damping 0.01 \
+        --ntk_damping 0.000001 \
         --ntk_cpu \
         --weight_decay 0 \
         --gvar_log_iter 200 \
