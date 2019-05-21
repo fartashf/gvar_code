@@ -268,6 +268,11 @@ def add_args():
     parser.add_argument('--ntk_cpu', action='store_true')
     parser.add_argument('--ntk_sweeps', default=100, type=int)
     parser.add_argument('--ntk_divn', action='store_true')
+    # NQU
+    parser.add_argument('--nuq_method', default='q', help='q|nuq|qinf')
+    parser.add_argument('--nuq_bits', default=4, type=int)
+    parser.add_argument('--nuq_bucket_size', default=1024, type=int)
+    parser.add_argument('--nuq_ngpu', default=1, type=int)
     args = parser.parse_args()
     return args
 
@@ -303,6 +308,11 @@ def opt_to_ntk_kwargs(opt):
             'max_sweeps': opt.ntk_sweeps,
             'divn': opt.ntk_divn,
             }
+
+
+def opt_to_nuq_kwargs(opt):
+    return {'ngpu': opt.nuq_ngpu, 'bits': opt.nuq_bits,
+            'bucket_size': opt.nuq_bucket_size, 'method': opt.nuq_method}
 
 
 def yaml_opt(yaml_path):

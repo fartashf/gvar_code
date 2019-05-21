@@ -355,3 +355,4 @@ TSWLatexianTemp*
 
 # standalone packages
 *.sta
+nuq/cuda/objs
