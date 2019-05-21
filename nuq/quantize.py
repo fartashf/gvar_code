@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from MakePytorchBackend import QDQ
+import math
 
 
 def get_uniform_levels(bits):
@@ -10,19 +11,21 @@ def get_uniform_levels(bits):
     return levels_uni
 
 
-def get_exp_levels(bits):
+def get_exp_levels(bits, multiplier):
     """ exponential (NUQSGD)
 
     multiplier: is used to modify levels_exp based on the number of bits
     """
     num_levels = 2 << bits - 1
 
-    if bits == 4:
-        multiplier = 0.5
-    elif bits == 6:
-        multiplier = 0.9
-    elif bits == 8:
-        multiplier = 0.95
+    # if bits == 2:
+    #     multiplier = 0.1
+    # elif bits == 4:
+    #     multiplier = 0.5
+    # elif bits == 6:
+    #     multiplier = 0.9
+    # elif bits == 8:
+    #     multiplier = 0.95
 
     levels = sum([[-multiplier**j for j in range(num_levels >> 1)],
                   [multiplier**j for j in reversed(range(num_levels >> 1))]],
@@ -154,5 +157,45 @@ class QuantizeSingleBucket(object):
             norm = x_bucket.norm()
             self.qdq.qdqGPU(x_bucket, float(norm), q_bucket)
             q[start:end] = q_bucket
+
+        return q
+
+
+class QuantizeMultiBucket(object):
+    def __init__(self, method, bits, bucket_size, multiplier, **kwargs):
+        """
+        QSGD: qdqL2 + levels_uni
+        NUQSGD: qdqL2 + levels_exp
+        QSGD-inf: qdqLinf + levels_uni
+        """
+        if method == 'q':
+            self.levels = get_uniform_levels(bits)
+            self.norm_type = 'fro'
+        elif method == 'nuq':
+            self.levels = get_exp_levels(bits, multiplier)
+            self.norm_type = 'fro'
+        elif method == 'qinf':
+            self.levels = get_uniform_levels(bits)
+            self.norm_type = float('inf')
+
+        self.bucket_size = bucket_size
+        self.bits = bits
+        self.levels = torch.as_tensor(self.levels, dtype=torch.float32).cuda()
+        self.qdq = QDQ(bucket_size, self.levels)
+
+    def quantize(self, x):
+        assert isinstance(x, torch.cuda.FloatTensor)
+        bucket_size = self.bucket_size
+
+        num_tail = math.ceil(x.numel()/bucket_size)*bucket_size-x.numel()
+        xv = torch.cat((x.view(-1),
+                        torch.zeros(num_tail, dtype=x.dtype, device=x.device)))
+        xv = xv.view(-1, bucket_size)
+        norm = xv.norm(p=self.norm_type, dim=1, keepdim=True).expand(
+            xv.shape[0], xv.shape[1]).contiguous().view(-1).contiguous()
+        q = torch.zeros_like(x)
+        r = torch.randint_like(x, 1000001).long()
+
+        self.qdq.qdqGPU(x, norm, q, r)
 
         return q

@@ -13,7 +13,7 @@ private:
   curandState* states;
 public:
   QDQ(unsigned int bucket_size, at::Tensor levels, unsigned int seed = 1234);
-  void qdqGPU(at::Tensor in_vector, Dtype norm, at::Tensor out_vector);
+  void qdqGPU(at::Tensor in_vector, at::Tensor norm, at::Tensor out_vector, at::Tensor rand_vector);
 };
 
 template class QDQ<float>;
