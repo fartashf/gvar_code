@@ -124,6 +124,23 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
             tb_logger.save_log()
 
 
+def untrain(model, gvar, opt):
+    steps = opt.untrain_steps
+    lr = opt.untrain_lr
+    std = opt.untrain_std
+    for batch_idx in range(steps):
+        loss = gvar.grad(-1)
+        with torch.no_grad():
+            for p in model.parameters():
+                p += p.grad*lr  # ascent
+                p += torch.zeros_like(p.grad).normal_(0, std)  # noise
+        if batch_idx % opt.log_interval == 0:
+            logging.info(
+                'Untrain: [{0}/{1}]\t'
+                'Loss: {loss:.6f}'.format(
+                    batch_idx, steps, loss=loss.item()))
+
+
 def main():
     opt = get_opt()
     tb_logger.configure(opt.logger_name, flush_secs=5, opt=opt)
@@ -185,6 +202,10 @@ def main():
         max_iters = opt.niters
     else:
         max_iters = opt.epochs * opt.epoch_iters
+
+    if opt.untrain_steps > 0:
+        untrain(model, optimizer.gvar, opt)
+
     while optimizer.niters < max_iters:
         optimizer.epoch = epoch
         utils.adjust_lr(optimizer, opt)

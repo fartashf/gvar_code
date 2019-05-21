@@ -6,6 +6,7 @@ import grid.gvar
 import grid.cluster
 # from itertools import product
 import grid.ntk
+import grid.nuq
 
 
 class RunSingle(object):

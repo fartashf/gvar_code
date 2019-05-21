@@ -239,7 +239,7 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'grad_bias': 'Optimization Step Bias',
               'est_var': 'Optimization Step Variance (w/o learning rate)',
               'est_snr': 'Optimization Step SNR',
-              'est_nvar': 'Optimization Step Normalized Variance',
+              'est_nvar': 'Optimization Step Normalized Variance (w/o lr)',
               'gb_td': 'Total distortion of the Gluster objective.',
               'gb_cs': 'Size of Cluster #0',
               'gb_reinits': 'Total number of reinitializations.'}

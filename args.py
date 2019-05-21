@@ -226,8 +226,7 @@ def add_args():
                         default=argparse.SUPPRESS, type=float)
     parser.add_argument('--g_imbalance',
                         default=argparse.SUPPRESS, action='store_true')
-    parser.add_argument('--half_trained',
-                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--half_trained', action='store_true')
     parser.add_argument('--g_resume',
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--g_epoch',
@@ -274,6 +273,9 @@ def add_args():
     parser.add_argument('--nuq_bucket_size', default=1024, type=int)
     parser.add_argument('--nuq_ngpu', default=1, type=int)
     parser.add_argument('--nuq_mul', default=0.5, type=float)
+    parser.add_argument('--untrain_steps', default=0, type=int)
+    parser.add_argument('--untrain_lr', default=0.001, type=float)
+    parser.add_argument('--untrain_std', default=0.001, type=float)
     args = parser.parse_args()
     return args
 

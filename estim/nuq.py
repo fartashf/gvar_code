@@ -13,18 +13,19 @@ class NUQEstimator(GradientEstimator):
         self.init_data_iter()
         self.qdq = QuantizeMultiBucket(**opt_to_nuq_kwargs(self.opt))
         self.ngpu = self.opt.nuq_ngpu
+        self.acc_grad = None
 
     def grad(self, model_new, in_place=False):
         model = model_new
 
-        acc_grad = []
-        model.zero_grad()
-        with torch.no_grad():
-            for p in model.parameters():
-                if in_place:
-                    acc_grad += [p.grad]
-                else:
-                    acc_grad += [torch.zeros_like(p.grad)]
+        if self.acc_grad is None:
+            self.acc_grad = []
+            with torch.no_grad():
+                for p in model.parameters():
+                    self.acc_grad += [torch.zeros_like(p)]
+        else:
+            for a in self.acc_grad:
+                a.zero_()
 
         for i in range(self.ngpu):
             model.zero_grad()
@@ -34,8 +35,8 @@ class NUQEstimator(GradientEstimator):
             grad = torch.autograd.grad(loss, model.parameters())
 
             with torch.no_grad():
-                for g, a in zip(grad, acc_grad):
-                    a += self.qdq.quantize(g.view(-1)).view_as(g)
+                for g, a in zip(grad, self.acc_grad):
+                    a += self.qdq.quantize(g)/self.ngpu
                     # NUMPY
                     # x = g.view(-1).cpu().numpy()
                     # xq = self.qdq.quantize(x)
@@ -44,5 +45,10 @@ class NUQEstimator(GradientEstimator):
                     #     dtype=p.dtype, device=p.device).reshape_as(g)
 
         if in_place:
+            for p, a in zip(model.parameters(), self.acc_grad):
+                if p.grad is None:
+                    p.grad = a.clone()
+                else:
+                    p.grad.copy_(a)
             return loss
-        return acc_grad
+        return self.acc_grad
