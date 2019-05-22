@@ -47,7 +47,9 @@ def imagenet_last_epoch(args):
     module_name = 'main.gvar'
     log_dir = 'runs_%s_last_epoch' % dataset
     exclude = ['dataset', 'epochs', 'lr_decay_epoch', 'g_epoch',
-               'g_bsnap_iter']
+               'pretrained', 'niters', 'epoch_iters',
+               'gvar_log_iter', 'gvar_start', 'g_bsnap_iter', 'g_optim',
+               'g_optim_start']
     shared_args = [('dataset', dataset),
                    # ('optim', 'sgd'),  # 'sgd', 'adam'
                    # ('arch', 'resnet18'),
@@ -100,7 +102,9 @@ def imagenet_first_epoch(args):
     module_name = 'main.gvar'
     log_dir = 'runs_%s_first_epoch' % dataset
     exclude = ['dataset', 'epochs', 'lr_decay_epoch', 'g_epoch',
-               'g_bsnap_iter']
+               'pretrained', 'niters', 'epoch_iters',
+               'gvar_log_iter', 'gvar_start', 'g_bsnap_iter', 'g_optim',
+               'g_optim_start']
     shared_args = [('dataset', dataset),
                    # ('optim', 'sgd'),  # 'sgd', 'adam'
                    # ('arch', 'resnet18'),
@@ -145,7 +149,9 @@ def cifar10_first_epoch(args):
     module_name = 'main.gvar'
     log_dir = 'runs_%s_first_epoch' % dataset
     exclude = ['dataset', 'epochs', 'lr_decay_epoch', 'g_epoch',
-               'g_bsnap_iter']
+               'pretrained', 'niters', 'epoch_iters',
+               'gvar_log_iter', 'gvar_start', 'g_bsnap_iter', 'g_optim',
+               'g_optim_start']
     shared_args = [('dataset', dataset),
                    # ('optim', 'sgd'),  # 'sgd', 'adam'
                    ('arch', 'resnet110'),
