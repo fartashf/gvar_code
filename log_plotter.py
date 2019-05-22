@@ -390,7 +390,7 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
                          tag_names[i], lg_tags, yl, color0=j, ncolor=ncolor,
                          lg_replace=lg_replace, no_title=no_title)
                 if save_single:
-                    plt.savefig('%s/%s.png' % (fig_dir, tag_names[i]),
+                    plt.savefig('%s/%s.pdf' % (fig_dir, tag_names[i]),
                                 dpi=100, bbox_inches='tight')
                     plt.figure(figsize=(7, 4))
                 fi += 1
@@ -402,7 +402,7 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
             plot_tag(data, plot_f, run_names, tag_names[i], lg_tags, yl,
                      ncolor=ncolor, lg_replace=lg_replace, no_title=no_title)
             if save_single:
-                plt.savefig('%s/%s.png' % (fig_dir, tag_names[i]),
+                plt.savefig('%s/%s.pdf' % (fig_dir, tag_names[i]),
                             dpi=100, bbox_inches='tight')
                 plt.figure(figsize=(7, 4))
             fi += 1

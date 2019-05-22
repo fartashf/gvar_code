@@ -24,7 +24,7 @@ def bolt(sargs):
               # 'bolt0_gpu0', 'bolt0_gpu1', 'bolt0_gpu2', 'bolt0_gpu3'
               ]
     # njobs = [3] * 4 + [2] * 4  # validate start.sh
-    njobs = [3]*7 + [2]*2 + [0, 2]  # Number of parallel jobs on each machine
+    njobs = [0]*3 + [1]*4 + [0]*2 + [1, 1]  # Number of parallel jobs on each machine
     # njobs = [2, 2, 2] + [2, 2, 2, 2] + [1, 1, 0, 0]
     # njobs = [2, 2, 1, 1]
     jobs = []
