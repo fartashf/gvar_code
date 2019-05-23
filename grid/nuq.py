@@ -55,7 +55,7 @@ def imagenet_last_epoch(args):
                    # ('arch', 'resnet18'),
                    # ('arch', 'resnet34'),
                    ('arch', 'resnet34'),
-                   ('batch_size', 64),  # 128),
+                   ('batch_size', 128),  # 256),
                    # ('test_batch_size', 64),
                    #  ### pretrained
                    ('pretrained', ['']),
@@ -110,7 +110,7 @@ def imagenet_first_epoch(args):
                    # ('arch', 'resnet18'),
                    # ('arch', 'resnet34'),
                    ('arch', 'resnet34'),
-                   ('batch_size', 64),  # 128),
+                   ('batch_size', 128),  # 256),
                    # ('test_batch_size', 64),
                    ('niters', 10000),
                    ('epoch_iters', 500),
