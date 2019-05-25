@@ -61,7 +61,7 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
     batch_time = Profiler()
     model.train()
     profiler = Profiler()
-    epoch_iters = int(np.ceil(1. * len(train_loader.dataset) / opt.batch_size))
+    # epoch_iters = int(np.ceil(1. * len(train_loader.dataset) / opt.batch_size))
     optimizer.logger.reset()
     for batch_idx in range(opt.epoch_iters):
         profiler.start()
@@ -112,7 +112,7 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
             tb_logger.log_value('batch_idx', batch_idx, step=niters)
             tb_logger.log_value('loss', loss, step=niters)
             optimizer.logger.tb_log(tb_logger, step=niters)
-        if optimizer.niters % epoch_iters == 0:
+        if optimizer.niters % opt.epoch_iters == 0:
             if opt.train_accuracy:
                 test(tb_logger,
                      model, train_test_loader, opt, optimizer.niters,
@@ -122,6 +122,23 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
             save_checkpoint(model, float(prec1), opt, optimizer,
                             gvar=optimizer.gvar)
             tb_logger.save_log()
+
+
+def untrain(model, gvar, opt):
+    steps = opt.untrain_steps
+    lr = opt.untrain_lr
+    std = opt.untrain_std
+    for batch_idx in range(steps):
+        loss = gvar.grad(-1)
+        with torch.no_grad():
+            for p in model.parameters():
+                p += p.grad*lr  # ascent
+                p += torch.zeros_like(p.grad).normal_(0, std)  # noise
+        if batch_idx % opt.log_interval == 0:
+            logging.info(
+                'Untrain: [{0}/{1}]\t'
+                'Loss: {loss:.6f}'.format(
+                    batch_idx, steps, loss=loss.item()))
 
 
 def main():
@@ -185,6 +202,10 @@ def main():
         max_iters = opt.niters
     else:
         max_iters = opt.epochs * opt.epoch_iters
+
+    if opt.untrain_steps > 0:
+        untrain(model, optimizer.gvar, opt)
+
     while optimizer.niters < max_iters:
         optimizer.epoch = epoch
         utils.adjust_lr(optimizer, opt)

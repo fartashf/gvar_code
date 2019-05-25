@@ -239,7 +239,7 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'grad_bias': 'Optimization Step Bias',
               'est_var': 'Optimization Step Variance (w/o learning rate)',
               'est_snr': 'Optimization Step SNR',
-              'est_nvar': 'Optimization Step Normalized Variance',
+              'est_nvar': 'Optimization Step Normalized Variance (w/o lr)',
               'gb_td': 'Total distortion of the Gluster objective.',
               'gb_cs': 'Size of Cluster #0',
               'gb_reinits': 'Total number of reinitializations.'}
@@ -390,7 +390,8 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
                          tag_names[i], lg_tags, yl, color0=j, ncolor=ncolor,
                          lg_replace=lg_replace, no_title=no_title)
                 if save_single:
-                    plt.savefig('%s/%s.png' % (fig_dir, tag_names[i]),
+                    # plt.savefig('%s/%s.png' % (fig_dir, tag_names[i]),
+                    plt.savefig('%s/%s.pdf' % (fig_dir, tag_names[i]),
                                 dpi=100, bbox_inches='tight')
                     plt.figure(figsize=(7, 4))
                 fi += 1
@@ -402,7 +403,8 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
             plot_tag(data, plot_f, run_names, tag_names[i], lg_tags, yl,
                      ncolor=ncolor, lg_replace=lg_replace, no_title=no_title)
             if save_single:
-                plt.savefig('%s/%s.png' % (fig_dir, tag_names[i]),
+                # plt.savefig('%s/%s.png' % (fig_dir, tag_names[i]),
+                plt.savefig('%s/%s.pdf' % (fig_dir, tag_names[i]),
                             dpi=100, bbox_inches='tight')
                 plt.figure(figsize=(7, 4))
             fi += 1

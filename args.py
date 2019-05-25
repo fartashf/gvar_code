@@ -226,8 +226,7 @@ def add_args():
                         default=argparse.SUPPRESS, type=float)
     parser.add_argument('--g_imbalance',
                         default=argparse.SUPPRESS, action='store_true')
-    parser.add_argument('--half_trained',
-                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--half_trained', action='store_true')
     parser.add_argument('--g_resume',
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--g_epoch',
