@@ -95,7 +95,7 @@ class BasicBlock(nn.Module):
 
 class ResNet(nn.Module):
 
-    def __init__(self, block, num_blocks, num_classes=10):
+    def __init__(self, block, num_blocks, num_class=10):
         super(ResNet, self).__init__()
         self.in_planes = 16
 
@@ -105,7 +105,7 @@ class ResNet(nn.Module):
         self.layer1 = self._make_layer(block, 16, num_blocks[0], stride=1)
         self.layer2 = self._make_layer(block, 32, num_blocks[1], stride=2)
         self.layer3 = self._make_layer(block, 64, num_blocks[2], stride=2)
-        self.linear = nn.Linear(64, num_classes)
+        self.linear = nn.Linear(64, num_class)
 
         self.apply(_weights_init)
 
@@ -129,32 +129,32 @@ class ResNet(nn.Module):
         return F.log_softmax(out, dim=-1)
 
 
-def resnet8():
-    return ResNet(BasicBlock, [1, 1, 1])
+def resnet8(num_class=10):
+    return ResNet(BasicBlock, [1, 1, 1], num_class=num_class)
 
 
-def resnet20():
-    return ResNet(BasicBlock, [3, 3, 3])
+def resnet20(num_class=10):
+    return ResNet(BasicBlock, [3, 3, 3], num_class=num_class)
 
 
-def resnet32():
-    return ResNet(BasicBlock, [5, 5, 5])
+def resnet32(num_class=10):
+    return ResNet(BasicBlock, [5, 5, 5], num_class=num_class)
 
 
-def resnet44():
-    return ResNet(BasicBlock, [7, 7, 7])
+def resnet44(num_class=10):
+    return ResNet(BasicBlock, [7, 7, 7], num_class=num_class)
 
 
-def resnet56():
-    return ResNet(BasicBlock, [9, 9, 9])
+def resnet56(num_class=10):
+    return ResNet(BasicBlock, [9, 9, 9], num_class=num_class)
 
 
-def resnet110():
-    return ResNet(BasicBlock, [18, 18, 18])
+def resnet110(num_class=10):
+    return ResNet(BasicBlock, [18, 18, 18], num_class=num_class)
 
 
-def resnet1202():
-    return ResNet(BasicBlock, [200, 200, 200])
+def resnet1202(num_class=10):
+    return ResNet(BasicBlock, [200, 200, 200], num_class=num_class)
 
 
 def test(net):
@@ -170,7 +170,7 @@ def test(net):
 
 
 class Convnet(nn.Module):
-    def __init__(self, dropout=True):
+    def __init__(self, dropout=True, num_class=10):
         """
         2conv + 2fc + dropout, from adam's paper
         similar to mnist's convnet
@@ -184,7 +184,7 @@ class Convnet(nn.Module):
         # self.conv2 = nn.Conv2d(64, 64, kernel_size=5)
         # self.conv3 = nn.Conv2d(64, 128, kernel_size=5)
         self.fc1 = nn.Linear(128*5*5, 1000)
-        self.fc2 = nn.Linear(1000, 10)
+        self.fc2 = nn.Linear(1000, num_class)
 
     def forward(self, x):
         if self.dropout:
@@ -203,7 +203,7 @@ class Convnet(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, dropout=True):
+    def __init__(self, dropout=True, num_class=10):
         """
         mnist MLP
         """
@@ -212,7 +212,7 @@ class MLP(nn.Module):
         self.fc1 = nn.Linear(3*32*32, 1024)
         self.fc2 = nn.Linear(1024, 1024)
         # self.fc3 = nn.Linear(1024, 1024)
-        self.fc4 = nn.Linear(1024, 10)
+        self.fc4 = nn.Linear(1024, num_class)
 
     def forward(self, x):
         x = x.view(-1, 3*32*32)

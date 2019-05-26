@@ -226,8 +226,7 @@ def add_args():
                         default=argparse.SUPPRESS, type=float)
     parser.add_argument('--g_imbalance',
                         default=argparse.SUPPRESS, action='store_true')
-    parser.add_argument('--half_trained',
-                        default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--half_trained', action='store_true')
     parser.add_argument('--g_resume',
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--g_epoch',
@@ -267,6 +266,7 @@ def add_args():
     parser.add_argument('--ntk_damping', default=1e-3, type=float)
     parser.add_argument('--ntk_cpu', action='store_true')
     parser.add_argument('--ntk_sweeps', default=100, type=int)
+    parser.add_argument('--ntk_divn', action='store_true')
     args = parser.parse_args()
     return args
 
@@ -300,6 +300,7 @@ def opt_to_ntk_kwargs(opt):
             'active_only': active_only,
             'inactive_mods': inactive_mods,
             'max_sweeps': opt.ntk_sweeps,
+            'divn': opt.ntk_divn,
             }
 
 
