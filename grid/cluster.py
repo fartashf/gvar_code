@@ -1,7 +1,8 @@
 from __future__ import print_function
+import math
 
 
-def bolt(sargs):
+def bolt(sargs, num_runs):
     """
     rm jobs/*.sh jobs/log/* -f && python grid_run.py --grid G --run_name X
     pattern=""; for i in 1 2; do ./kill.sh $i $pattern; done
@@ -32,22 +33,27 @@ def bolt(sargs):
         jobs += ['%s_job%d' % (s, i) for i in range(n)]
         # jobs += ['%s_job%d' % (s, i) for s in jobs_0]
     parallel = False  # each script runs in sequence
+    print(num_runs)
     return jobs, parallel
 
 
-def vector(sargs):
+def slurm(sargs, num_runs):
     """
     vector(q): gpu, wsgpu
     vaughan(vremote): p100, t4
 
     rm jobs/*.sh jobs/log/* -f && python grid_run.py --grid G --run_name X \
-    --cluster_args 4,4,p100,t4
-    pattern=""; for i in 1 2; do ./kill.sh $i $pattern; done
+    --task_per_job 1 --job_limit 12 --partition p100,t4
     sbatch jobs/slurm.sbatch
+    squeue -u <user>
+    scancel -u <user>
     """
-    njobs, ntasks, partition = sargs.split(',', 2)
-    njobs = int(njobs)
-    ntasks = int(ntasks)
+    njobs = int(math.ceil(num_runs/sargs.task_per_job))
+    ntasks = sargs.job_limit
+    partition = sargs.partition
+    # njobs, ntasks, partition = sargs.split(',', 2)
+    # njobs = int(njobs)
+    # ntasks = int(ntasks)
     # njobs = 5  # Number of array jobs
     # ntasks = 4  # Number of running jobs
     # partition = 'gpu'
@@ -76,4 +82,6 @@ bash jobs/$SLURM_ARRAY_TASK_ID.sh
     with open('jobs/slurm.sbatch', 'w') as f:
         print(sbatch_f, file=f)
     parallel = True  # each script runs in parallel
+    print('Total jobs: %d, Array jobs: %d, Max active: %d, Partition: %s'
+          % (num_runs, njobs, min(njobs, ntasks), partition))
     return jobs, parallel

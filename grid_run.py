@@ -77,24 +77,31 @@ def run_multi(run_single, args):
     return cmds
 
 
+def count_runs(args):
+    return len(list(deep_product(args)))
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--grid', default='gvar', type=str)
     parser.add_argument('--run_name', default='', type=str)
     parser.add_argument('--cluster', default='bolt', type=str)
-    parser.add_argument('--cluster_args', default='8,4,gpu', type=str)
+    parser.add_argument('--task_per_job', default=1, type=int)
+    parser.add_argument('--job_limit', default=0, type=int,
+                        help='default=0 is inifinite')
+    parser.add_argument('--partition', default='gpu,wsgpu', type=str)
     parser.add_argument('--run0_id', default=0, type=int)
     args = parser.parse_args()
     run0_id = args.run0_id
     val = grid.__dict__[args.grid].__dict__[args.run_name]([])
-    jobs, parallel = grid.cluster.__dict__[args.cluster](args.cluster_args)
-    args, log_dir, module_name, exclude = val
+    jargs, log_dir, module_name, exclude = val
+    jobs, parallel = grid.cluster.__dict__[args.cluster](
+        args, count_runs(jargs))
 
     run_single = RunSingle(log_dir, module_name, exclude, parallel)
     run_single.num = run0_id
 
-    cmds = run_multi(run_single, args)
-    print(len(cmds))
+    cmds = run_multi(run_single, jargs)
     for j, job in enumerate(jobs):
         with open('jobs/{}.sh'.format(job), 'w') as f:
             for i in range(j, len(cmds), len(jobs)):
