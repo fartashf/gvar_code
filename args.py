@@ -267,6 +267,10 @@ def add_args():
     parser.add_argument('--ntk_cpu', action='store_true')
     parser.add_argument('--ntk_sweeps', default=100, type=int)
     parser.add_argument('--ntk_divn', action='store_true')
+    # Untrain
+    parser.add_argument('--untrain_steps', default=0, type=int)
+    parser.add_argument('--untrain_lr', default=0.001, type=float)
+    parser.add_argument('--untrain_std', default=0.001, type=float)
     args = parser.parse_args()
     return args
 
