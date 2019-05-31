@@ -1666,18 +1666,30 @@ def cifar10_gvar_kfac(args):
                   ('g_bsnap_iter', 2),
                   # ('g_optim_start', [5, 10, 20]),
                   ]
-    args_sgd = [('g_estim', ['sgd']),
-                ('batch_size', [32, 64]),  # 128, 1024]),
-                # ('batch_size', [128, 64]),  # [128, 256]),  # [128, 64]),
-                ('optim', [
-                    # ('sgd', OrderedDict([('lr', [.1])])),
-                    # ('adam', OrderedDict([('lr', [1e-3])])),
-                    ('kfac', OrderedDict([('lr', 0.02),  # 0.01),
-                                          ('kf_damping', 0.03)])),
-                    # ('adamw', OrderedDict([('lr', [.01, 1e-3])])),
-                    ]),
-                ]
-    args += [OrderedDict(shared_args+args_sgd+gvar_args)]
+    # args_sgd = [('g_estim', ['sgd']),
+    #             ('batch_size', [32, 64]),  # 128, 1024]),
+    #             # ('batch_size', [128, 64]),  # [128, 256]),  # [128, 64]),
+    #             ('optim', [
+    #                 # ('sgd', OrderedDict([('lr', [.1])])),
+    #                 # ('adam', OrderedDict([('lr', [1e-3])])),
+    #                 ('kfac', OrderedDict([('lr', 0.02),  # 0.01),
+    #                                       ('kf_damping', 0.03)])),
+    #                 # ('adamw', OrderedDict([('lr', [.01, 1e-3])])),
+    #                 ]),
+    #             ]
+    # args += [OrderedDict(shared_args+args_sgd+gvar_args)]
+
+    args_svrg = [('g_estim', ['svrg']),
+                 ('batch_size', 32),
+                 ('g_optim', ''),
+                 ('g_optim_start', 0),  # 5, 10, 20]),
+                 # ('g_mlr', [1, 2]),  # 0.1, 10]),
+                 ('optim', [
+                     ('kfac', OrderedDict([('lr', 0.02),  # 0.01),
+                                           ('kf_damping', 0.03)])),
+                 ])
+                 ]
+    args += [OrderedDict(shared_args+args_svrg+gvar_args)]
 
     # gluster_args = [
     #     ('g_estim', 'gluster'),

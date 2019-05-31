@@ -61,7 +61,6 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
     batch_time = Profiler()
     model.train()
     profiler = Profiler()
-    # epoch_iters = int(np.ceil(1. * len(train_loader.dataset) / opt.batch_size))
     optimizer.logger.reset()
     for batch_idx in range(opt.epoch_iters):
         profiler.start()
