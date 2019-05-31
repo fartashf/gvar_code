@@ -30,6 +30,8 @@ def init_model(opt):
         # model.cuda()
         if opt.arch == 'cnn':
             model = models.cifar10.Convnet(num_class=opt.num_class)
+        if opt.arch == 'scnn':
+            model = models.cifar10.SmallCNN(num_class=opt.num_class)
         elif opt.arch == 'mlp':
             model = models.cifar10.MLP(num_class=opt.num_class)
         elif opt.arch.startswith('wrn'):
