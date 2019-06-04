@@ -22,8 +22,10 @@ class OptimizerFactory(object):
 
     def step(self, profiler):
         gvar = self.gvar
-        opt = self.opt
+        # opt = self.opt
         model = self.model
+
+        gvar.snap_online(model, self.niters)
 
         self.gvar.zero_grad()
 
@@ -35,23 +37,16 @@ class OptimizerFactory(object):
         profiler.toc('optim')
 
         # snapshot
-        if ((self.niters % opt.g_msnap_iter == 0 and opt.g_avg > 1)
-                or (self.niters == 0 and opt.g_avg == 1)):
-            # Update model snaps
-            gvar.snap_model(model)
-            profiler.toc('snap_model')
-        if ((self.niters - opt.gvar_start) % opt.g_osnap_iter == 0
-                and self.niters >= opt.gvar_start):
-            # Frequent snaps
-            gvar.snap_online(model, self.niters)
-            profiler.toc('snap_online')
-        if ((self.niters - opt.gvar_start) % opt.g_bsnap_iter == 0
-                and self.niters >= opt.gvar_start):
-            # Rare snaps
-            logging.info('Batch Snapshot')
-            gvar.snap_batch(model, self.niters)
-            profiler.toc('snap_batch')
-            profiler.end()
-            logging.info('%s' % str(profiler))
+        # gvar.snap_model(model)
+        # profiler.toc('snap_model')
+        # Frequent snaps
+        # gvar.snap_online(model, self.niters)
+        # profiler.toc('snap_online')
+        # Rare snaps
+        # logging.info('Batch Snapshot')
+        # gvar.snap_batch(model, self.niters)
+        # profiler.toc('snap_batch')
+        # profiler.end()
+        # logging.info('%s' % str(profiler))
         profiler.end()
         return loss

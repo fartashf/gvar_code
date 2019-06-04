@@ -110,7 +110,8 @@ class GEstimatorCollection(object):
 
     def snap_online(self, model, niters):
         for name, gest in self.gest:
-            gest.snap_online(model, niters)
+            if name == 'kfac':
+                gest.snap_online(model, niters)
 
     def snap_model(self, model):
         for name, gest in self.gest:
@@ -188,6 +189,8 @@ class MinVarianceGradient(object):
         # Cosine sim
         # gviter = self.opt.gvar_estim_iter
         # self.Esgd = self.sgd.get_Ege_var(model, gviter)[0]
+        # if ((self.niters - self.opt.gvar_start) % self.opt.g_bsnap_iter == 0
+        #         and self.niters >= self.opt.gvar_start):
         self.gest.snap_batch(model, niters)
         self.init_snapshot = True
         self.gest_counter = 0
@@ -195,16 +198,20 @@ class MinVarianceGradient(object):
     def snap_online(self, model, niters):
         # model.eval()  # TODO: keep train
         model.train()
+        # if ((self.niters - self.opt.gvar_start) % self.opt.g_osnap_iter == 0
+        #     and self.niters >= self.opt.gvar_start):
         self.gest.snap_online(model, niters)
 
     def snap_model(self, model):
+        # if ((self.niters % self.opt.g_msnap_iter == 0 and self.opt.g_avg > 1)
+        #         or (self.niters == 0 and self.opt.g_avg == 1)):
         self.gest.snap_model(model)
 
     def log_var(self, model, niters):
         tb_logger = self.tb_logger
         # model.eval()
-        if not self.init_snapshot:
-            return ''
+        # if not self.init_snapshot:
+        #     return ''
         gviter = self.opt.gvar_estim_iter
         Ege_s, var_str, snr_str, nvar_str = self.gest.log_var(
             model, niters, gviter, tb_logger)
