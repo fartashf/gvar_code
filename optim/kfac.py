@@ -220,22 +220,17 @@ class KFACOptimizer(optim.Optimizer):
         self._step(closure)
         self.steps += 1
 
-    def snap_inverse(self):
-        for m in self.modules:
-            if self.steps % self.TInv == 0:
-                self._update_inv(m)
-
-    def grad(self):
+    def apply_precond(self):
         group = self.param_groups[0]
         lr = group['lr']
         damping = group['damping']
         updates = {}
         for m in self.modules:
             classname = m.__class__.__name__
-            self.snap_inverse()
+            if self.steps % self.TInv == 0:
+                self._update_inv(m)
 
             p_grad_mat = self._get_matrix_form_grad(m, classname)
             v = self._get_natural_grad(m, p_grad_mat, damping)
             updates[m] = v
         self._kl_clip_and_update_grad(updates, lr)
-        return updates

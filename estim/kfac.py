@@ -25,9 +25,10 @@ class KFACEstimator(SGDEstimator):
             model.zero_grad()  # clear the gradient for computing true-fisher.
 
         if in_place:
-            self.optim.snap_inverse()  # only when it will be used for optim
             loss.backward()
+            self.optim.apply_precond()  # only when it will be used for optim
             return loss
+        # TODO: grad after precond
         g = torch.autograd.grad(loss, model.parameters())
         return g
 
