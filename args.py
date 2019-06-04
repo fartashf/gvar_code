@@ -210,6 +210,7 @@ def add_args():
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--g_optim_start',
                         default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--g_optim_start_plus', action='store_true')
     parser.add_argument('--g_svd',
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--g_CZ',
@@ -262,6 +263,7 @@ def add_args():
     parser.add_argument('--kf_TCov', default=10, type=int)
     parser.add_argument('--kf_TScal', default=10, type=int)
     parser.add_argument('--kf_TInv', default=100, type=int)
+    parser.add_argument('--kf_nogestim', action='store_true')
     # NTK
     parser.add_argument('--ntk_damping', default=1e-3, type=float)
     parser.add_argument('--ntk_cpu', action='store_true')

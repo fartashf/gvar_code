@@ -187,7 +187,7 @@ def cifar100(args):
 def cifar10_cnn(args):
     dataset = 'cifar10'
     module_name = 'main.gvar'
-    log_dir = 'runs_%s_ntk_cnn' % dataset
+    log_dir = 'runs_%s_ntk_cnn2' % dataset
     exclude = ['dataset', 'epochs',
                'g_epoch', 'lr_decay_epoch', 'gvar_log_iter', 'niters']
     shared_args = [('dataset', dataset),
@@ -211,20 +211,37 @@ def cifar10_cnn(args):
         ('g_epoch', ''),
     ]
     args_sgd = [('g_estim', ['sgd']),
-                ('lr', [.01, .02, .05, .1]),
+                ('optim', 'sgd'),
+                # ('lr', [.01, .02, .05, .1]),
+                ('lr', 0.02),
                 ]
     args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
-    args_kfac = [('g_estim', ['sgd']),
-                 ('optim', ['kfac']),
-                 ('lr', [.01, 0.005]),
-                 ('kf_damping',  [0.01, 0.05, 0.1]),  # [0.05, 0.1, 0.3]),
+    args_kfac = [('optim', ['kfac']),
+                 ('g_estim', ['sgd']),
+                 # ('lr', [.01, 0.005]),
+                 ('lr', 0.005),
+                 # ('kf_damping',  [0.01, 0.05, 0.1]),  # [0.05, 0.1, 0.3]),
+                 ('kf_damping',  0.05),
+                 ('kf_nogestim', ''),
                  ]
     args += [OrderedDict(shared_args+gvar_args+args_kfac)]
 
-    args_ntk = [('g_estim', ['ntk']),
-                ('lr', [.01, 0.005]),
-                ('ntk_damping',  [0.01, 0.05, 0.1]),  # [0.3, 0.5, 1.]),
+    args_kfac = [('optim', ['kfac']),
+                 ('g_estim', ['kfac']),
+                 # ('lr', [.01, 0.005]),
+                 ('lr', 0.005),
+                 # ('kf_damping',  [0.01, 0.05, 0.1]),  # [0.05, 0.1, 0.3]),
+                 ('kf_damping',  0.05),
+                 ]
+    args += [OrderedDict(shared_args+gvar_args+args_kfac)]
+
+    args_ntk = [('optim', 'sgd'),
+                ('g_estim', ['ntk']),
+                # ('lr', [.01, 0.005]),
+                ('lr', 0.005),
+                # ('ntk_damping',  [0.01, 0.05, 0.1]),  # [0.3, 0.5, 1.]),
+                ('ntk_damping',  0.1),
                 ('ntk_divn', ''),
                 ]
     args += [OrderedDict(shared_args+gvar_args+args_ntk)]

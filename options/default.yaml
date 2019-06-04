@@ -53,7 +53,7 @@ g_beta: 0.999
 g_min_size: 1
 g_reinit: largest
 gb_citers: 10
-g_estim: none
+g_estim: sgd
 epoch_iters: 0
 gvar_log_iter: 100
 gvar_estim_iter: 10

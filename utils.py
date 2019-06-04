@@ -49,7 +49,7 @@ class SaveCheckpoint(object):
 
 def base_lr(optimizer, opt):
     lr = opt.lr
-    if opt.g_mlr != 1 and optimizer.gest_used:
+    if opt.g_mlr != 1 and optimizer.secondary_optim:
         lr *= opt.g_mlr
     return lr
 

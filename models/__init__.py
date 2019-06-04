@@ -30,7 +30,7 @@ def init_model(opt):
         # model.cuda()
         if opt.arch == 'cnn':
             model = models.cifar10.Convnet(num_class=opt.num_class)
-        if opt.arch == 'scnn':
+        elif opt.arch == 'scnn':
             model = models.cifar10.SmallCNN(num_class=opt.num_class)
         elif opt.arch == 'mlp':
             model = models.cifar10.MLP(num_class=opt.num_class)
@@ -55,7 +55,7 @@ def init_model(opt):
     elif opt.dataset == '5class':
         model = models.logreg.Linear(opt.dim, opt.num_class)
 
-    if opt.optim == 'kfac' or opt.optim == 'ekfac':
+    if (opt.optim == 'kfac' or opt.optim == 'ekfac') and opt.kf_nogestim:
         model.criterion = models.loss.KFACNLL()
     else:
         model.criterion = models.loss.nll_loss

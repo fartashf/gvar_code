@@ -19,7 +19,8 @@ class EKFACOptimizer(optim.Optimizer):
                  TCov=10,
                  TScal=10,
                  TInv=100,
-                 batch_averaged=True):
+                 batch_averaged=True,
+                 use_gestim=False):
         if lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if momentum < 0.0:
@@ -56,6 +57,8 @@ class EKFACOptimizer(optim.Optimizer):
         self.TCov = TCov
         self.TScal = TScal
         self.TInv = TInv
+
+        self.use_gestim = use_gestim
 
     def _save_input(self, module, input):
         if torch.is_grad_enabled() and self.steps % self.TCov == 0:
@@ -219,6 +222,12 @@ class EKFACOptimizer(optim.Optimizer):
             self.DS[m] = None
 
     def step(self, closure=None):
+        if self.use_gestim:
+            self.step_with_gestim(closure)
+        else:
+            self.step_orig(closure)
+
+    def step_orig(self, closure=None):
         # FIXME(CW): temporal fix for compatibility with Official LR scheduler.
         group = self.param_groups[0]
         lr = group['lr']
@@ -239,3 +248,31 @@ class EKFACOptimizer(optim.Optimizer):
 
         self._step(closure)
         self.steps += 1
+
+    def step_with_gestim(self, closure=None):
+        # FIXME(CW): temporal fix for compatibility with Official LR scheduler.
+        self._step(closure)
+        self.steps += 1
+
+    def snap_inverse(self):
+        for m in self.modules:
+            if self.steps % self.TInv == 0:
+                self._update_inv(m)
+
+            if self.steps % self.TScal == 0 and self.steps > 0:
+                self._update_scale(m)
+
+    def grad(self):
+        group = self.param_groups[0]
+        lr = group['lr']
+        damping = group['damping']
+        updates = {}
+        for m in self.modules:
+            classname = m.__class__.__name__
+            self.snap_inverse()
+
+            p_grad_mat = self._get_matrix_form_grad(m, classname)
+            v = self._get_natural_grad(m, p_grad_mat, damping)
+            updates[m] = v
+        self._kl_clip_and_update_grad(updates, lr)
+        return updates

@@ -169,7 +169,9 @@ def main():
     if opt.g_epoch:
         opt.gvar_start *= opt.epoch_iters
         opt.g_bsnap_iter *= opt.epoch_iters
-        opt.g_optim_start = (opt.g_optim_start * opt.epoch_iters) + 1
+        opt.g_optim_start = (opt.g_optim_start * opt.epoch_iters)
+        if opt.g_optim_start_plus:
+            opt.g_optim_start += 1
         opt.g_reinit_iter = opt.g_reinit_iter * opt.epoch_iters
     opt.g_reinit_iter = int(opt.g_reinit_iter)
 
