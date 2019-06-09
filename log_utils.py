@@ -92,6 +92,10 @@ class TBXWrapper(object):
             step = len(self.logobj[name])
         self.logobj[name] += [(time.time(), step, list(val.flatten()))]
 
+    def log_list_of_vectors(self, name, val, step):
+        name += '_lov'
+        self.logobj[name] += [(time.time(), step, [v.flatten() for v in val])]
+
     def close(self):
         self.writer.close()
 

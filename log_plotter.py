@@ -88,12 +88,13 @@ def get_data_pth(logdir, run_names, tag_names, batch_size=None):
                 idx = tag_name.find('nolog')
                 tag_name_orig_log = tag_name[:idx-1]+tag_name[idx+5:]
                 tag_name = tag_name[:idx]+tag_name[idx+2:]
-            if '_h_' in tag_name and tag_name[-1].isdigit():
+            if ('_h_' in tag_name
+                    or '_lov_' in tag_name) and tag_name[-1].isdigit():
                 tg = tag_name[:tag_name.rfind('_')]
                 if tg not in logdata:
                     continue
                 js = logdata[tg]
-                h_index = int(tag_name[tag_name.rfind('_')+1:])
+                h_index = int(tag_name[tag_name.rfind('_')+1:].split(',')[0])
                 niters = np.array([x[1] for x in js])
                 h_iters = int(1. * h_index * niters[-1] / 100.)
                 h_index = np.abs(niters-h_iters).argmin()
@@ -119,6 +120,12 @@ def get_data_pth(logdir, run_names, tag_names, batch_size=None):
                 d[tag_name] = (
                         np.array([x[1] for x in js]),
                         np.array([x[2] for x in js]))
+            elif '_lov' in tag_name:
+                d[tag_name] = js[-1][2]
+                nums = tag_name[tag_name.rfind('_')+1:].split(',')
+                if len(nums) > 1:
+                    d[tag_name] = [x[:min(len(x), int(nums[1]))]
+                                   for x in d[tag_name]]
             else:
                 d[tag_name] = np.array([[x[j] for x in js]
                                         for j in range(1, 3)])
@@ -168,7 +175,8 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'TlossC_h': 'Loss', 'VlossC_h': 'Loss', 'slossC_h': 'Loss',
               'activeC_h': 'Class #', 'snoozeC_h': 'Class #',
               'Tloss_f': 'Loss', 'Vloss_f': 'Loss',
-              'Tnormg_f': 'Norm of gradients', 'Vnormg_f': 'Norm of gradients'}
+              'Tnormg_f': 'Norm of gradients', 'Vnormg_f': 'Norm of gradients',
+              'eigs_lov': 'Index of eigenvalue'}
     ylabel = {'Tacc': 'Training Accuracy (%)', 'Terror': 'Training Error (%)',
               'train/accuracy': 'Training Accuracy (%)',
               'Vacc': 'Test Accuracy (%)', 'Verror': 'Test Error (%)',
@@ -194,11 +202,13 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'activeC_h': '# of Actives', 'snoozeC_h': '# of Snoozed',
               'Tloss_f': '# Examples', 'Vloss_f': '# Examples',
               'Tnormg_f': '# Examples', 'Vnormg_f': '# Examples',
-              'grad_bias': 'Gradient Diff norm', 'est_var': 'Mean variance',
+              'grad_bias': 'Mean abs diff', 'est_var': 'Mean variance',
+              'eigs_diff': 'Mean abs diff',
               'est_snr': 'Mean SNR', 'gb_td': 'Total distortion',
               'gb_cs': 'Cluster size',
               'gb_reinits': '# of Reinits',
-              'est_nvar': 'Mean Normalized Variance'}
+              'est_nvar': 'Mean Normalized Variance',
+              'eigs_lov': 'Eigenvalue'}
     titles = {'Tacc': 'Training Accuracy', 'Terror': 'Training Error',
               'train/accuracy': 'Training Accuracy',
               'Vacc': 'Test Accuracy', 'Verror': 'Test Error',
@@ -237,12 +247,14 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'Tnormg_f': 'Histogram of $\\|g\\|$ (train set, postcomp)',
               'Vnormg_f': 'Histogram of $\\|g\\|$ (val set, postcomp)',
               'grad_bias': 'Optimization Step Bias',
+              'eigs_diff': 'Preconditioner Eigenvalues Difference',
               'est_var': 'Optimization Step Variance (w/o learning rate)',
               'est_snr': 'Optimization Step SNR',
               'est_nvar': 'Optimization Step Normalized Variance (w/o lr)',
               'gb_td': 'Total distortion of the Gluster objective.',
               'gb_cs': 'Size of Cluster #0',
-              'gb_reinits': 'Total number of reinitializations.'}
+              'gb_reinits': 'Total number of reinitializations.',
+              'eigs_lov': 'List of Eigen Values'}
     yscale_log = ['Tloss', 'Vloss', 'tau', 'lr']  # , 'est_var', 'gb_td'
     yscale_base = ['tau']
     # yscale_sci = ['est_bias', 'est_var', 'gb_td']
@@ -283,12 +295,14 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
             plot_fs[k] = plt.plot
         plot_fs[k + '_log'] = plot_fs[k]
 
-    if '_h_' in tag_name and tag_name[-1].isdigit():
-        h_index = ' (iter: %d%%)' % int(tag_name[tag_name.rfind('_')+1:])
+    if ('_h_' in tag_name or '_lov_' in tag_name) and tag_name[-1].isdigit():
+        h_index = ' (iter: %d%%)' % int(
+            tag_name[tag_name.rfind('_')+1:].split(',')[0])
         tg = tag_name[:tag_name.rfind('_')]
         xlabel[tag_name] = xlabel[tg]
         ylabel[tag_name] = ylabel[tg]
         titles[tag_name] = titles[tg] + h_index
+        plot_fs[tag_name] = plot_fs[tg]
         # if tg in yscale_log:
         #     yscale_log += [tag_name]
     if not isinstance(data, list):
@@ -313,6 +327,11 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
             plt.bar(edges[:-1], frq, width=np.diff(edges),
                     ec="k", align="edge", color=color[color0 + i],
                     alpha=(0.5 if len(data) > 1 else 1))
+        elif '_lov' in tag_name:
+            plot_fs[tag_name](
+                np.arange(len(data[i][tag_name][-1])), data[i][tag_name][-1],
+                linestyle=style[(color0 + i) // len(color)],
+                color=color[(color0 + i) % len(color)], linewidth=2)
         else:
             plot_fs[tag_name](
                 data[i][tag_name][0], data[i][tag_name][1],

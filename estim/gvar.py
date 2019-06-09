@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn
 import torch.multiprocessing
@@ -7,6 +8,7 @@ from estim.gluster import GlusterOnlineEstimator, GlusterBatchEstimator
 from estim.svrg import SVRGEstimator
 from estim.ntk import NTKEstimator
 from estim.kfac import KFACEstimator
+from estim.bf_fisher import BruteForceFisher
 
 import optim
 import optim.adamw
@@ -32,11 +34,13 @@ def init_estimator(g_estim, opm, data_loader, opt, tb_logger):
         gest = NTKEstimator(data_loader, opt, tb_logger)
     elif g_estim == 'kfac':
         gest = KFACEstimator(opm, data_loader, opt, tb_logger)
+    elif g_estim == 'bffisher':
+        gest = BruteForceFisher(data_loader, opt, tb_logger)
     return gest
 
 
 def init_optim(optim_name, model, opt):
-    if optim_name == 'sgd':
+    if optim_name == 'sgd' or optim_name == 'ntk':
         optimizer = torch.optim.SGD(model.parameters(),
                                     lr=opt.lr, momentum=opt.momentum,
                                     weight_decay=opt.weight_decay,
@@ -92,6 +96,7 @@ class GEstimatorCollection(object):
         self.gest_used = False
         self.optim = []
         self.gest = []
+        self.opt = opt
         ges = opt.g_estim.split(',')
         for optim_name in opt.optim.split(','):
             opm = init_optim(optim_name, model, opt)
@@ -103,27 +108,44 @@ class GEstimatorCollection(object):
                    else self.optim[eid][1])
             self.gest += [(g_estim, init_estimator(
                 g_estim, opm, data_loader, opt, tb_logger))]
+        self.niters = 0
 
-    def snap_batch(self, model, niters):
-        for name, gest in self.gest:
-            gest.snap_batch(model, niters)
+    def update_niters(self, niters):
+        self.niters = niters
+        for name, estim in self.gest:
+            estim.update_niters(self.niters)
 
-    def snap_online(self, model, niters):
+    def snap_batch(self, model):
         for name, gest in self.gest:
             if name == 'kfac':
-                gest.snap_online(model, niters)
+                gest.snap_batch(model)
+
+    def snap_online(self, model):
+        for name, gest in self.gest:
+            if name == 'kfac':
+                gest.snap_online(model)
 
     def snap_model(self, model):
         for name, gest in self.gest:
             gest.snap_model(model)
 
-    def log_var(self, model, niters, gviter, tb_logger):
+    def log_var(self, model, gviter, tb_logger):
+        niters = self.niters
         Ege_s = []
+        bias_str = ''
         var_str = ''
         snr_str = ''
         nvar_str = ''
+        evals = []
+        estim_str = '%s' % self.gest[self.gest_used][0]
+        keys = []
+        vals = []
         for i, (name, gest) in enumerate(self.gest):
             Ege, var_e, snr_e, nv_e = gest.get_Ege_var(model, gviter)
+            if self.opt.log_eigs:
+                ev = gest.get_precond_eigs()
+                evals += ([ev.sort(descending=True)[0].cpu().numpy()]
+                          if ev is not None else [])
             if i == 0:
                 tb_logger.log_value('sgd_var', float(var_e), step=niters)
                 tb_logger.log_value('sgd_snr', float(snr_e), step=niters)
@@ -136,10 +158,32 @@ class GEstimatorCollection(object):
             tb_logger.log_value('est_snr%d' % i, float(snr_e), step=niters)
             tb_logger.log_value('est_nvar%d' % i, float(nv_e), step=niters)
             Ege_s += [Ege]
-            var_str += '%s: %.8f\t' % (name, var_e)
-            snr_str += '%s: %.8f\t' % (name, snr_e)
-            nvar_str += '%s: %.8f\t' % (name, nv_e)
-        return Ege_s, var_str, snr_str, nvar_str
+            var_str += '%s: %.8f ' % (name, var_e)
+            snr_str += '%s: %.8f ' % (name, snr_e)
+            nvar_str += '%s: %.8f ' % (name, nv_e)
+            if i > 0:
+                bias = torch.mean(torch.cat(
+                    [(ee-gg).abs().flatten()
+                     for ee, gg in zip(Ege_s[0], Ege_s[i])]))
+                if i == 1:
+                    tb_logger.log_value('grad_bias', float(bias), step=niters)
+                tb_logger.log_value('grad_bias%d' % i,
+                                    float(bias), step=niters)
+                bias_str += '%s: %.8f\t' % (name, bias)
+        if self.opt.log_eigs:
+            tb_logger.log_list_of_vectors('eigs', evals, step=niters)
+        keys = ['Estim used', 'Bias', 'Var', 'N-Var']
+        vals = [estim_str, bias_str, var_str, nvar_str]  # snr_str
+        if self.opt.log_eigs and len(self.gest) > 1:
+            n = min(len(evals[-1]), len(evals[-2]))
+            eval_diff = np.mean(np.abs(evals[-1][-n:]-evals[-2][-n:]))
+            tb_logger.log_value('eigs_diff', float(eval_diff), step=niters)
+            keys += ['E-vals(n=%d)' % n]
+            vals += ['%.8f' % eval_diff]
+        s = ''
+        for k, v in zip(keys, vals):
+            s += '%s: %s\t\t' % (k, v)
+        return s
 
     def grad(self, use_sgd, *args, **kwargs):
         self.gest_used = not use_sgd
@@ -174,8 +218,14 @@ class MinVarianceGradient(object):
         self.Esgd = 0
         self.last_log_iter = 0
         self.opt = opt
+        self.niters = 0
 
-    def is_log_iter(self, niters):
+    def update_niters(self, niters):
+        self.niters = niters
+        self.gest.update_niters(niters)
+
+    def is_log_iter(self):
+        niters = self.niters
         opt = self.opt
         if (niters-self.last_log_iter >= opt.gvar_log_iter
                 and niters >= opt.gvar_start):
@@ -183,7 +233,7 @@ class MinVarianceGradient(object):
             return True
         return False
 
-    def snap_batch(self, model, niters):
+    def snap_batch(self, model):
         # model.eval()  # done inside SVRG
         model.train()
         # Cosine sim
@@ -191,45 +241,34 @@ class MinVarianceGradient(object):
         # self.Esgd = self.sgd.get_Ege_var(model, gviter)[0]
         # if ((self.niters - self.opt.gvar_start) % self.opt.g_bsnap_iter == 0
         #         and self.niters >= self.opt.gvar_start):
-        self.gest.snap_batch(model, niters)
+        self.gest.snap_batch(model)
         self.init_snapshot = True
         self.gest_counter = 0
 
-    def snap_online(self, model, niters):
+    def snap_online(self, model):
         # model.eval()  # TODO: keep train
         model.train()
         # if ((self.niters - self.opt.gvar_start) % self.opt.g_osnap_iter == 0
         #     and self.niters >= self.opt.gvar_start):
-        self.gest.snap_online(model, niters)
+        self.gest.snap_online(model)
 
     def snap_model(self, model):
         # if ((self.niters % self.opt.g_msnap_iter == 0 and self.opt.g_avg > 1)
         #         or (self.niters == 0 and self.opt.g_avg == 1)):
         self.gest.snap_model(model)
 
-    def log_var(self, model, niters):
+    def log_var(self, model):
         tb_logger = self.tb_logger
         # model.eval()
         # if not self.init_snapshot:
         #     return ''
         gviter = self.opt.gvar_estim_iter
-        Ege_s, var_str, snr_str, nvar_str = self.gest.log_var(
-            model, niters, gviter, tb_logger)
-        bias = 0
-        if len(Ege_s) > 1:
-            bias = torch.mean(torch.cat(
-                [(ee-gg).abs().flatten()
-                 for ee, gg in zip(Ege_s[0], Ege_s[1])]))
-            tb_logger.log_value('grad_bias', float(bias), step=niters)
-        est_x = '[X]' if self.gest_used else '[]'
-        return ('Gest Used: %s\tG Bias: %.8f\t\t'
-                'Var %s\t N-Var %s\t'
-                % (est_x, bias, var_str, nvar_str))
+        return self.gest.log_var(model, gviter, tb_logger)
 
-    def grad(self, niters):
+    def grad(self):
         model = self.model
         model.train()
-        use_sgd = self.use_sgd(niters)
+        use_sgd = self.use_sgd(self.niters)
         self.gest_used = not use_sgd
         if self.gest_used:
             self.gest_counter += 1

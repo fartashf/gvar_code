@@ -12,6 +12,7 @@ class NTKEstimator(GradientEstimator):
         super(NTKEstimator, self).__init__(*args, **kwargs)
         self.init_data_iter()
         self.ntk = None
+        self.Ki = None
 
     def grad(self, model_new, in_place=False):
         model = model_new
@@ -26,6 +27,7 @@ class NTKEstimator(GradientEstimator):
 
         loss0.backward(retain_graph=True)
         Ki = self.ntk.get_kernel_inverse()
+        self.Ki = Ki
 
         # optim
         model.zero_grad()
@@ -37,3 +39,10 @@ class NTKEstimator(GradientEstimator):
             return loss0
         g = torch.autograd.grad(loss_ntk, model.parameters())
         return g
+
+    def get_precond_eigs(self):
+        if self.Ki is not None:
+            if self.ntk.Si is not None:
+                return self.ntk.Si
+            return self.Ki.svd()[1]
+        return None

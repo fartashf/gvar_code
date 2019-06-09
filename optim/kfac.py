@@ -121,6 +121,26 @@ class KFACOptimizer(optim.Optimizer):
                 [p_grad_mat, m.bias.grad.data.view(-1, 1)], 1)
         return p_grad_mat
 
+    @staticmethod
+    def _get_matrix_form_grad_outplace(m, classname, grad, curg):
+        """
+        :param m: the layer
+        :param classname: the class name of the layer
+        :return: a matrix form of the gradient.
+        it should be a [output_dim, input_dim] matrix.
+        """
+        if classname == 'Conv2d':
+            p_grad_mat = grad[curg].view(
+                grad[curg].size(0), -1)  # n_filters * (in_c * kw * kh)
+        else:
+            p_grad_mat = grad[curg]
+        curg += 1
+        if m.bias is not None:
+            p_grad_mat = torch.cat(
+                [p_grad_mat, grad[curg].view(-1, 1)], 1)
+            curg += 1
+        return p_grad_mat, curg
+
     def _get_natural_grad(self, m, p_grad_mat, damping):
         """
         :param m:  the layer
@@ -128,8 +148,8 @@ class KFACOptimizer(optim.Optimizer):
         :return: a list of gradients w.r.t to the parameters in `m`
         """
         # p_grad_mat is of output_dim * input_dim
-        # inv((ss')) p_grad_mat inv(aa') = [ Q_g (1/R_g) Q_g^T ] @ p_grad_mat @
-        # [Q_a (1/R_a) Q_a^T]
+        # inv((ss')) p_grad_mat inv(aa') =
+        # [ Q_g (1/R_g) Q_g^T ] @ p_grad_mat @ [Q_a (1/R_a) Q_a^T]
         v1 = self.Q_g[m].t() @ p_grad_mat @ self.Q_a[m]
         v2 = v1 / (self.d_g[m].unsqueeze(1) *
                    self.d_a[m].unsqueeze(0) + damping)
@@ -144,6 +164,19 @@ class KFACOptimizer(optim.Optimizer):
             v = [v.view(m.weight.grad.data.size())]
 
         return v
+
+    def get_precond_eigs(self):
+        # Eigenvalues of block-diagonal matrix is a list of eigenvalues of
+        # each block.
+        # Eigenvalues of Kronecker product of A, B are the products of all
+        # eigenvalues of A with all eigenvalues of B
+        evals = []
+        # group = self.param_groups[0]
+        # damping = group['damping']
+        for m in self.modules:
+            evals += [
+                torch.einsum('i,j->ij', self.d_g[m], self.d_a[m]).flatten()]
+        return torch.cat(evals)
 
     def _kl_clip_and_update_grad(self, updates, lr):
         # do kl clip
@@ -162,6 +195,30 @@ class KFACOptimizer(optim.Optimizer):
             if m.bias is not None:
                 m.bias.grad.data.copy_(v[1])
                 m.bias.grad.data.mul_(nu)
+
+    def _kl_clip_and_update_grad_outplace(self, updates, lr, grad):
+        # do kl clip
+        vg_sum = 0
+        curg = 0
+        for m in self.modules:
+            v = updates[m]
+            vg_sum += (v[0] * grad[curg] * lr ** 2).sum().item()
+            curg += 1
+            if m.bias is not None:
+                vg_sum += (v[1] * grad[curg] * lr ** 2).sum().item()
+                curg += 1
+        nu = min(1.0, math.sqrt(self.kl_clip / vg_sum))
+
+        curg = 0
+        for m in self.modules:
+            v = updates[m]
+            grad[curg].copy_(v[0])
+            grad[curg].mul_(nu)
+            curg += 1
+            if m.bias is not None:
+                grad[curg].copy_(v[1])
+                grad[curg].mul_(nu)
+                curg += 1
 
     def _step(self, closure):
         # FIXME (CW): Modified based on SGD
@@ -218,7 +275,7 @@ class KFACOptimizer(optim.Optimizer):
     def step_with_gestim(self, closure=None):
         # FIXME(CW): temporal fix for compatibility with Official LR scheduler.
         self._step(closure)
-        self.steps += 1
+        # self.steps += 1  # replaced by estim.steps
 
     def apply_precond(self):
         group = self.param_groups[0]
@@ -227,10 +284,37 @@ class KFACOptimizer(optim.Optimizer):
         updates = {}
         for m in self.modules:
             classname = m.__class__.__name__
-            if self.steps % self.TInv == 0:
-                self._update_inv(m)
-
             p_grad_mat = self._get_matrix_form_grad(m, classname)
             v = self._get_natural_grad(m, p_grad_mat, damping)
             updates[m] = v
         self._kl_clip_and_update_grad(updates, lr)
+
+    def _grad_from_matrix(self, updates, grad):
+        curg = 0
+        for m in self.modules:
+            v = updates[m]
+            grad[curg].copy_(v[0])
+            curg += 1
+            if m.bias is not None:
+                grad[curg].copy_(v[1])
+                curg += 1
+
+    def apply_precond_outplace(self, grad):
+        group = self.param_groups[0]
+        # lr = group['lr']
+        damping = group['damping']
+        updates = {}
+        curg = 0
+        for m in self.modules:
+            classname = m.__class__.__name__
+            p_grad_mat, curg = self._get_matrix_form_grad_outplace(
+                m, classname, grad, curg)
+            v = self._get_natural_grad(m, p_grad_mat, damping)
+            updates[m] = v
+        # self._kl_clip_and_update_grad_outplace(updates, lr, grad)
+        self._grad_from_matrix(updates, grad)
+
+    def update_inv(self):
+        for m in self.modules:
+            if self.steps % self.TInv == 0:
+                self._update_inv(m)

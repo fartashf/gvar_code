@@ -20,17 +20,23 @@ class OptimizerFactory(object):
     def param_groups(self):
         return self.gvar.param_groups
 
+    def inc_niters(self):
+        self.niters += 1
+        self.gvar.update_niters(self.niters)
+        return self.niters
+
     def step(self, profiler):
         gvar = self.gvar
         # opt = self.opt
         model = self.model
 
-        gvar.snap_online(model, self.niters)
+        gvar.snap_online(model)
+        gvar.snap_batch(model)
 
         self.gvar.zero_grad()
 
         pg_used = gvar.gest_used
-        loss = gvar.grad(self.niters)
+        loss = gvar.grad()
         if gvar.gest_used != pg_used:
             logging.info('Optimizer changed.')
         self.gvar.step()

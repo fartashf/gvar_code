@@ -23,6 +23,7 @@ class NeuralTangentKernel(object):
         self.Ki = None
         self.S = None
         self.divn = divn
+        self.Si = None
 
     def activate(self):
         self.ntk.activate()
@@ -49,8 +50,10 @@ class NeuralTangentKernel(object):
             K = self.get_kernel()
             if not self.cpu:
                 U, S, V = svdj(K, max_sweeps=self.max_sweeps)
-                # self.S = S.clone()
-                Ki = U @ (1./(S+self.damping)).diag() @ V.t()
+                self.S = S.clone()
+                Si = (1./(S+self.damping))
+                Ki = U @ Si.diag() @ V.t()
+                # self.Si = Si.clone()
                 # K += self.damping*torch.eye(
                 #     K.shape[0], dtype=K.dtype, device=K.device)
                 # Ki = K.inverse().detach()

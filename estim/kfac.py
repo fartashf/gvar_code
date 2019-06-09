@@ -14,6 +14,10 @@ class KFACEstimator(SGDEstimator):
         self.acc_stats_init = True
         self.optim.acc_stats = False
 
+    def update_niters(self, niters):
+        self.niters = niters
+        self.optim.steps = niters
+
     def grad(self, model, in_place=False):
         data = next(self.data_iter)
 
@@ -21,10 +25,10 @@ class KFACEstimator(SGDEstimator):
 
         if in_place:
             loss.backward()
-            self.optim.apply_precond()  # only when it is used for optim
+            self.optim.apply_precond()
             return loss
-        # TODO: grad after precond
         g = torch.autograd.grad(loss, model.parameters())
+        self.optim.apply_precond_outplace(g)
         return g
 
     def snap_TCov(self, loss, output):
@@ -38,9 +42,8 @@ class KFACEstimator(SGDEstimator):
         loss_sample.backward(retain_graph=True)
         self.optim.acc_stats = False
 
-    def snap_online(self, model, niters):
-        # if self.optim.steps % self.optim.TCov == 0 or self.acc_stats_init:
-        if niters % self.optim.TCov == 0 or self.acc_stats_init:
+    def snap_online(self, model):
+        if self.optim.steps % self.optim.TCov == 0 or self.acc_stats_init:
             self.acc_stats_init = False
             data = next(self.data_iter)
 
@@ -48,6 +51,16 @@ class KFACEstimator(SGDEstimator):
             loss, output = model.criterion(model, data, return_output=True)
             self.snap_TCov(loss, output)
             model.zero_grad()  # clear the gradient for computing true-fisher.
+
+    def snap_batch(self, model):
+        model.zero_grad()
+        data = next(self.data_iter)
+        loss = model.criterion(model, data)
+        loss.backward()
+        self.optim.update_inv()
+
+    def get_precond_eigs(self):
+        return self.optim.get_precond_eigs()
 
 
 class KFACEstimatorOrigin(SGDEstimator):

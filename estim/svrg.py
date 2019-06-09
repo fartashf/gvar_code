@@ -16,7 +16,7 @@ class SVRGEstimator(GradientEstimator):
         self.init_data_iter()
         self.mu = []
 
-    def snap_batch(self, model, niters):
+    def snap_batch(self, model):
         # model.eval()  # SVRG's trouble with dropout/batchnorm/data aug
         # self.model = model = copy.deepcopy(model)
         # deepcopy does not work with kfac, hooks are also copied

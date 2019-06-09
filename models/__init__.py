@@ -32,6 +32,8 @@ def init_model(opt):
             model = models.cifar10.Convnet(num_class=opt.num_class)
         elif opt.arch == 'scnn':
             model = models.cifar10.SmallCNN(num_class=opt.num_class)
+        elif opt.arch == 'sscnn':
+            model = models.cifar10.SuperSmallCNN(num_class=opt.num_class)
         elif opt.arch == 'mlp':
             model = models.cifar10.MLP(num_class=opt.num_class)
         elif opt.arch.startswith('wrn'):

@@ -59,6 +59,7 @@ def test(tb_logger, model, test_loader,
 def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
           save_checkpoint, train_test_loader):
     batch_time = Profiler()
+    gvar_time = Profiler()
     model.train()
     profiler = Profiler()
     optimizer.logger.reset()
@@ -69,15 +70,20 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
 
         batch_time.toc('Time')
         batch_time.end()
-        optimizer.niters += 1
-        niters = optimizer.niters
+        niters = optimizer.inc_niters()
 
         # if True:
         if batch_idx % opt.log_interval == 0:
-            gvar_log = ''
             prof_log = ''
-            if optimizer.gvar.is_log_iter(niters):
-                gvar_log = '\t' + optimizer.gvar.log_var(model, niters)
+            gvar_log = ''
+            if optimizer.gvar.is_log_iter():
+                gvar_time.tic()
+                gvar_log = optimizer.gvar.log_var(model)
+                gvar_log = '{gvar_log}\t{gvar_time}'.format(
+                    gvar_time=gvar_time,
+                    gvar_log=gvar_log)
+                gvar_time.toc('Time')
+                gvar_time.end()
             if opt.log_profiler:
                 prof_log = '\t' + str(profiler)
 
@@ -100,8 +106,8 @@ def train(tb_logger, epoch, train_loader, model, optimizer, opt, test_loader,
                     loss=loss.item(),
                     batch_time=str(batch_time),
                     opt_log=str(optimizer.logger),
-                    gvar_log=gvar_log,
                     prof_log=prof_log,
+                    gvar_log=gvar_log,
                     niters=niters))
         if batch_idx % opt.tblog_interval == 0:
             tb_logger.log_value('epoch', epoch, step=niters)

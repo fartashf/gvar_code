@@ -14,18 +14,22 @@ class GradientEstimator(object):
         self.data_loader = data_loader
         self.tb_logger = tb_logger
         self.exp_avg_sq = None
+        self.niters = 0
+
+    def update_niters(self, niters):
+        self.niters = niters
 
     def init_data_iter(self):
         self.data_iter = iter(InfiniteLoader(self.data_loader))
         self.estim_iter = iter(InfiniteLoader(self.data_loader))
 
-    def snap_batch(self, model, niters):
+    def snap_batch(self, model):
         pass
 
     def update_sampler(self):
         pass
 
-    def snap_online(self, model, niters):
+    def snap_online(self, model):
         pass
 
     def grad(self, model_new, in_place=False):
@@ -134,3 +138,6 @@ class GradientEstimator(object):
         self.step += 1
         for v, g in zip(self.exp_avg_sq, grad):
             v.mul_(beta2).addcmul_(1 - beta2, g, g)
+
+    def get_precond_eigs(self):
+        return torch.ones(1).cuda()
