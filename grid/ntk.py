@@ -248,14 +248,14 @@ def cifar10_cnn(args):
     return args, log_dir, module_name, exclude
 
 
-def cifar10_cnn_eigs(args):
+def cifar10_eigs(args):
     dataset = 'cifar10'
     module_name = 'main.gvar'
-    log_dir = 'runs_%s_ntk_cnn_eigs' % dataset
+    log_dir = 'runs_%s_ntk_eigs' % dataset
     exclude = ['dataset', 'epochs',
                'g_epoch', 'lr_decay_epoch', 'gvar_log_iter', 'niters']
     shared_args = [('dataset', dataset),
-                   ('arch', 'cnn'),
+                   ('arch', 'sscnn'),  # cnn
                    # ('epochs', [
                    #     (200, OrderedDict([('lr_decay_epoch', '100,150')])),
                    # ]),
