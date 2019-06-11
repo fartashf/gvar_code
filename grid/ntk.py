@@ -255,7 +255,7 @@ def cifar10_eigs(args):
     exclude = ['dataset', 'epochs',
                'g_epoch', 'lr_decay_epoch', 'gvar_log_iter', 'niters']
     shared_args = [('dataset', dataset),
-                   ('arch', 'sscnn'),  # cnn
+                   ('arch', 'mlp'),  # sscnn, cnn
                    # ('epochs', [
                    #     (200, OrderedDict([('lr_decay_epoch', '100,150')])),
                    # ]),
@@ -300,11 +300,11 @@ def cifar10_eigs(args):
     #             ]
     # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
-    # sgd <-> btfisher on sgd
-    args_sgd = [('g_estim', ['sgd,bffisher']),
-                ('optim', 'sgd'),
-                ('lr', 0.02),
-                ]
-    args += [OrderedDict(shared_args+gvar_args+args_sgd)]
+    # # sgd <-> bffisher on sgd
+    # args_sgd = [('g_estim', ['sgd,bffisher']),
+    #             ('optim', 'sgd'),
+    #             ('lr', 0.02),
+    #             ]
+    # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
     return args, log_dir, module_name, exclude

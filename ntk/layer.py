@@ -162,10 +162,20 @@ class Linear(Module):
     def _save_kernel_hook_weight(self, Ai, Go):
         B = Ai.shape[0]
 
+        # GoG = self._linear_dot_type1(Ai, Go)
+        GoG = self._linear_dot_type2(Ai, Go)
+        assert GoG.shape == (B, B), 'GoG: B x B.'
+        return GoG
+
+    def _linear_dot_type1(self, Ai, Go):
+        AiGo = torch.einsum('bi,bo->bio', [Ai, Go])
+        GoG = torch.einsum('kio,bio->kb', [AiGo, AiGo])
+        return GoG
+
+    def _linear_dot_type2(self, Ai, Go):
         AiAi = torch.matmul(Ai, Ai.t())
         GoGo = torch.matmul(Go, Go.t())
         GoG = (AiAi)*(GoGo)
-        assert GoG.shape == (B, B), 'GoG: B x B.'
         return GoG
 
     def _post_proc(self, Go0):

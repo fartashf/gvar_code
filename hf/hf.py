@@ -1,8 +1,8 @@
 import pdb
 import sys
-sys.path.insert(0, '..')  # So that we can import utils
+# sys.path.insert(0, '..')  # So that we can import utils
 
-from functools import reduce
+# from functools import reduce
 
 import numpy as np
 

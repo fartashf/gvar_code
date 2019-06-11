@@ -246,6 +246,21 @@ class SmallCNN(nn.Module):
         self.fc1 = nn.Linear(64*4*4, num_class)  # 1000)
         # self.fc2 = nn.Linear(1000, num_class)
 
+    def forward(self, x):
+        if self.dropout:
+            x = F.dropout2d(x, training=self.training, p=0.2)
+        x = F.relu(F.max_pool2d(self.conv1(x), 3, stride=2, padding=1))
+        x = F.relu(F.max_pool2d(self.conv2(x), 3, stride=2, padding=1))
+        x = F.relu(F.max_pool2d(self.conv3(x), 3, stride=2, padding=1))
+        x = x.view(-1, 64*4*4)
+        if self.dropout:
+            x = F.dropout(x, training=self.training)
+        x = F.relu(self.fc1(x))
+        # if self.dropout:
+        #     x = F.dropout(x, training=self.training)
+        # x = self.fc2(x)
+        return F.log_softmax(x, dim=-1)
+
 
 class SuperSmallCNN(nn.Module):
     def __init__(self, dropout=False, num_class=10):

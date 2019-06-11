@@ -3,7 +3,7 @@ import time
 import gzip
 
 import numpy as np
-from tensorflow.contrib.learn.python.learn.datasets import base
+# from tensorflow.contrib.learn.python.learn.datasets import base
 
 import torch
 from torch.autograd import Variable, grad
@@ -66,16 +66,16 @@ def new_tensor_seq(tensors, wrap_as_var=True, requires_grad=True):
     """
     if isinstance(tensors, Variable) or isinstance(tensors, torch.Tensor):
         if wrap_as_var:
-            return Variable(torch.rand(tensors.size()), requires_grad=requires_grad)
+            return Variable(torch.rand_like(tensors), requires_grad=requires_grad)
         else:
-            return torch.rand(tensors.size())
+            return torch.rand_like(tensors)
 
     new_tensors = []
     for tensor in tensors:
         if wrap_as_var:
-            new_tensor = Variable(torch.rand(tensor.size()), requires_grad=requires_grad)
+            new_tensor = Variable(torch.rand_like(tensor), requires_grad=requires_grad)
         else:
-            new_tensor = torch.rand(tensor.size())
+            new_tensor = torch.rand_like(tensor)
 
         new_tensors.append(new_tensor)
 

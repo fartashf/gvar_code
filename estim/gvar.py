@@ -9,6 +9,7 @@ from estim.svrg import SVRGEstimator
 from estim.ntk import NTKEstimator
 from estim.kfac import KFACEstimator
 from estim.bf_fisher import BruteForceFisher
+from estim.lanczos import LanczosEstimator
 
 import optim
 import optim.adamw
@@ -36,6 +37,8 @@ def init_estimator(g_estim, opm, data_loader, opt, tb_logger):
         gest = KFACEstimator(opm, data_loader, opt, tb_logger)
     elif g_estim == 'bffisher':
         gest = BruteForceFisher(data_loader, opt, tb_logger)
+    elif g_estim == 'lanczos':
+        gest = LanczosEstimator(data_loader, opt, tb_logger)
     return gest
 
 
@@ -178,7 +181,7 @@ class GEstimatorCollection(object):
             n = min(len(evals[-1]), len(evals[-2]))
             eval_diff = np.mean(np.abs(evals[-1][-n:]-evals[-2][-n:]))
             tb_logger.log_value('eigs_diff', float(eval_diff), step=niters)
-            keys += ['E-vals(n=%d)' % n]
+            keys += ['E-vals(n=%d,m=%d)' % (n, len(evals[-1] > 1e-5))]
             vals += ['%.8f' % eval_diff]
         s = ''
         for k, v in zip(keys, vals):
