@@ -60,7 +60,8 @@ svdj_forward(at::Tensor a, bool is_sort, double tol=1e-7, int max_sweeps=100)
 
     auto handle_ptr = unique_allocate(cusolverDnCreate, cusolverDnDestroy);
     const auto A = a.contiguous().clone().transpose(0, 1).contiguous().transpose(0, 1);
-    const int econ = 0 ; /* econ = 1 for economy size */
+    // const int econ = 0 ; /* econ = 1 for economy size */
+    const int econ = 1 ; /* econ = 1 for economy size */
     // const auto A = a;
     // const auto batch_size = A.size(0);
     const auto m = A.size(0);
@@ -68,16 +69,18 @@ svdj_forward(at::Tensor a, bool is_sort, double tol=1e-7, int max_sweeps=100)
     const auto n = A.size(1);
     // AT_CHECK(n <= 32, "matrix col should be <= 32");
     const auto lda = m;
+    const auto ldu = m;
+    const auto ldv = n;
     const auto d_A = A.data<float>();
     const auto minmn = std::min(m, n);
     auto s = at::empty({minmn}, a.type());
     auto d_s = s.data<float>();
-    auto U = at::empty({m, m}, a.type());
+    // auto U = at::empty({m, m}, a.type());
+    auto U = at::empty({minmn, ldu}, a.type());  // pytorch:row-major, cuda:column-major
     const auto d_U = U.data<float>();
-    const auto ldu = m;
-    auto V = at::empty({n, n}, a.type());
+    // auto V = at::empty({n, n}, a.type());
+    auto V = at::empty({minmn, ldv}, a.type());  // pytorch:row-major, cuda:column-major
     const auto d_V = V.data<float>();
-    const auto ldv = n;
 
     auto params = unique_allocate(cusolverDnCreateGesvdjInfo, cusolverDnDestroyGesvdjInfo);
     auto status = cusolverDnXgesvdjSetTolerance(params.get(), tol);
