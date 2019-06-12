@@ -1,4 +1,5 @@
 import torch
+import math
 
 from .gestim import GradientEstimator
 
@@ -23,7 +24,7 @@ class BruteForceFisher(GradientEstimator):
             loss = model.criterion(model, (data[0][i:i+1], data[1][i:i+1]))
             grad = torch.autograd.grad(loss, model.parameters())
             gf = torch.cat([g.flatten() for g in grad])
-            J += [gf/n]
+            J += [gf/math.sqrt(n)]
         self.J = torch.stack(J, dim=1)
 
         return grad

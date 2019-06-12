@@ -255,13 +255,13 @@ def cifar10_eigs(args):
     exclude = ['dataset', 'epochs',
                'g_epoch', 'lr_decay_epoch', 'gvar_log_iter', 'niters']
     shared_args = [('dataset', dataset),
-                   ('arch', 'mlp'),  # sscnn, cnn
+                   ('arch', 'sscnn'),  # linear, mlp, cnn
                    # ('epochs', [
                    #     (200, OrderedDict([('lr_decay_epoch', '100,150')])),
                    # ]),
                    ('epochs', 20),
                    ('weight_decay', 0),  # [0, 1e-4]),
-                   ('batch_size', 512),  # 128, 1024, 128),
+                   ('batch_size', 32),  # 512, 128, 1024, 128),
                    ('momentum', 0.9),
                    # ('nodropout', ''),
                    ('kf_damping',  0.01),  # 0.05),
@@ -272,26 +272,26 @@ def cifar10_eigs(args):
                    ]
     gvar_args = [
         ('gvar_estim_iter', 1),  # 5, 10),  # default
-        ('gvar_log_iter', 500),  # 200, 100),  # default
+        ('gvar_log_iter', 1000),  # 500, 200, 100),  # default
         ('gvar_start', 0),
         # ('g_bsnap_iter', 1),
         # ('g_optim', ''),
         # ('g_optim_start', 0),  # [0, 10, 20]),
         ('g_epoch', ''),
     ]
-    # sgd <-> kfac on sgd
-    args_sgd = [('g_estim', ['sgd,kfac']),
-                ('optim', 'sgd,kfac'),
-                ('lr', 0.02),
-                ]
-    args += [OrderedDict(shared_args+gvar_args+args_sgd)]
+    # # sgd <-> kfac on sgd
+    # args_sgd = [('g_estim', ['sgd,kfac']),
+    #             ('optim', 'sgd,kfac'),
+    #             ('lr', 0.02),
+    #             ]
+    # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
-    # sgd <-> ntk on sgd
-    args_sgd = [('g_estim', ['sgd,ntk']),
-                ('optim', 'sgd'),
-                ('lr', 0.02),
-                ]
-    args += [OrderedDict(shared_args+gvar_args+args_sgd)]
+    # # sgd <-> ntk on sgd
+    # args_sgd = [('g_estim', ['sgd,ntk']),
+    #             ('optim', 'sgd'),
+    #             ('lr', 0.02),
+    #             ]
+    # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
     # # kfac <-> ntk on sgd
     # args_sgd = [('g_estim', ['sgd,kfac,ntk']),
@@ -300,11 +300,19 @@ def cifar10_eigs(args):
     #             ]
     # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
-    # # sgd <-> bffisher on sgd
-    # args_sgd = [('g_estim', ['sgd,bffisher']),
-    #             ('optim', 'sgd'),
-    #             ('lr', 0.02),
-    #             ]
-    # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
+    # sgd <-> bffisher on sgd
+    args_sgd = [('g_estim', ['sgd,bffisher', 'sgd,bffisherf']),
+                ('optim', 'sgd'),
+                ('lr', 0.02),
+                ]
+    args += [OrderedDict(shared_args+gvar_args+args_sgd)]
+
+    # sgd <-> bffisher on sgd
+    args_sgd = [('g_estim', ['sgd,lanczos']),
+                ('optim', 'sgd'),
+                ('lr', 0.02),
+                ('lanczos_method', ['fw', 'bw']),
+                ]
+    args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
     return args, log_dir, module_name, exclude

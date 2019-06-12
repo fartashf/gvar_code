@@ -8,7 +8,7 @@ from estim.gluster import GlusterOnlineEstimator, GlusterBatchEstimator
 from estim.svrg import SVRGEstimator
 from estim.ntk import NTKEstimator
 from estim.kfac import KFACEstimator
-from estim.bf_fisher import BruteForceFisher
+from estim.bf_fisher import BruteForceFisher, BruteForceFisherFull
 from estim.lanczos import LanczosEstimator
 
 import optim
@@ -37,6 +37,8 @@ def init_estimator(g_estim, opm, data_loader, opt, tb_logger):
         gest = KFACEstimator(opm, data_loader, opt, tb_logger)
     elif g_estim == 'bffisher':
         gest = BruteForceFisher(data_loader, opt, tb_logger)
+    elif g_estim == 'bffisherf':
+        gest = BruteForceFisherFull(data_loader, opt, tb_logger)
     elif g_estim == 'lanczos':
         gest = LanczosEstimator(data_loader, opt, tb_logger)
     return gest

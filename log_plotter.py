@@ -255,7 +255,8 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'gb_cs': 'Size of Cluster #0',
               'gb_reinits': 'Total number of reinitializations.',
               'eigs_lov': 'List of Eigen Values'}
-    yscale_log = ['Tloss', 'Vloss', 'tau', 'lr']  # , 'est_var', 'gb_td'
+    yscale_log = ['Tloss', 'Vloss',
+                  'tau', 'lr', 'eigs_lov']  # , 'est_var', 'gb_td'
     yscale_base = ['tau']
     # yscale_sci = ['est_bias', 'est_var', 'gb_td']
     plot_fs = {'Tacc': plot_f, 'Vacc': plot_f,
@@ -303,8 +304,8 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
         ylabel[tag_name] = ylabel[tg]
         titles[tag_name] = titles[tg] + h_index
         plot_fs[tag_name] = plot_fs[tg]
-        # if tg in yscale_log:
-        #     yscale_log += [tag_name]
+        if tg in yscale_log:
+            yscale_log += [tag_name]
     if not isinstance(data, list):
         data = [data]
         run_names = [run_names]

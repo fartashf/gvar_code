@@ -153,6 +153,12 @@ def lanczos_torch_lot(loss,
     return Q, beta[:step - 1], gamma[:step]
 
 
+def tridiag(diag_vec, low_diag_vec, high_diag_vec):
+    """ Create a tri-diagonal matrix """
+    return torch.diag(diag_vec) + torch.diag(low_diag_vec, -1) + torch.diag(
+        high_diag_vec, 1)
+
+
 def lanczos_torch(loss,
                   params,
                   num_iter,
@@ -160,7 +166,13 @@ def lanczos_torch(loss,
                   re_orthogonalization=True,
                   gram_schmidt_step=2,
                   EPS=1e-7,
-                  dot_op=torch.dot):
+                  dot_op=torch.dot,
+                  divn=1):
+    """
+    Finds A = Q^T H Q given a dot_operator for computing Ax.
+    H is a tridiagonal matrix.
+    http://math.mit.edu/classes/18.086/2006/am64.pdf
+    """
 
     params_flat = lot_flat(params)
     gamma = [None] * num_iter
@@ -178,7 +190,7 @@ def lanczos_torch(loss,
     for ii in range(num_iter):
         qii_unflat = lot_unflat(q[ii], params)
         z_unflat = dot_op(loss, params, qii_unflat)
-        z = lot_flat(z_unflat)
+        z = lot_flat(z_unflat)/divn
 
         gamma[ii] = torch.sum(z * q[ii])
         z = z - gamma[ii] * q[ii] - beta[ii - 1] * q[ii - 1]

@@ -293,6 +293,21 @@ class SuperSmallCNN(nn.Module):
         return F.log_softmax(x, dim=-1)
 
 
+class LP(nn.Module):
+    def __init__(self, dropout=False, num_class=10):
+        """
+        mnist MLP
+        """
+        super(LP, self).__init__()
+        self.dropout = dropout
+        self.fc1 = nn.Linear(3*32*32, 10)
+
+    def forward(self, x):
+        x = x.view(-1, 3*32*32)
+        x = F.relu(self.fc1(x))
+        return F.log_softmax(x, dim=-1)
+
+
 if __name__ == "__main__":
     for net_name in __all__:
         if net_name.startswith('resnet'):
