@@ -251,7 +251,9 @@ def cifar10_cnn(args):
 def cifar10_eigs(args):
     dataset = 'cifar10'
     module_name = 'main.gvar'
-    log_dir = 'runs_%s_ntk_eigs' % dataset
+    log_dir = 'runs_%s_ntk_eigs_cusvd' % dataset
+    # log_dir = 'runs_%s_ntk_eigs_TitanX,' % dataset
+    # log_dir = 'runs_%s_ntk_eigs_2080,' % dataset
     exclude = ['dataset', 'epochs',
                'g_epoch', 'lr_decay_epoch', 'gvar_log_iter', 'niters']
     shared_args = [('dataset', dataset),
@@ -300,8 +302,15 @@ def cifar10_eigs(args):
     #             ]
     # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
+    # # sgd <-> bffisher on sgd
+    # args_sgd = [('g_estim', ['sgd,bffisherf']),
+    #             ('optim', 'sgd'),
+    #             ('lr', 0.02),
+    #             ]
+    # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
+
     # sgd <-> bffisher on sgd
-    args_sgd = [('g_estim', ['sgd,bffisher', 'sgd,bffisherf']),
+    args_sgd = [('g_estim', ['sgd,bffisher']),
                 ('optim', 'sgd'),
                 ('lr', 0.02),
                 ]
@@ -311,7 +320,22 @@ def cifar10_eigs(args):
     args_sgd = [('g_estim', ['sgd,lanczos']),
                 ('optim', 'sgd'),
                 ('lr', 0.02),
-                ('lanczos_method', ['fw', 'bw']),
+                ('lanczos_method', ['fw']),  # 'bk'
+                ]
+    args += [OrderedDict(shared_args+gvar_args+args_sgd)]
+
+    # sgd <-> bffisher on sgd
+    args_sgd = [('g_estim', ['sgd,bffisher']),
+                ('optim', 'sgd'),
+                ('lr', 0.02),
+                ]
+    args += [OrderedDict(shared_args+gvar_args+args_sgd)]
+
+    # sgd <-> bffisher on sgd
+    args_sgd = [('g_estim', ['sgd,lanczos']),
+                ('optim', 'sgd'),
+                ('lr', 0.02),
+                ('lanczos_method', ['fw']),  # 'bk'
                 ]
     args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
