@@ -28,8 +28,8 @@ class NeuralTangentKernelEstimator(GradientEstimator):
 
         self.ntk.activate()
         loss = model.criterion(model, data, reduction='none')
-        loss0 = loss.mean()
-
+        # loss0 = loss.mean()
+        loss0 = loss.sum()
         loss0.backward(retain_graph=True)
         Ki, self.S = self.ntk.get_kernel_inverse()
         self.Ki = Ki
@@ -42,7 +42,7 @@ class NeuralTangentKernelEstimator(GradientEstimator):
 
         if in_place:
             loss_ntk.backward()
-            return loss0
+            return loss0/n
         g = torch.autograd.grad(loss_ntk, model.parameters())
         return g
 

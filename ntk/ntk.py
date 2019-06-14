@@ -32,7 +32,7 @@ class NeuralTangentKernel(object):
         batch_kernel = self.ntk.get_kernel()
         total_kernel = torch.stack(batch_kernel).sum(0)
         if self.divn:
-            return total_kernel*total_kernel.shape[0]
+            return total_kernel/total_kernel.shape[0]
         return total_kernel
 
     def get_kernel_inverse(self):
