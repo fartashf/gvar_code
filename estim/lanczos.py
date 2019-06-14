@@ -15,7 +15,7 @@ class LanczosEstimator(GradientEstimator):
         self.T = None
         self.batch_size = None
 
-    def grad(self, model, in_place=False):
+    def grad(self, model, in_place=False, data=None):
         """
         The empirical fisher is 1/n sum_i out_prod(g_i, g_i).
 
@@ -31,12 +31,12 @@ class LanczosEstimator(GradientEstimator):
         above computation where we have Identity_{dxd}.
         """
         assert not in_place, 'Not to be used for training.'
-        data = next(self.data_iter)
+        if data is None:
+            data = next(self.data_iter)
         model.double()
         data[0] = data[0].double()
         loss = model.criterion(model, data, reduction='none')
         batch_size = data[0].shape[0]
-        print(self.method)
         if self.method == 'fw':
             # loss = loss.mean()
             fisher_vec = fisher_vec_fw
@@ -61,10 +61,11 @@ class LanczosEstimator(GradientEstimator):
         grad = torch.autograd.grad(loss.sum()/batch_size, params)
         # grad = torch.autograd.grad(loss, params)
         model.float()
+        data[0] = data[0].float()
 
         return [g.float() for g in grad]
 
-    def get_precond_eigs(self):
+    def get_precond_eigs_nodata(self):
         S = svdj(self.T, max_sweeps=100)[1]
         # S = torch.svd(self.T)[1]
         return S/self.batch_size

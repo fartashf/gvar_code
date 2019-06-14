@@ -59,7 +59,7 @@ class KFACEstimator(SGDEstimator):
         loss.backward()
         self.optim.update_inv()
 
-    def get_precond_eigs(self):
+    def get_precond_eigs_nodata(self):
         return self.optim.get_precond_eigs()
 
 

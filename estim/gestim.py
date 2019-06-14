@@ -32,7 +32,7 @@ class GradientEstimator(object):
     def snap_online(self, model):
         pass
 
-    def grad(self, model_new, in_place=False):
+    def grad(self, model_new, in_place=False, data=None):
         raise NotImplementedError('grad not implemented')
 
     def grad_estim(self, model):
@@ -139,5 +139,11 @@ class GradientEstimator(object):
         for v, g in zip(self.exp_avg_sq, grad):
             v.mul_(beta2).addcmul_(1 - beta2, g, g)
 
-    def get_precond_eigs(self):
+    def get_precond_eigs(self, model, data=None):
+        if data is None:
+            data = next(self.data_iter)
+        self.grad(model, data=data)
+        return self.get_precond_eigs_nodata(), data
+
+    def get_precond_eigs_nodata(self):
         return torch.ones(1).cuda()

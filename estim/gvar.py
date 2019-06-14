@@ -6,7 +6,7 @@ import torch.multiprocessing
 from estim.sgd import SGDEstimator
 from estim.gluster import GlusterOnlineEstimator, GlusterBatchEstimator
 from estim.svrg import SVRGEstimator
-from estim.ntk import NTKEstimator
+from estim.ntk import NeuralTangentKernelEstimator, NeuralTangentKernelFull
 from estim.kfac import KFACEstimator
 from estim.bf_fisher import BruteForceFisher, BruteForceFisherFull
 from estim.lanczos import LanczosEstimator
@@ -32,7 +32,9 @@ def init_estimator(g_estim, opm, data_loader, opt, tb_logger):
     elif g_estim == 'sgd':
         gest = SGDEstimator(data_loader, opt, tb_logger)
     elif g_estim == 'ntk':
-        gest = NTKEstimator(data_loader, opt, tb_logger)
+        gest = NeuralTangentKernelEstimator(data_loader, opt, tb_logger)
+    elif g_estim == 'ntkf':
+        gest = NeuralTangentKernelFull(data_loader, opt, tb_logger)
     elif g_estim == 'kfac':
         gest = KFACEstimator(opm, data_loader, opt, tb_logger)
     elif g_estim == 'bffisher':
@@ -145,12 +147,12 @@ class GEstimatorCollection(object):
         estim_str = '%s' % self.gest[self.gest_used][0]
         keys = []
         vals = []
+        data = None
         for i, (name, gest) in enumerate(self.gest):
             Ege, var_e, snr_e, nv_e = gest.get_Ege_var(model, gviter)
             if self.opt.log_eigs:
-                ev = gest.get_precond_eigs()
-                evals += ([ev.sort(descending=True)[0].cpu().numpy()]
-                          if ev is not None else [])
+                ev, data = gest.get_precond_eigs(model, data=data)
+                evals += [ev.sort(descending=True)[0].cpu().numpy()]
             if i == 0:
                 tb_logger.log_value('sgd_var', float(var_e), step=niters)
                 tb_logger.log_value('sgd_snr', float(snr_e), step=niters)
@@ -176,7 +178,9 @@ class GEstimatorCollection(object):
                                     float(bias), step=niters)
                 bias_str += '%s: %.8f\t' % (name, bias)
         if self.opt.log_eigs:
-            tb_logger.log_list_of_vectors('eigs', evals, step=niters)
+            names = [n for n, g in self.gest]
+            tb_logger.log_list_of_vectors('eigs', evals, step=niters,
+                                          tags=names)
         keys = ['Estim used', 'Bias', 'Var', 'N-Var']
         vals = [estim_str, bias_str, var_str, nvar_str]  # snr_str
         if self.opt.log_eigs and len(self.gest) > 1:

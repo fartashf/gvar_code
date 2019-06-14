@@ -126,6 +126,10 @@ def get_data_pth(logdir, run_names, tag_names, batch_size=None):
                 if len(nums) > 1:
                     d[tag_name] = [x[:min(len(x), int(nums[1]))]
                                    for x in d[tag_name]]
+                if len(js[-1]) == 4:
+                    d[tag_name] = (d[tag_name], js[-1][3])
+                else:
+                    d[tag_name] = (d[tag_name], None)
             else:
                 d[tag_name] = np.array([[x[j] for x in js]
                                         for j in range(1, 3)])
@@ -320,7 +324,25 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
         if tag_name not in data[i]:
             continue
         legends += [get_legend(lg_tags, run_names[i], lg_replace)]
-        if isinstance(data[i][tag_name], tuple):
+        if '_lov' in tag_name:
+            lov_data = data[i][tag_name][0]
+            lov_tags = data[i][tag_name][1]
+            if lov_tags is None:
+                lov_ids = [-1]
+            else:
+                lov_ids = range(len(lov_tags))
+                lg = legends[-1]
+                legends = legends[:-1]
+                for j in lov_ids:
+                    legends += [lg+','+lov_tags[j]]
+            nlov = len(lov_ids)
+            for j in lov_ids:
+                plot_fs[tag_name](
+                    np.arange(len(lov_data[j])), lov_data[j],
+                    linestyle=style[(color0 + i*nlov + max(0, j))//len(color)],
+                    color=color[(color0 + i*nlov + max(0, j)) % len(color)],
+                    linewidth=2)
+        elif isinstance(data[i][tag_name], tuple):
             # plt.hist(data[i][tag_name][0], data[i][tag_name][1],
             #          color=color[i])
             edges = data[i][tag_name][1]
@@ -328,11 +350,6 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
             plt.bar(edges[:-1], frq, width=np.diff(edges),
                     ec="k", align="edge", color=color[color0 + i],
                     alpha=(0.5 if len(data) > 1 else 1))
-        elif '_lov' in tag_name:
-            plot_fs[tag_name](
-                np.arange(len(data[i][tag_name][-1])), data[i][tag_name][-1],
-                linestyle=style[(color0 + i) // len(color)],
-                color=color[(color0 + i) % len(color)], linewidth=2)
         else:
             plot_fs[tag_name](
                 data[i][tag_name][0], data[i][tag_name][1],

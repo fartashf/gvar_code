@@ -59,6 +59,7 @@ class KFACOptimizer(optim.Optimizer):
 
     def _save_input(self, module, input):
         if torch.is_grad_enabled() and self.steps % self.TCov == 0:
+            # TODO
             aa = self.CovAHandler(input[0].data, module)
             # Initialize buffers
             if self.steps == 0:

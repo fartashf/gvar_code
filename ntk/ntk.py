@@ -20,29 +20,19 @@ class NeuralTangentKernel(object):
         self.ntk = ntk.layer.Container(model, debug=debug, **kwargs)
         self.cpu = cpu
         self.max_sweeps = max_sweeps
-        self.Ki = None
-        self.S = None
         self.divn = divn
-        self.Si = None
 
     def activate(self):
         self.ntk.activate()
 
-    def eval(self):
-        self.ntk.eval()
-
     def deactivate(self):
         self.ntk.deactivate()
-
-    def copy_(self, model):
-        for m, g in zip(model.parameters(), self.model.parameters()):
-            g.data.copy_(m.data)
 
     def get_kernel(self):
         batch_kernel = self.ntk.get_kernel()
         total_kernel = torch.stack(batch_kernel).sum(0)
         if self.divn:
-            return total_kernel/total_kernel.shape[0]
+            return total_kernel*total_kernel.shape[0]
         return total_kernel
 
     def get_kernel_inverse(self):
@@ -50,7 +40,7 @@ class NeuralTangentKernel(object):
             K = self.get_kernel()
             if not self.cpu:
                 U, S, V = svdj(K, max_sweeps=self.max_sweeps)
-                self.S = S.clone()
+                # self.S = S.clone()
                 Si = (1./(S+self.damping))
                 Ki = U @ Si.diag() @ V.t()
                 # self.Si = Si.clone()
@@ -76,4 +66,4 @@ class NeuralTangentKernel(object):
                 # U, S, V = K.cpu().svd()
                 # Ki = U @ (1./(S+self.damping)).diag() @ V.t()
             # self.Ki = Ki.clone()
-        return Ki.cuda()
+        return Ki.cuda(), S.clone()

@@ -22,8 +22,7 @@ class Module(object):
             debug=True, stable=100, *args, **kwargs):
         self.module = module
         self.batch_kernel = None
-        self.is_active = True
-        self.is_eval = False
+        self.is_active = False
         self.no_grad = no_grad  # grad=1 => clustring in the input space
         self.no_act = no_act  # act=1 => clustring in the grad wrt act space
         self.inactive_mods = inactive_mods
@@ -97,17 +96,9 @@ class Module(object):
         return self.batch_kernel
 
     def activate(self):
-        # Both EM steps
         self.is_active = True
-        self.is_eval = False
-
-    def eval(self):
-        # Only M step
-        self.is_active = True
-        self.is_eval = True
 
     def deactivate(self):
-        # No EM step
         self.is_active = False
 
 
@@ -147,7 +138,7 @@ class Container(Module):
                 self.children[m] = glayer(*((m, )+args[1:]), **kwargs)
 
     def _set_default_loop(self):
-        loop_functions = ['get_kernel', 'deactivate', 'activate', 'eval']
+        loop_functions = ['get_kernel', 'deactivate', 'activate']
         for fname in loop_functions:
             setattr(self, fname, LoopFunction(self, self.children, fname))
 

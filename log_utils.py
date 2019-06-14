@@ -92,9 +92,10 @@ class TBXWrapper(object):
             step = len(self.logobj[name])
         self.logobj[name] += [(time.time(), step, list(val.flatten()))]
 
-    def log_list_of_vectors(self, name, val, step):
+    def log_list_of_vectors(self, name, val, step, tags=None):
         name += '_lov'
-        self.logobj[name] += [(time.time(), step, [v.flatten() for v in val])]
+        self.logobj[name] += [
+            (time.time(), step, [v.flatten() for v in val], tags)]
 
     def close(self):
         self.writer.close()
@@ -350,8 +351,8 @@ def get_all_tensors():
         except Exception:
             pass
     B = [a.numel() for a in A]
-    I = np.argsort(B)
-    return [A[i] for i in I]
+    II = np.argsort(B)
+    return [A[i] for i in II]
 
 
 def get_memory(A):

@@ -13,7 +13,7 @@ class BruteForceFisher(GradientEstimator):
         self.J = None
         self.batch_size = None
 
-    def grad(self, model_new, in_place=False):
+    def grad(self, model_new, in_place=False, data=None):
         """
         F = 1/n JJ^T, when J is DxB. F = E[gg^T], where g is Dx1
 
@@ -26,7 +26,8 @@ class BruteForceFisher(GradientEstimator):
         assert not in_place, 'Not to be used for training.'
         model = model_new
 
-        data = next(self.data_iter)
+        if data is None:
+            data = next(self.data_iter)
 
         J = []
         n = data[0].shape[0]
@@ -40,7 +41,7 @@ class BruteForceFisher(GradientEstimator):
 
         return grad
 
-    def get_precond_eigs(self):
+    def get_precond_eigs_nodata(self):
         S = svdj(self.J, max_sweeps=100)[1]
         # S = torch.svd(self.J)[1]
         return S*S/self.batch_size
@@ -52,11 +53,12 @@ class BruteForceFisherFull(GradientEstimator):
         self.init_data_iter()
         self.F = None
 
-    def grad(self, model_new, in_place=False):
+    def grad(self, model_new, in_place=False, data=None):
         assert not in_place, 'Not to be used for training.'
         model = model_new
 
-        data = next(self.data_iter)
+        if data is None:
+            data = next(self.data_iter)
 
         F = 0
         n = data[0].shape[0]
@@ -70,6 +72,6 @@ class BruteForceFisherFull(GradientEstimator):
 
         return grad
 
-    def get_precond_eigs(self):
+    def get_precond_eigs_nodata(self):
         S = svdj(self.F, max_sweeps=100)[1]
         return S

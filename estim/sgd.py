@@ -11,8 +11,9 @@ class SGDEstimator(GradientEstimator):
         # many open files? torch.multiprocessing sharing file_system
         self.init_data_iter()
 
-    def grad(self, model, in_place=False):
-        data = next(self.data_iter)
+    def grad(self, model, in_place=False, data=None):
+        if data is None:
+            data = next(self.data_iter)
 
         loss = model.criterion(model, data)
 
