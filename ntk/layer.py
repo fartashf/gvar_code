@@ -159,13 +159,15 @@ class Linear(Module):
         return GoG
 
     def _linear_dot_type1(self, Ai, Go):
-        AiGo = torch.einsum('bi,bo->bio', [Ai, Go])
+        B = Go.shape[0]
+        AiGo = torch.einsum('bi,bo->bio', [Ai/B, Go*B])
         GoG = torch.einsum('kio,bio->kb', [AiGo, AiGo])
         return GoG
 
     def _linear_dot_type2(self, Ai, Go):
-        AiAi = torch.matmul(Ai, Ai.t())
-        GoGo = torch.matmul(Go, Go.t())
+        B = Go.shape[0]
+        AiAi = torch.matmul(Ai, Ai.t()/B)
+        GoGo = torch.matmul(Go, Go.t()*B)
         GoG = (AiAi)*(GoGo)
         return GoG
 
@@ -218,11 +220,12 @@ class Conv2d(Module):
         return self._conv_dot_type2
 
     def _conv_dot_type1(self, Ai, Go):
-        # T = Go.shape[-1]
+        T = Go.shape[-1]
+        B = Go.shape[0]
 
         # TODO: can we get rid of s?
-        AiAi = torch.einsum('kit,bis->kbts', [Ai, Ai])
-        GoGo = torch.einsum('kot,bos->kbts', [Go, Go])
+        AiAi = torch.einsum('kit,bis->kbts', [Ai, Ai/B/T])
+        GoGo = torch.einsum('kot,bos->kbts', [Go, Go*B*T])
         # worse in memory, maybe because of its internal cache
         # batch matmul matchs from the end of tensor2 backwards
         # CiAi = torch.matmul(Ci.unsqueeze(1).unsqueeze(1), Ai).squeeze(2)
@@ -232,9 +235,10 @@ class Conv2d(Module):
         return GoG
 
     def _conv_dot_type2(self, Ai, Go):
-        # T = Go.shape[-1]
+        T = Go.shape[-1]
+        B = Go.shape[0]
 
-        AiGo = torch.einsum('bit,bot->bio', [Ai, Go])
+        AiGo = torch.einsum('bit,bot->bio', [Ai/B/T, Go*B*T])
         # mean/sum? sum
         GoG = torch.einsum('kio,bio->kb', [AiGo, AiGo])  # /T
         return GoG
