@@ -326,7 +326,7 @@ def cifar10_eigs(args):
     # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
     # sgd <-> bffisher on sgd
-    args_sgd = [('g_estim', ['sgd,bffisher,lanczos']),
+    args_sgd = [('g_estim', ['sgd,bffisher,lanczos,ntk,ntkf']),
                 ('optim', 'sgd'),
                 ('lr', 0.02),
                 ]
