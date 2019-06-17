@@ -35,12 +35,13 @@ class KFACEstimator(SGDEstimator):
         self.optim.active = False
         return g
 
-    def snap_TCov(self, loss, output):
+    def snap_TCov(self, loss, output, target):
         # compute true fisher
         self.optim.acc_stats = True
         with torch.no_grad():
             if self.empirical:
-                sampled_y = output.max(1)[1]
+                # sampled_y = output.max(1)[1]
+                sampled_y = target
             else:
                 probs = torch.nn.functional.softmax(output, dim=1)
                 sampled_y = torch.multinomial(probs, 1).squeeze()
@@ -56,7 +57,7 @@ class KFACEstimator(SGDEstimator):
 
             model.zero_grad()
             loss, output = model.criterion(model, data, return_output=True)
-            self.snap_TCov(loss, output)
+            self.snap_TCov(loss, output, data[1].cuda())
             model.zero_grad()  # clear the gradient for computing true-fisher.
         self.optim.active = False
 
