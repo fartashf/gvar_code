@@ -19,8 +19,7 @@ class KFACOptimizer(optim.Optimizer):
                  weight_decay=0,
                  TCov=10,
                  TInv=100,
-                 batch_averaged=True,
-                 use_gestim=False):
+                 batch_averaged=True):
         if lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if momentum < 0.0:
@@ -55,16 +54,22 @@ class KFACOptimizer(optim.Optimizer):
         self.TCov = TCov
         self.TInv = TInv
 
-        self.use_gestim = use_gestim
+        self.active = False
+
+        self._aa = {}
+        self._gg = {}
+        self.save = False
 
     def _save_input(self, module, input):
-        if torch.is_grad_enabled() and self.steps % self.TCov == 0:
-            # TODO
+        # if torch.is_grad_enabled() and self.steps % self.TCov == 0:
+        if self.active and self.steps % self.TCov == 0:
             aa = self.CovAHandler(input[0].data, module)
             # Initialize buffers
             if self.steps == 0:
                 self.m_aa[module] = torch.diag(aa.new(aa.size(0)).fill_(1))
             update_running_stat(aa, self.m_aa[module], self.stat_decay)
+        if self.save:
+            self._aa[module] = self.CovAHandler(input[0].data, module)
 
     def _save_grad_output(self, module, grad_input, grad_output):
         # Accumulate statistics for Fisher matrices
@@ -75,6 +80,9 @@ class KFACOptimizer(optim.Optimizer):
             if self.steps == 0:
                 self.m_gg[module] = torch.diag(gg.new(gg.size(0)).fill_(1))
             update_running_stat(gg, self.m_gg[module], self.stat_decay)
+        if self.save:
+            self._gg[module] = self.CovGHandler(
+                grad_output[0].data, module, self.batch_averaged)
 
     def _prepare_model(self):
         count = 0
@@ -171,12 +179,16 @@ class KFACOptimizer(optim.Optimizer):
         # each block.
         # Eigenvalues of Kronecker product of A, B are the products of all
         # eigenvalues of A with all eigenvalues of B
+        d_a = {}
+        d_g = {}
+        with torch.no_grad():
+            for m in self.modules:
+                d_a[m] = torch.symeig(self._aa[m])[0]
+                d_g[m] = torch.symeig(self._gg[m])[0]
         evals = []
-        # group = self.param_groups[0]
-        # damping = group['damping']
         for m in self.modules:
             evals += [
-                torch.einsum('i,j->ij', self.d_g[m], self.d_a[m]).flatten()]
+                torch.einsum('i,j->ij', d_g[m], d_a[m]).flatten()]
         return torch.cat(evals)
 
     def _kl_clip_and_update_grad(self, updates, lr):
@@ -221,7 +233,7 @@ class KFACOptimizer(optim.Optimizer):
                 grad[curg].mul_(nu)
                 curg += 1
 
-    def _step(self, closure):
+    def step(self, closure=None):
         # FIXME (CW): Modified based on SGD
         # (removed nestrov and dampening in momentum.)
         # FIXME (CW): 1. no nesterov, 2. buf.mul_(momentum).add_(1 <del> -
@@ -248,35 +260,6 @@ class KFACOptimizer(optim.Optimizer):
                     d_p = buf
 
                 p.data.add_(-group['lr'], d_p)
-
-    def step(self, closure=None):
-        if self.use_gestim:
-            self.step_with_gestim(closure)
-        else:
-            self.step_orig(closure)
-
-    def step_orig(self, closure=None):
-        # FIXME(CW): temporal fix for compatibility with Official LR scheduler.
-        group = self.param_groups[0]
-        lr = group['lr']
-        damping = group['damping']
-        updates = {}
-        for m in self.modules:
-            classname = m.__class__.__name__
-            if self.steps % self.TInv == 0:
-                self._update_inv(m)
-            p_grad_mat = self._get_matrix_form_grad(m, classname)
-            v = self._get_natural_grad(m, p_grad_mat, damping)
-            updates[m] = v
-        self._kl_clip_and_update_grad(updates, lr)
-
-        self._step(closure)
-        self.steps += 1
-
-    def step_with_gestim(self, closure=None):
-        # FIXME(CW): temporal fix for compatibility with Official LR scheduler.
-        self._step(closure)
-        # self.steps += 1  # replaced by estim.steps
 
     def apply_precond(self):
         group = self.param_groups[0]

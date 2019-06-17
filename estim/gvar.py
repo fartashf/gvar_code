@@ -8,12 +8,14 @@ from estim.gluster import GlusterOnlineEstimator, GlusterBatchEstimator
 from estim.svrg import SVRGEstimator
 from estim.ntk import NeuralTangentKernelEstimator, NeuralTangentKernelFull
 from estim.kfac import KFACEstimator
+from estim.kfac_orig import KFACEstimatorOrig
 from estim.bf_fisher import BruteForceFisher, BruteForceFisherFull
 from estim.lanczos import LanczosEstimator
 
 import optim
 import optim.adamw
 import optim.kfac
+import optim.kfac_orig
 import optim.ekfac
 import utils
 
@@ -35,8 +37,11 @@ def init_estimator(g_estim, opm, data_loader, opt, tb_logger):
         gest = NeuralTangentKernelEstimator(data_loader, opt, tb_logger)
     elif g_estim == 'ntkf':
         gest = NeuralTangentKernelFull(data_loader, opt, tb_logger)
-    elif g_estim == 'kfac':
-        gest = KFACEstimator(opm, data_loader, opt, tb_logger)
+    elif g_estim == 'kfaco':
+        gest = KFACEstimatorOrig(opm, data_loader, opt, tb_logger)
+    elif g_estim == 'kfac' or g_estim == 'kface':
+        empirical = g_estim == 'kface'
+        gest = KFACEstimator(opm, empirical, data_loader, opt, tb_logger)
     elif g_estim == 'bffisher':
         gest = BruteForceFisher(data_loader, opt, tb_logger)
     elif g_estim == 'bffisherf':
@@ -76,10 +81,19 @@ def init_optim(optim_name, model, opt):
             kl_clip=opt.kf_kl_clip,
             weight_decay=opt.weight_decay,
             TCov=opt.kf_TCov,
-            TInv=opt.kf_TInv,
-            use_gestim=(not opt.kf_nogestim))
-        if opt.kf_nogestim:
-            model.criterion.optim = optimizer
+            TInv=opt.kf_TInv)
+    elif optim_name == 'kfaco':
+        optimizer = optim.kfac_orig.KFACOptimizerOrig(
+            model,
+            lr=opt.lr,
+            momentum=opt.momentum,
+            stat_decay=opt.kf_stat_decay,
+            damping=opt.kf_damping,
+            kl_clip=opt.kf_kl_clip,
+            weight_decay=opt.weight_decay,
+            TCov=opt.kf_TCov,
+            TInv=opt.kf_TInv)
+        model.criterion.optim = optimizer
     elif optim_name == 'ekfac':
         optimizer = optim.ekfac.EKFACOptimizer(
             model,
@@ -121,15 +135,17 @@ class GEstimatorCollection(object):
         self.niters = niters
         for name, estim in self.gest:
             estim.update_niters(self.niters)
+        for name, opm in self.optim:
+            opm.steps = niters
 
     def snap_batch(self, model):
         for name, gest in self.gest:
-            if name == 'kfac':
+            if 'kfac' in name:
                 gest.snap_batch(model)
 
     def snap_online(self, model):
         for name, gest in self.gest:
-            if name == 'kfac':
+            if 'kfac' in name:
                 gest.snap_online(model)
 
     def snap_model(self, model):
