@@ -224,8 +224,8 @@ class Conv2d(Module):
         B = Go.shape[0]
 
         # TODO: can we get rid of s?
-        AiAi = torch.einsum('kit,bis->kbts', [Ai, Ai/B/T])
-        GoGo = torch.einsum('kot,bos->kbts', [Go, Go*B*T])
+        AiAi = torch.einsum('kit,bis->kbts', [Ai/T, Ai/B/T])
+        GoGo = torch.einsum('kot,bos->kbts', [Go*T, Go*B*T])
         # worse in memory, maybe because of its internal cache
         # batch matmul matchs from the end of tensor2 backwards
         # CiAi = torch.matmul(Ci.unsqueeze(1).unsqueeze(1), Ai).squeeze(2)
@@ -241,6 +241,13 @@ class Conv2d(Module):
         AiGo = torch.einsum('bit,bot->bio', [Ai/B/T, Go*B*T])
         # mean/sum? sum
         GoG = torch.einsum('kio,bio->kb', [AiGo, AiGo])  # /T
+        return GoG
+
+    def _conv_dot_type3(self, Ai, Go):
+        raise Exception('Do not use')
+        AiAi = torch.einsum('kis,bis->kb', [Ai, Ai])
+        GoGo = torch.einsum('kos,bos->kb', [Go, Go])
+        GoG = (AiAi) * (GoGo)
         return GoG
 
     def _post_proc(self, Go0):

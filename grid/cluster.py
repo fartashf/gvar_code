@@ -2,33 +2,42 @@ from __future__ import print_function
 import math
 
 
-def bolt(sargs, num_runs):
+def bolt(sargs, num_runs, job_args):
     """
     rm jobs/*.sh jobs/log/* -f && python grid_run.py --grid G --run_name X
     pattern=""; for i in 1 2; do ./kill.sh $i $pattern; done
     ./start.sh
     """
-    # jobs_0 = ['bolt0_gpu0,1,2,3', 'bolt1_gpu0,1,2,3']
-    # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2',
-    #           'bolt1_gpu0,1', 'bolt1_gpu2,3',
-    #           ]
-    # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2',
-    #           'bolt1_gpu0,1', 'bolt1_gpu2,3',
-    #           ]
-    # jobs_0 = ['bolt3_gpu0', 'bolt3_gpu1', 'bolt3_gpu2',
-    #           'bolt2_gpu0', 'bolt2_gpu1', 'bolt2_gpu2', 'bolt2_gpu3',
-    #           'bolt1_gpu3', 'bolt1_gpu2',
-    #           'bolt1_gpu0', 'bolt1_gpu1',
-    #           # 'bolt2_gpu0', 'bolt2_gpu1', 'bolt2_gpu2', 'bolt2_gpu3',
-    #           # 'bolt1_gpu2', 'bolt1_gpu3',
-    #           # 'bolt1_gpu0', 'bolt1_gpu1', 'bolt1_gpu2', 'bolt1_gpu3',
-    #           # 'bolt0_gpu0', 'bolt0_gpu1', 'bolt0_gpu2', 'bolt0_gpu3'
-    #           ]
-    jobs_0 = ['bolt3_gpu0', 'bolt2_gpu3']
-    # njobs = [3] * 4 + [2] * 4  # validate start.sh
-    njobs = [2]*7 + [2]*2 + [0, 2]  # Number of parallel jobs on each machine
-    # njobs = [2, 2, 2] + [2, 2, 2, 2] + [1, 1, 0, 0]
-    # njobs = [2, 2, 1, 1]
+    if len(job_args) > 0:
+        jobs_0 = job_args[0]
+    else:
+        # jobs_0 = ['bolt0_gpu0,1,2,3', 'bolt1_gpu0,1,2,3']
+        # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2',
+        #           'bolt1_gpu0,1', 'bolt1_gpu2,3',
+        #           ]
+        # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2',
+        #           'bolt1_gpu0,1', 'bolt1_gpu2,3',
+        #           ]
+        jobs_0 = ['bolt3_gpu0', 'bolt3_gpu1', 'bolt3_gpu2',
+                  'bolt2_gpu0', 'bolt2_gpu1', 'bolt2_gpu2', 'bolt2_gpu3',
+                  'bolt1_gpu3', 'bolt1_gpu2',
+                  'bolt1_gpu0', 'bolt1_gpu1',
+                  # 'bolt2_gpu0', 'bolt2_gpu1', 'bolt2_gpu2', 'bolt2_gpu3',
+                  # 'bolt1_gpu2', 'bolt1_gpu3',
+                  # 'bolt1_gpu0', 'bolt1_gpu1', 'bolt1_gpu2', 'bolt1_gpu3',
+                  # 'bolt0_gpu0', 'bolt0_gpu1', 'bolt0_gpu2', 'bolt0_gpu3'
+                  ]
+        # jobs_0 = ['bolt3_gpu0', 'bolt2_gpu3']
+
+    # Number of parallel jobs on each machine
+    # validate start.sh
+    if len(job_args) > 1:
+        njobs = job_args[1]
+    else:
+        # njobs = [3] * 4 + [2] * 4
+        njobs = [3]*7 + [2]*2 + [0, 2]
+        # njobs = [2, 2, 2] + [2, 2, 2, 2] + [1, 1, 0, 0]
+        # njobs = [2, 2, 1, 1]
     jobs = []
     for s, n in zip(jobs_0, njobs):
         jobs += ['%s_job%d' % (s, i) for i in range(n)]
@@ -38,7 +47,7 @@ def bolt(sargs, num_runs):
     return jobs, parallel
 
 
-def slurm(sargs, num_runs):
+def slurm(sargs, num_runs, job_args):
     """
     vector(q): gpu, wsgpu
     vaughan(vremote): p100, t4

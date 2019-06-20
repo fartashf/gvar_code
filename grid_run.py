@@ -94,9 +94,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
     run0_id = args.run0_id
     val = grid.__dict__[args.grid].__dict__[args.run_name]([])
-    jargs, log_dir, module_name, exclude = val
+    jargs, log_dir, module_name, exclude = val[:4]
     jobs, parallel = grid.cluster.__dict__[args.cluster](
-        args, count_runs(jargs))
+        args, count_runs(jargs), val[4:])
 
     run_single = RunSingle(log_dir, module_name, exclude, parallel)
     run_single.num = run0_id

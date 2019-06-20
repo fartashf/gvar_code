@@ -206,8 +206,8 @@ def cifar10_cnn(args):
         ('gvar_log_iter', 200),  # 100),  # default
         ('gvar_start', 0),
         # ('g_bsnap_iter', 1),
-        ('g_optim', ''),
-        ('g_optim_start', 0),  # [0, 10, 20]),
+        # ('g_optim', ''),
+        # ('g_optim_start', 0),  # [0, 10, 20]),
         ('g_epoch', ''),
     ]
     args_sgd = [('g_estim', ['sgd']),
@@ -233,6 +233,7 @@ def cifar10_cnn(args):
                  ('lr', 0.005),
                  # ('kf_damping',  [0.01, 0.05, 0.1]),  # [0.05, 0.1, 0.3]),
                  ('kf_damping',  0.05),
+                 ('kf_stat_decay', 0),
                  ]
     args += [OrderedDict(shared_args+gvar_args+args_kfac)]
 
@@ -241,11 +242,18 @@ def cifar10_cnn(args):
                 # ('lr', [.01, 0.005]),
                 ('lr', 0.005),
                 # ('ntk_damping',  [0.01, 0.05, 0.1]),  # [0.3, 0.5, 1.]),
-                ('ntk_damping',  0.1),
+                ('ntk_damping',  0.05),
                 ('ntk_divn', ''),
                 ]
     args += [OrderedDict(shared_args+gvar_args+args_ntk)]
-    return args, log_dir, module_name, exclude
+
+    jobs_0 = ['bolt3_gpu0', 'bolt3_gpu1', 'bolt3_gpu2',
+              'bolt2_gpu0', 'bolt2_gpu1', 'bolt2_gpu2', 'bolt2_gpu3',
+              'bolt1_gpu3', 'bolt1_gpu2',
+              'bolt1_gpu0', 'bolt1_gpu1'
+              ]
+    njobs = [1]*7 + [2]*2 + [0, 2]
+    return args, log_dir, module_name, exclude, jobs_0, njobs
 
 
 def cifar10_eigs(args):
@@ -255,23 +263,26 @@ def cifar10_eigs(args):
     # log_dir = 'runs_%s_ntk_eigs_TitanX,' % dataset
     # log_dir = 'runs_%s_ntk_eigs_2080,' % dataset
     exclude = ['dataset', 'epochs',
-               'g_epoch', 'lr_decay_epoch', 'gvar_log_iter', 'niters']
+               'g_epoch', 'lr_decay_epoch', 'gvar_log_iter', 'niters',
+               'kf_TCov', 'kf_TInv']
     shared_args = [('dataset', dataset),
-                   ('arch', 'sscnn'),  # linear, mlp, cnn
+                   # ('arch', 'sscnn'),  # linear, mlp, cnn
                    # ('epochs', [
                    #     (200, OrderedDict([('lr_decay_epoch', '100,150')])),
                    # ]),
                    ('epochs', 20),
                    ('weight_decay', 0),  # [0, 1e-4]),
-                   ('batch_size', 32),  # 512, 128, 1024, 128),
+                   # ('batch_size', 32),  # 512, 128, 1024, 128),
                    ('momentum', 0.9),
                    # ('nodropout', ''),
-                   ('kf_damping',  0.01),  # 0.05),
-                   ('ntk_damping',  0.01),  # 0.1),
+                   # ('kf_damping',  0.01),  # 0.05),
+                   # ('ntk_damping',  0.01),  # 0.1),
                    ('ntk_divn', ''),
                    ('log_eigs', ''),
                    ('kf_stat_decay', 0),
-                   ('lanczos_method', ['fw']),  # 'bk'
+                   # ('lanczos_method', ['fw']),  # 'bk'
+                   ('kf_TCov', 1000),
+                   ('kf_TInv', 1000),
                    ]
     gvar_args = [
         ('gvar_estim_iter', 1),  # 5, 10),  # default
@@ -325,10 +336,27 @@ def cifar10_eigs(args):
     #             ]
     # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
-    # sgd <-> bffisher on sgd
-    args_sgd = [('g_estim', ['sgd,bffisher,lanczos,ntk,ntkf']),
-                ('optim', 'sgd'),
+    # # sgd <-> bffisher on sgd
+    # args_sgd = [('g_estim', ['sgd,bffisher,lanczos,ntk,ntkf']),
+    #             ('optim', 'sgd'),
+    #             ('lr', 0.02),
+    #             ('batch_size', 32),
+    #             ]
+    # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
+
+    args_sgd = [('g_estim', ['sgd,lanczos,ntk,kfac,kface']),
+                ('optim', 'sgd,sgd,sgd,kfac,kfac'),
                 ('lr', 0.02),
+                ('arch', 'sscnn'),
+                ('batch_size', 32),
+                ]
+    args += [OrderedDict(shared_args+gvar_args+args_sgd)]
+
+    args_sgd = [('g_estim', ['sgd,ntk,kfac,kface']),
+                ('optim', 'sgd,sgd,kfac,kfac'),
+                ('lr', 0.02),
+                ('arch', 'cnn'),
+                ('batch_size', 512),
                 ]
     args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 

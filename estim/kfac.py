@@ -46,6 +46,8 @@ class KFACEstimator(SGDEstimator):
                 probs = torch.nn.functional.softmax(output, dim=1)
                 sampled_y = torch.multinomial(probs, 1).squeeze()
         loss_sample = F.nll_loss(output, sampled_y, reduction='mean')
+        # loss_sample = F.nll_loss(output, sampled_y, reduction='none').sum()
+        # self.batch_size = target.shape[0]
         loss_sample.backward(retain_graph=True)
         self.optim.acc_stats = False
 
@@ -78,4 +80,5 @@ class KFACEstimator(SGDEstimator):
         return ret
 
     def get_precond_eigs_nodata(self):
+        # return self.optim.get_precond_eigs()/self.batch_size
         return self.optim.get_precond_eigs()
