@@ -55,9 +55,11 @@ class NeuralTangentKernelFull(GradientEstimator):
         super(NeuralTangentKernelFull, self).__init__(*args, **kwargs)
         self.init_data_iter()
         self.K = None
+        self.damping = self.opt.ntk_damping
 
     def grad(self, model_new, in_place=False, data=None):
-        assert not in_place, 'Not to be used for training.'
+        # assert not in_place, 'Not to be used for training.'
+
         model = model_new
 
         if data is None:
@@ -66,8 +68,11 @@ class NeuralTangentKernelFull(GradientEstimator):
         K = 0
         n = data[0].shape[0]
         J = []
+        loss0 = 0
         for i in range(n):
             loss = model.criterion(model, (data[0][i:i+1], data[1][i:i+1]))
+            with torch.no_grad():
+                loss0 += loss
             grad = torch.autograd.grad(loss, model.parameters())
             J += [torch.cat([g.flatten() for g in grad])]
         J = torch.stack(J)
@@ -75,6 +80,27 @@ class NeuralTangentKernelFull(GradientEstimator):
         K /= n
         self.K = K.clone()
 
+        # U, S, V = svdj(self.J, max_sweeps=100)
+        ftype = 2
+        if ftype == 1:
+            # using svd of J
+            U, S, V = torch.svd(J.t())
+            Si = 1./(S*S/n+self.damping)
+            grad = ((V.t() @ Si.diag() @ V) @ J).sum(0)
+        else:
+            # using svd of K
+            U, S, V = torch.svd(J @ J.t())
+            Si = 1./(S/n+self.damping)
+            Ki = U @ Si.diag() @ V.t()
+            grad = Ki.sum(0) @ J
+        if in_place:
+            curi = 0
+            for p in model.parameters():
+                if p.grad is None:
+                    p.grad = torch.zeros_like(p)
+                p.grad.copy_(grad[curi:curi+p.numel()].view(p.shape))
+                curi += p.numel()
+            return loss0/n
         return grad
 
     def get_precond_eigs_nodata(self):

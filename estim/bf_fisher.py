@@ -12,6 +12,7 @@ class BruteForceFisher(GradientEstimator):
         self.init_data_iter()
         self.J = None
         self.batch_size = None
+        self.damping = self.opt.ntk_damping
 
     def grad(self, model_new, in_place=False, data=None):
         """
@@ -23,7 +24,7 @@ class BruteForceFisher(GradientEstimator):
         We also know that the eigenvalues of cA are just eigenvalues of A
         multiplied by c.
         """
-        assert not in_place, 'Not to be used for training.'
+        # assert not in_place, 'Not to be used for training.'
         model = model_new
 
         if data is None:
@@ -31,14 +32,30 @@ class BruteForceFisher(GradientEstimator):
 
         J = []
         n = data[0].shape[0]
+        loss0 = 0
         for i in range(n):
             loss = model.criterion(model, (data[0][i:i+1], data[1][i:i+1]))
+            with torch.no_grad():
+                loss0 += loss
             grad = torch.autograd.grad(loss, model.parameters())
             gf = torch.cat([g.flatten() for g in grad])
             J += [gf]  # /math.sqrt(n)
         self.J = torch.stack(J, dim=1)
         self.batch_size = n
 
+        g = self.J.sum(1)
+        # U, S, V = svdj(self.J, max_sweeps=100)
+        U, S, V = torch.svd(self.J)
+        Si = S*S/self.batch_size+self.damping
+        grad = U @ ((U.t() @ g) / Si)
+        if in_place:
+            curi = 0
+            for p in model.parameters():
+                if p.grad is None:
+                    p.grad = torch.zeros_like(p)
+                p.grad.copy_(grad[curi:curi+p.numel()].view(p.shape))
+                curi += p.numel()
+            return loss0/n
         return grad
 
     def get_precond_eigs_nodata(self):
