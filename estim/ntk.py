@@ -81,8 +81,7 @@ class NeuralTangentKernelFull(GradientEstimator):
         K /= n
         self.K = K.clone()
 
-        # U, S, V = svdj(self.J, max_sweeps=100)
-        ftype = 3
+        ftype = 4
         if ftype == 1:
             # using svd of J
             U, S, V = torch.svd(J.t())
@@ -94,10 +93,15 @@ class NeuralTangentKernelFull(GradientEstimator):
             Si = 1./(S/n+self.damping)
             Ki = U @ Si.diag() @ V.t()
             grad = Ki.sum(0) @ J/n
-        else:
+        elif ftype == 3:
             # using svd of K
+            U, S, V = torch.svd(K)
+            Si = 1./(S+self.damping)
+            Ki = U @ Si.diag() @ V.t()
+            grad = Ki.sum(0) @ J/n
+        else:
+            # using svdj
             U, S, V = svdj(K, max_sweeps=100)
-            # U, S, V = torch.svd(K)
             Si = 1./(S+self.damping)
             Ki = U @ Si.diag() @ V.t()
             grad = Ki.sum(0) @ J/n
