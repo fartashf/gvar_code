@@ -16,6 +16,7 @@ class NeuralTangentKernelEstimator(GradientEstimator):
         self.ntk = None
         self.Ki = None
         self.S = None
+        self.divn = self.opt.ntk_divn
 
     def grad(self, model_new, in_place=False, data=None):
         model = model_new
@@ -38,7 +39,7 @@ class NeuralTangentKernelEstimator(GradientEstimator):
         # optim
         model.zero_grad()
         n = data[0].shape[0]
-        loss_ntk = Ki.sum(0).dot(loss)/n
+        loss_ntk = Ki.sum(0) @ loss/n
 
         if in_place:
             loss_ntk.backward()
@@ -81,18 +82,25 @@ class NeuralTangentKernelFull(GradientEstimator):
         self.K = K.clone()
 
         # U, S, V = svdj(self.J, max_sweeps=100)
-        ftype = 2
+        ftype = 3
         if ftype == 1:
             # using svd of J
             U, S, V = torch.svd(J.t())
             Si = 1./(S*S/n+self.damping)
-            grad = ((V.t() @ Si.diag() @ V) @ J).sum(0)
-        else:
-            # using svd of K
+            grad = ((V.t() @ Si.diag() @ V) @ (J/n)).sum(0)
+        elif ftype == 2:
+            # using svd of J J'
             U, S, V = torch.svd(J @ J.t())
             Si = 1./(S/n+self.damping)
             Ki = U @ Si.diag() @ V.t()
-            grad = Ki.sum(0) @ J
+            grad = Ki.sum(0) @ J/n
+        else:
+            # using svd of K
+            U, S, V = svdj(K, max_sweeps=100)
+            # U, S, V = torch.svd(K)
+            Si = 1./(S+self.damping)
+            Ki = U @ Si.diag() @ V.t()
+            grad = Ki.sum(0) @ J/n
         if in_place:
             curi = 0
             for p in model.parameters():

@@ -43,7 +43,7 @@ class BruteForceFisher(GradientEstimator):
         self.J = torch.stack(J, dim=1)
         self.batch_size = n
 
-        g = self.J.sum(1)
+        g = self.J.mean(1)  # sum(1)
         # U, S, V = svdj(self.J, max_sweeps=100)
         U, S, V = torch.svd(self.J)
         Si = S*S/self.batch_size+self.damping
