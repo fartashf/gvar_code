@@ -31,7 +31,7 @@ class Module(object):
         self.active_modules = [(n, m) for n, m in module.named_children()]
         self.children = OrderedDict()
         self.has_weight = hasattr(module, 'weight')
-        self.has_bias = False  # TODO: hasattr(module, 'bias') # SVD
+        self.has_bias = hasattr(module, 'bias')
         self.has_param = (self.has_weight or self.has_bias)
         self.has_param = (
                 self.has_param and
@@ -148,7 +148,11 @@ class Linear(Module):
         super(Linear, self).__init__(*args, **kwargs)
 
     def _save_kernel_hook_bias(self, Ai, Go):
-        raise Exception('not implemented')
+        """ dL/db = (dL/dy)' 1v
+        """
+        Db = Go.sum(1, keepdim=True)
+        DbDb = Db @ Db.t()
+        return DbDb
 
     def _save_kernel_hook_weight(self, Ai, Go):
         B = Ai.shape[0]
@@ -159,15 +163,17 @@ class Linear(Module):
         return GoG
 
     def _linear_dot_type1(self, Ai, Go):
+        raise Exception('Not used')
         B = Go.shape[0]
         AiGo = torch.einsum('bi,bo->bio', [Ai/B, Go*B])
         GoG = torch.einsum('kio,bio->kb', [AiGo, AiGo])
         return GoG
 
     def _linear_dot_type2(self, Ai, Go):
-        B = Go.shape[0]
-        AiAi = torch.matmul(Ai, Ai.t()/B)
-        GoGo = torch.matmul(Go, Go.t()*B)
+        din = Ai.shape[1]
+        dout = Go.shape[1]
+        AiAi = Ai @ Ai.t()/(din+dout)
+        GoGo = Go @ Go.t()*(din+dout)
         GoG = (AiAi)*(GoGo)
         return GoG
 
@@ -188,7 +194,9 @@ class Conv2d(Module):
         self._conv_dot = None
 
     def _save_kernel_hook_bias(self, Ai, Go):
-        raise Exception('not implemented')
+        Db = Go.sum(-1).sum(1, keepdim=True)
+        DbDb = Db @ Db.t()
+        return DbDb
 
     def _save_kernel_hook_weight(self, Ai, Go):
         B = Ai.shape[0]
