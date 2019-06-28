@@ -36,6 +36,10 @@ def init_model(opt):
             model = models.cifar10.SuperSmallCNN(num_class=opt.num_class)
         elif opt.arch == 'mlp':
             model = models.cifar10.MLP(num_class=opt.num_class)
+        elif opt.arch == 'smlp':
+            model = models.cifar10.SmallMLP(num_class=opt.num_class)
+        elif opt.arch == 'ssmlp':
+            model = models.cifar10.SuperSmallMLP(num_class=opt.num_class)
         elif opt.arch == 'linear':
             model = models.cifar10.LP(num_class=opt.num_class)
         elif opt.arch.startswith('wrn'):

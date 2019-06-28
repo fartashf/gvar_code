@@ -231,6 +231,39 @@ class MLP(nn.Module):
         return F.log_softmax(x, dim=-1)
 
 
+class SmallMLP(nn.Module):
+    def __init__(self, dropout=True, num_class=10):
+        """
+        mnist MLP
+        """
+        super(SmallMLP, self).__init__()
+        self.dropout = dropout
+        self.fc1 = nn.Linear(3*32*32, 512)
+        self.fc2 = nn.Linear(512, num_class)
+
+    def forward(self, x):
+        x = x.view(-1, 3*32*32)
+        if self.dropout:
+            x = F.dropout(x, training=self.training, p=0.2)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return F.log_softmax(x, dim=-1)
+
+
+class SuperSmallMLP(nn.Module):
+    def __init__(self, dropout=True, num_class=10):
+        """
+        mnist MLP
+        """
+        super(SuperSmallMLP, self).__init__()
+        self.fc1 = nn.Linear(3*32*32, num_class)
+
+    def forward(self, x):
+        x = x.view(-1, 3*32*32)
+        x = self.fc1(x)
+        return F.log_softmax(x, dim=-1)
+
+
 class SmallCNN(nn.Module):
     def __init__(self, dropout=False, num_class=10):
         """

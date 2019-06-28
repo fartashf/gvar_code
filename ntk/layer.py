@@ -228,6 +228,7 @@ class Conv2d(Module):
         return self._conv_dot_type2
 
     def _conv_dot_type1(self, Ai, Go):
+        raise Exception('Do not use')
         T = Go.shape[-1]
         B = Go.shape[0]
 
@@ -244,9 +245,9 @@ class Conv2d(Module):
 
     def _conv_dot_type2(self, Ai, Go):
         T = Go.shape[-1]
-        B = Go.shape[0]
+        # B = Go.shape[0]
 
-        AiGo = torch.einsum('bit,bot->bio', [Ai/B/T, Go*B*T])
+        AiGo = torch.einsum('bit,bot->bio', [Ai/T, Go*T])
         # mean/sum? sum
         GoG = torch.einsum('kio,bio->kb', [AiGo, AiGo])  # /T
         return GoG
