@@ -19,8 +19,10 @@ class KFACOptimizer(optim.Optimizer):
                  weight_decay=0,
                  TCov=10,
                  TInv=100,
+                 batch_averaged=True,
                  no_kl_clip=False,
-                 batch_averaged=True):
+                 snap_one=False
+                 ):
         if lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if momentum < 0.0:
@@ -55,6 +57,7 @@ class KFACOptimizer(optim.Optimizer):
         self.TCov = TCov
         self.TInv = TInv
         self.no_kl_clip = no_kl_clip
+        self.snap_one = snap_one
 
         self.active = False
 

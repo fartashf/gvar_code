@@ -86,7 +86,8 @@ def init_optim(optim_name, model, opt):
             weight_decay=opt.weight_decay,
             TCov=opt.kf_TCov,
             TInv=opt.kf_TInv,
-            no_kl_clip=opt.kf_no_kl_clip)
+            no_kl_clip=opt.kf_no_kl_clip,
+            snap_one=opt.kf_snap_one)
     elif optim_name == 'kfaco':
         optimizer = optim.kfac_orig.KFACOptimizerOrig(
             model,

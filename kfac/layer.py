@@ -1,5 +1,4 @@
 import torch
-import torch.nn.functional as F
 from collections import OrderedDict
 import numpy as np
 import logging
@@ -235,81 +234,4 @@ class Linear(Module):
 
 class Conv2d(Module):
     def __init__(self, *args, **kwargs):
-        # TODO: Roger, Martens, A Kronecker-factored approximate Fisher matrix
-        # for convolution layer
         super(Conv2d, self).__init__(*args, **kwargs)
-        self._conv_dot = None
-
-    def _save_fisher_hook(self, Ai, Go):
-        B = Ai.shape[0]
-        T = Go.shape[-1]
-        din, dout = self.din, self.dout
-
-        assert Go.shape == (B, dout, T), 'Go: B x dout x T'
-        assert Ai.shape == (B, din, T), 'Ai: B x din x T'
-        # TODO: multi-GPU
-        if self._conv_dot is None:
-            self._conv_dot = self._conv_dot_choose(Ai, Go)
-        GoG = self._conv_dot(Ai, Go)
-        assert GoG.shape == (B, B), 'GoG: B x B.'
-
-        return GoG
-
-    def _conv_dot_choose(self, Ai, Go):
-        din, dout = self.din, self.dout
-        B = Ai.shape[0]
-        T = Go.shape[-1]
-        self.cost1 = cost1 = B*din*B*T*T + B*dout*B*T*T + B*B*T
-        self.cost2 = cost2 = B*din*T*dout + B*B*din*dout
-        if self.batch_fisher is None and self.debug:
-            logging.info(
-                    'GoG Cost ratio %s: %.4f'
-                    % (self.name, 1.*self.cost1/self.cost2))
-        if cost1 < cost2:
-            return self._conv_dot_type1
-        return self._conv_dot_type2
-
-    def _conv_dot_type1(self, Ai, Go):
-        raise Exception('Do not use')
-        T = Go.shape[-1]
-        B = Go.shape[0]
-
-        # TODO: can we get rid of s?
-        AiAi = torch.einsum('kit,bis->kbts', [Ai/T, Ai/B/T])
-        GoGo = torch.einsum('kot,bos->kbts', [Go*T, Go*B*T])
-        # worse in memory, maybe because of its internal cache
-        # batch matmul matchs from the end of tensor2 backwards
-        # CiAi = torch.matmul(Ci.unsqueeze(1).unsqueeze(1), Ai).squeeze(2)
-        # CoGo = torch.matmul(Co.unsqueeze(1).unsqueeze(1), Go).squeeze(2)
-        # mean/sum? sum
-        GoG = torch.einsum('kbts,kbts->kb', [AiAi, GoGo])  # /T/T
-        return GoG
-
-    def _conv_dot_type2(self, Ai, Go):
-        T = Go.shape[-1]
-        # B = Go.shape[0]
-
-        AiGo = torch.einsum('bit,bot->bio', [Ai/T, Go*T])
-        # mean/sum? sum
-        GoG = torch.einsum('kio,bio->kb', [AiGo, AiGo])  # /T
-        return GoG
-
-    def _conv_dot_type3(self, Ai, Go):
-        raise Exception('Do not use')
-        AiAi = torch.einsum('kis,bis->kb', [Ai, Ai])
-        GoGo = torch.einsum('kos,bos->kb', [Go, Go])
-        GoG = (AiAi) * (GoGo)
-        return GoG
-
-    def _post_proc(self, Go0):
-        if self.no_grad:
-            Go0.fill_(1e-3)  # TODO: /Go0.numel())
-        if self.no_act:
-            self.Ai0.fill_(1e-3)  # TODO: /Go0.numel())
-        module = self.module
-        Ai = F.unfold(
-                self.Ai0, module.kernel_size,
-                padding=module.padding,
-                stride=module.stride, dilation=module.dilation)
-        Go = Go0.reshape(Go0.shape[:-2]+(np.prod(Go0.shape[-2:]), ))
-        return Ai, Go
