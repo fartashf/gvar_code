@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from collections import OrderedDict
 import numpy as np
 import logging
@@ -140,27 +141,16 @@ class Module(object):
         raise NotImplementedError("Implemented by sub-classes.")
 
     def _set_grad_from_matrix(self, v):
-        raise NotImplementedError("Implemented by sub-classes.")
+        self.module.weight.grad.copy_(v[0])
+        if self.has_bias:
+            self.module.bias.grad.copy_(v[1])
 
     def get_precond_eigs(self):
         if not self.has_param:
             return
-        with torch.no_grad():
-            ftype = 2
-            if ftype == 1:
-                d_a = torch.symeig(self.AtA)[0]
-                d_g = torch.symeig(self.GtG)[0]
-                evals = torch.einsum('i,j->ij', d_g, d_a).flatten()
-            elif ftype == 2:
-                B = self.Ai.shape[0]
-                AtG = torch.einsum('bi,bj->bij', self.Ai/B, self.Go*B)
-                AtG = AtG.view(B, -1).contiguous()
-                S = svdj(AtG)[1].flatten()
-                evals = S*S*B  # AtG = d(1/B sum l_i) / d W
-            elif ftype == 3:
-                d_a = torch.symeig(self.Ai.t() @ self.Ai)[0]
-                d_g = torch.symeig(self.Go.t() @ self.Go)[0]
-                evals = torch.einsum('i,j->ij', d_g, d_a).flatten()
+        d_a = torch.symeig(self.AtA)[0]
+        d_g = torch.symeig(self.GtG)[0]
+        evals = torch.einsum('i,o->io', d_g, d_a).flatten()
         return [evals]
 
 
@@ -227,8 +217,8 @@ class Linear(Module):
         din = Ai.shape[1]
         dout = Go.shape[1]
 
-        AtA = Ai.t() @ (Ai / B)
-        GtG = Go.t() @ (Go * B)
+        AtA = Ai.t() @ (Ai / B)  # E[AtA], /B
+        GtG = Go.t() @ (Go * B)  # E[GtG], xB because of batch averaged loss
         assert AtA.shape == (din, din), 'AtA: din x din'
         assert GtG.shape == (dout, dout), 'GtG: dout x dout'
         return AtA, GtG
@@ -240,12 +230,88 @@ class Linear(Module):
                 [p_grad_mat, self.module.bias.grad.view(-1, 1)], 1)
         return p_grad_mat
 
-    def _set_grad_from_matrix(self, v):
-        self.module.weight.grad.copy_(v[0])
-        if self.has_bias:
-            self.module.bias.grad.copy_(v[1])
+    def get_precond_eigs(self):
+        if not self.has_param:
+            return
+        with torch.no_grad():
+            ftype = 1
+            if ftype == 1:
+                return super(Linear, self).get_precond_eigs()
+            elif ftype == 2:
+                B = self.Ai.shape[0]
+                AtG = torch.einsum('bi,bo->bio', self.Ai/B, self.Go*B)
+                AtG = AtG.view(B, -1).contiguous()
+                S = svdj(AtG)[1].flatten()
+                evals = S*S*B  # AtG = d(1/B sum l_i) / d W
+            elif ftype == 3:
+                d_a = torch.symeig(self.Ai.t() @ self.Ai)[0]
+                d_g = torch.symeig(self.Go.t() @ self.Go)[0]
+                evals = torch.einsum('i,o->io', d_g, d_a).flatten()
+        return [evals]
 
 
 class Conv2d(Module):
     def __init__(self, *args, **kwargs):
         super(Conv2d, self).__init__(*args, **kwargs)
+
+    def _post_proc(self, Go0):
+        if self.no_grad:
+            Go0.fill_(1e-3)  # TODO: /Go0.numel())
+        if self.no_act:
+            self.Ai0.fill_(1e-3)  # TODO: /Go0.numel())
+        module = self.module
+        Ai = F.unfold(
+                self.Ai0, module.kernel_size,
+                padding=module.padding,
+                stride=module.stride, dilation=module.dilation)
+        Go = Go0.reshape(Go0.shape[:-2]+(np.prod(Go0.shape[-2:]), ))
+        B = Ai.shape[0]
+        T = Ai.shape[-1]
+        if self.has_bias:
+            Ai = torch.cat([Ai, Ai.new(B, 1, T).fill_(1)], 1)
+        return Ai, Go
+
+    def _compute_cov(self, Ai, Go):
+        B = Ai.shape[0]
+        din = Ai.shape[1]
+        dout = Go.shape[1]
+        T = Go.shape[-1]
+
+        assert Ai.shape == (B, din, T), 'Ai: B x din x T'
+        assert Go.shape == (B, dout, T), 'Go: B x dout x T'
+
+        # E[AtA], /B
+        # E[GtG], xB because of batch averaged loss
+        # in the KFC paper, it makes further assumptions
+        # that those terms are spatially homogenuous..
+        # so they have the same mean and variance.
+        # Eq 32 and 74 in https://arxiv.org/pdf/1602.01407.pdf
+        AtA = torch.einsum('bit,bot->io', Ai/T, Ai/T/B)
+        GtG = torch.einsum('bot,bpt->op', Go*T, Go*T*B/T)  # an extra /T
+
+        assert AtA.shape == (din, din), 'AtA: din x din'
+        assert GtG.shape == (dout, dout), 'GtG: dout x dout'
+        return AtA, GtG
+
+    def _get_matrix_from_grad(self):
+        p_grad_mat = self.module.weight.grad.view(self.dout, self.din)
+        if self.has_bias:
+            p_grad_mat = torch.cat(
+                [p_grad_mat, self.module.bias.grad.view(-1, 1)], 1)
+        return p_grad_mat
+
+    def get_precond_eigs(self):
+        if not self.has_param:
+            return
+        with torch.no_grad():
+            ftype = 1
+            if ftype == 1:
+                return super(Conv2d, self).get_precond_eigs()
+            elif ftype == 2:
+                raise Exception('Check if spatial assumption is satisfied.')
+                B = self.Ai.shape[0]
+                AtG = torch.einsum('bit,bot->bio', self.Ai/B, self.Go*B)
+                AtG = AtG.view(B, -1).contiguous()
+                S = svdj(AtG)[1].flatten()
+                evals = S*S*B  # AtG = d(1/B sum l_i) / d W
+        return [evals]
