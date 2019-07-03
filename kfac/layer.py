@@ -2,6 +2,7 @@ import torch
 from collections import OrderedDict
 import numpy as np
 import logging
+from cusvd import svdj
 
 
 def get_module(module):
@@ -89,6 +90,7 @@ class Module(object):
             Go0 = grad_output[0]
             Ai, Go = self._post_proc(Go0)
             # TODO: moving average
+            self.Ai, self.Go = Ai, Go
             self.AtA, self.GtG = self._compute_cov(Ai, Go)
 
     def activate(self):
@@ -144,9 +146,21 @@ class Module(object):
         if not self.has_param:
             return
         with torch.no_grad():
-            d_a = torch.symeig(self.AtA)[0]
-            d_g = torch.symeig(self.GtG)[0]
-            evals = torch.einsum('i,j->ij', d_g, d_a).flatten()
+            ftype = 2
+            if ftype == 1:
+                d_a = torch.symeig(self.AtA)[0]
+                d_g = torch.symeig(self.GtG)[0]
+                evals = torch.einsum('i,j->ij', d_g, d_a).flatten()
+            elif ftype == 2:
+                B = self.Ai.shape[0]
+                AtG = torch.einsum('bi,bj->bij', self.Ai/B, self.Go*B)
+                AtG = AtG.view(B, -1).contiguous()
+                S = svdj(AtG)[1].flatten()
+                evals = S*S*B  # AtG = d(1/B sum l_i) / d W
+            elif ftype == 3:
+                d_a = torch.symeig(self.Ai.t() @ self.Ai)[0]
+                d_g = torch.symeig(self.Go.t() @ self.Go)[0]
+                evals = torch.einsum('i,j->ij', d_g, d_a).flatten()
         return [evals]
 
 
@@ -203,6 +217,9 @@ class Linear(Module):
         if self.no_act:
             self.Ai0.fill_(1e-3)  # TODO: /Go0.numel())
         Ai, Go = self.Ai0, Go0
+        B = Ai.shape[0]
+        if self.has_bias:
+            Ai = torch.cat([Ai, Ai.new(B, 1).fill_(1)], 1)
         return Ai, Go
 
     def _compute_cov(self, Ai, Go):
@@ -210,9 +227,6 @@ class Linear(Module):
         din = Ai.shape[1]
         dout = Go.shape[1]
 
-        if self.has_bias:
-            Ai = torch.cat([Ai, Ai.new(B, 1).fill_(1)], 1)
-            din += 1
         AtA = Ai.t() @ (Ai / B)
         GtG = Go.t() @ (Go * B)
         assert AtA.shape == (din, din), 'AtA: din x din'

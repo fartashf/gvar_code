@@ -38,6 +38,8 @@ def init_model(opt):
             model = models.cifar10.MLP(num_class=opt.num_class)
         elif opt.arch == 'smlp':
             model = models.cifar10.SmallMLP(num_class=opt.num_class)
+        elif opt.arch == 'msmlp':
+            model = models.cifar10.MoreSmallMLP(num_class=opt.num_class)
         elif opt.arch == 'ssmlp':
             model = models.cifar10.SuperSmallMLP(num_class=opt.num_class)
         elif opt.arch == 'linear':
