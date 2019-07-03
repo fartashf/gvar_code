@@ -14,25 +14,31 @@ class KFACEstimator(SGDEstimator):
         self.acc_stats_init = True
         self.optim.acc_stats = False
         self.empirical = empirical
+        self.snap_one = self.opt.kf_snap_one
 
     def update_niters(self, niters):
         self.niters = niters
         # self.optim.steps = niters
 
     def grad(self, model, in_place=False, data=None):
-        self.optim.active = True
         if data is None:
             data = next(self.data_iter)
 
-        loss = model.criterion(model, data)
+        model.zero_grad()
+        if self.snap_one:
+            loss = self.snap_online0(model, data)
+            self.optim.update_inv()
+            loss.backward(retain_graph=True)
+        else:
+            loss = model.criterion(model, data)
+            loss.backward(retain_graph=True)
 
         if in_place:
-            loss.backward()
+            # loss.backward()
             self.optim.apply_precond()
             return loss
         g = torch.autograd.grad(loss, model.parameters())
         self.optim.apply_precond_outplace(g)
-        self.optim.active = False
         return g
 
     def snap_TCov(self, loss, output, target):
@@ -51,27 +57,28 @@ class KFACEstimator(SGDEstimator):
         loss_sample.backward(retain_graph=True)
         self.optim.acc_stats = False
 
-    def snap_online(self, model):
+    def snap_online0(self, model, data):
         self.optim.active = True
+        model.zero_grad()
+        loss, output = model.criterion(model, data, return_output=True)
+        self.snap_TCov(loss, output, data[1].cuda())
+        model.zero_grad()  # clear the gradient for computing true-fisher.
+        self.optim.active = False
+        return loss
+
+    def snap_online(self, model):
+        if self.snap_one:
+            return
         if self.niters % self.opt.kf_TCov == 0 or self.acc_stats_init:
             self.acc_stats_init = False
             data = next(self.data_iter)
-
-            model.zero_grad()
-            loss, output = model.criterion(model, data, return_output=True)
-            self.snap_TCov(loss, output, data[1].cuda())
-            model.zero_grad()  # clear the gradient for computing true-fisher.
-        self.optim.active = False
+            self.snap_online0(model, data)
 
     def snap_batch(self, model):
-        self.optim.active = True
+        if self.snap_one:
+            return
         if self.niters % self.optim.TInv == 0:
-            model.zero_grad()
-            data = next(self.data_iter)
-            loss = model.criterion(model, data)
-            loss.backward()
             self.optim.update_inv()
-        self.optim.active = False
 
     def get_precond_eigs(self, *args, **kwargs):
         self.optim.save = True

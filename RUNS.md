@@ -1,3 +1,9 @@
+## July 2
+kfac snap_one
+```
+CUDA_VISIBLE_DEVICES=1 ipython --pdb -m main.gvar -- --dataset cifar10 --arch smlp --epochs 10 --weight_decay 1e-4 --batch_size 512 --momentum 0.9 --gvar_estim_iter 2 --gvar_log_iter 100 --gvar_start 0 --g_epoch --lr 0.001 --kf_damping 0.01 --ntk_damping .01 --logger_name runs/X --optim kfac  --g_estim kface --ntk_divn --kf_stat_decay 0 --kf_no_kl_clip --kf_TCov 1 --kf_TInv 1 --kf_snap_one
+```
+
 ## May 6
 ```
 CUDA_VISIBLE_DEVICES=2 python main.py --dataset cifar10 --optimizer kfac --network resnet --depth 20  --epoch 100 --milestone 40,80 --learning_rate 0.01 --damping 0.03 --weight_decay 0.003 --batch_size 32

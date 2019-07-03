@@ -19,6 +19,7 @@ class KFACOptimizer(optim.Optimizer):
                  weight_decay=0,
                  TCov=10,
                  TInv=100,
+                 no_kl_clip=False,
                  batch_averaged=True):
         if lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
@@ -53,6 +54,7 @@ class KFACOptimizer(optim.Optimizer):
         self.kl_clip = kl_clip
         self.TCov = TCov
         self.TInv = TInv
+        self.no_kl_clip = no_kl_clip
 
         self.active = False
 
@@ -200,6 +202,8 @@ class KFACOptimizer(optim.Optimizer):
             if m.bias is not None:
                 vg_sum += (v[1] * m.bias.grad.data * lr ** 2).sum().item()
         nu = min(1.0, math.sqrt(self.kl_clip / vg_sum))
+        if self.no_kl_clip:
+            nu = 1.
 
         for m in self.modules:
             v = updates[m]
@@ -221,6 +225,8 @@ class KFACOptimizer(optim.Optimizer):
                 vg_sum += (v[1] * grad[curg] * lr ** 2).sum().item()
                 curg += 1
         nu = min(1.0, math.sqrt(self.kl_clip / vg_sum))
+        if self.no_kl_clip:
+            nu = 1.
 
         curg = 0
         for m in self.modules:
@@ -246,7 +252,9 @@ class KFACOptimizer(optim.Optimizer):
                 if p.grad is None:
                     continue
                 d_p = p.grad.data
-                if weight_decay != 0 and self.steps >= 20 * self.TCov:
+                extra_cond = (not self.snap_one
+                              and self.steps >= 20 * self.TCov)
+                if weight_decay != 0 and extra_cond:
                     d_p.add_(weight_decay, p.data)
                 if momentum != 0:
                     param_state = self.state[p]
@@ -300,5 +308,4 @@ class KFACOptimizer(optim.Optimizer):
 
     def update_inv(self):
         for m in self.modules:
-            if self.steps % self.TInv == 0:
-                self._update_inv(m)
+            self._update_inv(m)

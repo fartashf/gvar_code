@@ -17,9 +17,9 @@ def get_module(module):
 
 class Module(object):
     def __init__(
-            self, module, no_grad=False, no_act=False,
+            self, module, damping, no_grad=False, no_act=False,
             inactive_mods=[], active_only=[], name='',
-            debug=True, stable=100, *args, **kwargs):
+            debug=True, *args, **kwargs):
         self.module = module
         self.is_active = False
         self.no_grad = no_grad  # grad=1 => clustring in the input space
@@ -43,7 +43,7 @@ class Module(object):
                     not any(s in self.name for s in inactive_mods)))
         self.Ai0 = torch.Tensor(0)
         self.debug = debug
-        self.stable = stable
+        self.damping = damping
         self._register_hooks()
 
         # covariance matrices
@@ -92,13 +92,6 @@ class Module(object):
             # TODO: moving average
             self.AtA, self.GtG = self._compute_cov(Ai, Go)
 
-    def get_fisher(self):
-        raise Exception("do not use")
-        if not self.has_param:
-            return
-        # called after a backward
-        return self.batch_fisher
-
     def activate(self):
         self.is_active = True
 
@@ -106,6 +99,8 @@ class Module(object):
         self.is_active = False
 
     def update_inv(self):
+        if not self.has_param:
+            return
         eps = 1e-10
 
         self.d_a, self.Q_a = torch.symeig(self.AtA, eigenvectors=True)
@@ -114,9 +109,18 @@ class Module(object):
         self.d_a.mul_((self.d_a > eps).float())
         self.d_g.mul_((self.d_g > eps).float())
 
-    def get_natural_grad(self, grad, damping):
-        p_grad_mat = self._get_matrix_form_grad(grad)
+    def precond_inplace(self):
+        if not self.has_param:
+            return
+        p_grad_mat = self._get_matrix_from_grad()
+        nat_grad = self._get_natural_grad(p_grad_mat)
+        self._set_grad_from_matrix(nat_grad)
 
+    def precond_outplace(self, g):
+        raise NotImplementedError("recursive arguments")
+
+    def _get_natural_grad(self, p_grad_mat):
+        damping = self.damping
         v1 = self.Q_g.t() @ p_grad_mat @ self.Q_a
         v2 = v1 / (self.d_g.unsqueeze(1) *
                    self.d_a.unsqueeze(0) + damping)
@@ -129,15 +133,13 @@ class Module(object):
             v[1] = v[1].view(self.module.bias.size())
         else:
             v = [v.view(self.module.weight.size())]
+        return v
 
-        nat_grad = self._get_grad_from_matrix(v, grad)
-        return nat_grad
+    def _get_matrix_from_grad(self):
+        raise NotImplementedError("Implemented by sub-classes.")
 
-    def _get_matrix_form_grad(self, grad):
-        raise NotImplementedError()
-
-    def _get_grad_from_matrix(self, v, grad):
-        raise NotImplementedError()
+    def _set_grad_from_matrix(self, v):
+        raise NotImplementedError("Implemented by sub-classes.")
 
     def get_precond_eigs(self):
         if not self.has_param:
@@ -146,7 +148,7 @@ class Module(object):
             d_a = torch.symeig(self.AtA)[0]
             d_g = torch.symeig(self.GtG)[0]
             evals = torch.einsum('i,j->ij', d_g, d_a).flatten()
-        return evals
+        return [evals]
 
 
 class LoopFunction(object):
@@ -186,7 +188,8 @@ class Container(Module):
 
     def _set_default_loop(self):
         loop_functions = ['deactivate', 'activate',
-                          'update_inv']
+                          'update_inv', 'precond_inplace', 'get_precond_eigs',
+                          'precond_outplace']
         for fname in loop_functions:
             setattr(self, fname, LoopFunction(self, self.children, fname))
 
@@ -210,19 +213,24 @@ class Linear(Module):
 
         if self.has_bias:
             Ai = torch.cat([Ai, Ai.new(B, 1).fill_(1)], 1)
+            din += 1
         AtA = Ai.t() @ (Ai / B)
         GtG = Go.t() @ (Go * B)
         assert AtA.shape == (din, din), 'AtA: din x din'
         assert GtG.shape == (dout, dout), 'GtG: dout x dout'
         return AtA, GtG
 
-    def _get_matrix_form_grad(self, grad):
-        # TODO: inplace grad vs outplace
+    def _get_matrix_from_grad(self):
+        p_grad_mat = self.module.weight.grad
         if self.has_bias:
-            p_grad_mat = torch.cat([p_grad_mat])
+            p_grad_mat = torch.cat(
+                [p_grad_mat, self.module.bias.grad.view(-1, 1)], 1)
+        return p_grad_mat
 
-    def _get_grad_from_matrix(self, v, grad):
-        pass
+    def _set_grad_from_matrix(self, v):
+        self.module.weight.grad.copy_(v[0])
+        if self.has_bias:
+            self.module.bias.grad.copy_(v[1])
 
 
 class Conv2d(Module):

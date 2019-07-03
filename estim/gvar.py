@@ -11,6 +11,7 @@ from estim.kfac import KFACEstimator
 from estim.kfac_orig import KFACEstimatorOrig
 from estim.bf_fisher import BruteForceFisher, BruteForceFisherFull
 from estim.lanczos import LanczosEstimator
+from estim.kfac0 import KFACZeroEstimator
 
 import optim
 import optim.adamw
@@ -42,6 +43,9 @@ def init_estimator(g_estim, opm, data_loader, opt, tb_logger):
     elif g_estim == 'kfac' or g_estim == 'kface':
         empirical = g_estim == 'kface'
         gest = KFACEstimator(opm, empirical, data_loader, opt, tb_logger)
+    elif g_estim == 'kfac0' or g_estim == 'kfac0e':
+        empirical = g_estim == 'kfac0e'
+        gest = KFACZeroEstimator(empirical, data_loader, opt, tb_logger)
     elif g_estim == 'bffisher':
         gest = BruteForceFisher(data_loader, opt, tb_logger)
     elif g_estim == 'bffisherf':
@@ -81,7 +85,8 @@ def init_optim(optim_name, model, opt):
             kl_clip=opt.kf_kl_clip,
             weight_decay=opt.weight_decay,
             TCov=opt.kf_TCov,
-            TInv=opt.kf_TInv)
+            TInv=opt.kf_TInv,
+            no_kl_clip=opt.kf_no_kl_clip)
     elif optim_name == 'kfaco':
         optimizer = optim.kfac_orig.KFACOptimizerOrig(
             model,
