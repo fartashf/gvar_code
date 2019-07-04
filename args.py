@@ -267,6 +267,7 @@ def add_args():
     parser.add_argument('--kf_nogestim', action='store_true')
     parser.add_argument('--kf_no_kl_clip', action='store_true')
     parser.add_argument('--kf_snap_one', action='store_true')
+    parser.add_argument('--kf_no_indep', action='store_true')
     # NTK
     parser.add_argument('--ntk_damping', default=1e-3, type=float)
     parser.add_argument('--ntk_cpu', action='store_true')
@@ -323,6 +324,7 @@ def opt_to_kfac_kwargs(opt):
     return {'damping': opt.kf_damping,
             'active_only': active_only,
             'inactive_mods': inactive_mods,
+            'no_indep': opt.kf_no_indep,
             }
 
 

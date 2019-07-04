@@ -34,34 +34,35 @@ class BruteForceFisher(GradientEstimator):
         n = data[0].shape[0]
         loss0 = 0
         for i in range(n):
-            loss = model.criterion(model, (data[0][i:i+1], data[1][i:i+1]))
+            loss = model.criterion(model, (data[0][i:i+1], data[1][i:i+1]))/n
             with torch.no_grad():
                 loss0 += loss
             grad = torch.autograd.grad(loss, model.parameters())
             gf = torch.cat([g.flatten() for g in grad])
-            J += [gf]  # /math.sqrt(n)
+            J += [gf]
         self.J = torch.stack(J, dim=1)
         self.batch_size = n
 
-        g = self.J.mean(1)  # sum(1)
+        g = self.J.sum(1)
         # U, S, V = svdj(self.J, max_sweeps=100)
         U, S, V = torch.svd(self.J)
-        Si = S*S/self.batch_size+self.damping
+        Si = S*S*n+self.damping
         grad = U @ ((U.t() @ g) / Si)
         if in_place:
             curi = 0
             for p in model.parameters():
-                if p.grad is None:
-                    p.grad = torch.zeros_like(p)
-                p.grad.copy_(grad[curi:curi+p.numel()].view(p.shape))
-                curi += p.numel()
-            return loss0/n
+                if p.requires_grad:
+                    if p.grad is None:
+                        p.grad = torch.zeros_like(p)
+                    p.grad.copy_(grad[curi:curi+p.numel()].view(p.shape))
+                    curi += p.numel()
+            return loss0
         return grad
 
     def get_precond_eigs_nodata(self):
         S = svdj(self.J, max_sweeps=100)[1]
         # S = torch.svd(self.J)[1]
-        return S*S/self.batch_size
+        return S*S*self.batch_size
 
 
 class BruteForceFisherFull(GradientEstimator):

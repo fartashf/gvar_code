@@ -6,9 +6,12 @@ import logging
 from cusvd import svdj
 
 
-def get_module(module):
+def get_module(module, no_indep=False):
     module_name = module.__class__.__name__
-    glayers = {'Linear': Linear, 'Conv2d': Conv2d}
+    if not no_indep:
+        glayers = {'Linear': Linear, 'Conv2d': Conv2d}
+    else:
+        glayers = {'Linear': LinearNoIndep, 'Conv2d': Conv2d}
     if module_name in glayers:
         return glayers[module_name]
     if len(list(module.children())) > 0:
@@ -182,7 +185,7 @@ class Container(Module):
 
     def _init_children(self, *args, **kwargs):
         for name, m in self.active_modules:
-            glayer = get_module(m)
+            glayer = get_module(m, no_indep=kwargs['no_indep'])
             if glayer is not None:
                 kwargs['name'] = (
                         self.name+'.'
@@ -230,20 +233,52 @@ class Linear(Module):
                 [p_grad_mat, self.module.bias.grad.view(-1, 1)], 1)
         return p_grad_mat
 
+
+class LinearNoIndep(Linear):
+    def __init__(self, *args, **kwargs):
+        super(LinearNoIndep, self).__init__(*args, **kwargs)
+
+    def update_inv(self):
+        return
+
+    def _get_natural_grad(self, p_grad_mat):
+        eps = 1e-10
+        damping = self.damping
+
+        B = self.Ai.shape[0]
+        AtG = torch.einsum('bi,bo->boi', self.Ai/B, self.Go*B)
+        AtG = AtG.view(B, -1).contiguous()
+        U, S, V = svdj(AtG)
+        # U, S, V = torch.svd(AtG)
+        S.mul_((S > eps).float())
+        Si = S*S*B+damping
+        # Si = 1
+        v = V @ ((V.t() @ AtG.sum(0)) / Si)
+        din = self.Ai.shape[1]
+        v = v.view(self.dout, din)
+
+        if self.has_bias:
+            # we always put gradient w.r.t weight in [0]
+            # and w.r.t bias in [1]
+            v = [v[:, :-1], v[:, -1:]]
+            v[0] = v[0].view(self.module.weight.size())
+            v[1] = v[1].view(self.module.bias.size())
+        else:
+            v = [v.view(self.module.weight.size())]
+        return v
+
     def get_precond_eigs(self):
         if not self.has_param:
             return
         with torch.no_grad():
             ftype = 1
             if ftype == 1:
-                return super(Linear, self).get_precond_eigs()
-            elif ftype == 2:
                 B = self.Ai.shape[0]
                 AtG = torch.einsum('bi,bo->bio', self.Ai/B, self.Go*B)
                 AtG = AtG.view(B, -1).contiguous()
                 S = svdj(AtG)[1].flatten()
                 evals = S*S*B  # AtG = d(1/B sum l_i) / d W
-            elif ftype == 3:
+            elif ftype == 2:
                 d_a = torch.symeig(self.Ai.t() @ self.Ai)[0]
                 d_g = torch.symeig(self.Go.t() @ self.Go)[0]
                 evals = torch.einsum('i,o->io', d_g, d_a).flatten()
@@ -300,18 +335,19 @@ class Conv2d(Module):
                 [p_grad_mat, self.module.bias.grad.view(-1, 1)], 1)
         return p_grad_mat
 
+
+class Conv2dNoIndep(Conv2d):
+    def __init__(self, *args, **kwargs):
+        super(Conv2dNoIndep, self).__init__(*args, **kwargs)
+
     def get_precond_eigs(self):
         if not self.has_param:
             return
         with torch.no_grad():
-            ftype = 1
-            if ftype == 1:
-                return super(Conv2d, self).get_precond_eigs()
-            elif ftype == 2:
-                raise Exception('Check if spatial assumption is satisfied.')
-                B = self.Ai.shape[0]
-                AtG = torch.einsum('bit,bot->bio', self.Ai/B, self.Go*B)
-                AtG = AtG.view(B, -1).contiguous()
-                S = svdj(AtG)[1].flatten()
-                evals = S*S*B  # AtG = d(1/B sum l_i) / d W
+            raise Exception('Check if spatial assumption is satisfied.')
+            B = self.Ai.shape[0]
+            AtG = torch.einsum('bit,bot->bio', self.Ai/B, self.Go*B)
+            AtG = AtG.view(B, -1).contiguous()
+            S = svdj(AtG)[1].flatten()
+            evals = S*S*B  # AtG = d(1/B sum l_i) / d W
         return [evals]
