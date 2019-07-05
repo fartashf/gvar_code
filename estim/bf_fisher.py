@@ -1,5 +1,5 @@
 import torch
-# import math
+import math
 
 from .gestim import GradientEstimator
 
@@ -12,7 +12,8 @@ class BruteForceFisher(GradientEstimator):
         self.init_data_iter()
         self.J = None
         self.batch_size = None
-        self.damping = self.opt.ntk_damping
+        self.damping = self.opt.kf_damping
+        self.sqrt = self.opt.kf_sqrt
 
     def grad(self, model_new, in_place=False, data=None):
         """
@@ -46,7 +47,13 @@ class BruteForceFisher(GradientEstimator):
         g = self.J.sum(1)
         # U, S, V = svdj(self.J, max_sweeps=100)
         U, S, V = torch.svd(self.J)
-        Si = S*S*n+self.damping
+        # eps = 1e-10
+        # S.mul_((S > eps).float())
+        if self.sqrt:
+            Si = S*math.sqrt(n)
+        else:
+            Si = S*S*n
+        Si += self.damping
         grad = U @ ((U.t() @ g) / Si)
         if in_place:
             curi = 0

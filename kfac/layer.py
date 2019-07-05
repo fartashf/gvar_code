@@ -4,6 +4,7 @@ from collections import OrderedDict
 import numpy as np
 import logging
 from cusvd import svdj
+import math
 
 
 def get_module(module, no_indep=False):
@@ -21,7 +22,7 @@ def get_module(module, no_indep=False):
 
 class Module(object):
     def __init__(
-            self, module, damping, no_grad=False, no_act=False,
+            self, module, damping, sqrt=False, no_grad=False, no_act=False,
             inactive_mods=[], active_only=[], name='',
             debug=True, *args, **kwargs):
         self.module = module
@@ -48,6 +49,7 @@ class Module(object):
         self.Ai0 = torch.Tensor(0)
         self.debug = debug
         self.damping = damping
+        self.sqrt = sqrt
         self._register_hooks()
 
         # covariance matrices
@@ -127,8 +129,10 @@ class Module(object):
     def _get_natural_grad(self, p_grad_mat):
         damping = self.damping
         v1 = self.Q_g.t() @ p_grad_mat @ self.Q_a
-        v2 = v1 / (self.d_g.unsqueeze(1) *
-                   self.d_a.unsqueeze(0) + damping)
+        dgda = self.d_g.unsqueeze(1) * self.d_a.unsqueeze(0)
+        if self.sqrt:
+            dgda = dgda.sqrt()
+        v2 = v1 / (dgda + damping)
         v = self.Q_g @ v2 @ self.Q_a.t()
         if self.has_bias:
             # we always put gradient w.r.t weight in [0]
@@ -251,7 +255,11 @@ class LinearNoIndep(Linear):
         U, S, V = svdj(AtG)
         # U, S, V = torch.svd(AtG)
         S.mul_((S > eps).float())
-        Si = S*S*B+damping
+        if self.sqrt:
+            Si = S*math.sqrt(B)
+        else:
+            Si = S*S*B
+        Si += damping
         # Si = 1
         v = V @ ((V.t() @ AtG.sum(0)) / Si)
         din = self.Ai.shape[1]

@@ -13,7 +13,7 @@ from cusvd import svdj
 
 class NeuralTangentKernel(object):
     def __init__(self, model, damping=1e-3, debug=True, cpu=True,
-                 max_sweeps=100, divn=False, **kwargs):
+                 max_sweeps=100, divn=False, sqrt=False, **kwargs):
         self.model = model
         self.damping = damping
         self.debug = debug
@@ -21,6 +21,7 @@ class NeuralTangentKernel(object):
         self.cpu = cpu
         self.max_sweeps = max_sweeps
         self.divn = divn
+        self.sqrt = sqrt
 
     def activate(self):
         self.ntk.activate()
@@ -41,6 +42,8 @@ class NeuralTangentKernel(object):
             if not self.cpu:
                 U, S, V = svdj(K, max_sweeps=self.max_sweeps)
                 # self.S = S.clone()
+                if self.sqrt:
+                    S = S.sqrt()
                 Si = (1./(S+self.damping))
                 Ki = U @ Si.diag() @ V.t()
                 # self.Si = Si.clone()
