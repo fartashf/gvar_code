@@ -1,13 +1,5 @@
 import torch
 import ntk.layer
-# import numpy as np
-# import pycuda.autoinit  # NOQA
-# import pycuda.gpuarray as gpuarray
-# import skcuda
-# import skcuda.linalg
-# import sys
-# sys.path.append('/u/faghri/torch-batch-svd/')
-# from batch_svd import svdj  # batch_svd  # NOQA
 from cusvd import svdj
 
 
@@ -40,33 +32,51 @@ class NeuralTangentKernel(object):
         with torch.no_grad():
             K = self.get_kernel()
             if not self.cpu:
-                U, S, V = svdj(K, max_sweeps=self.max_sweeps)
-                # self.S = S.clone()
-                if self.sqrt:
-                    S = S.sqrt()
-                Si = (1./(S+self.damping))
-                Ki = U @ Si.diag() @ V.t()
-                # self.Si = Si.clone()
-                # K += self.damping*torch.eye(
-                #     K.shape[0], dtype=K.dtype, device=K.device)
-                # Ki = K.inverse().detach()
-                # skcuda.linalg.init()
-                # Ki = torch.Tensor(skcuda.linalg.inv(
-                #     gpuarray.to_gpu(K.cpu().numpy())).get())
-                # U, S, V = K.svd()
-                # Ki = U @ (1./(S+self.damping)).diag() @ V.t()
-                # S, V = K.symeig(eigenvectors=True)
-                # Ki = V @ (1./(S+self.damping)).diag() @ V.t()
-                # K += self.damping*torch.eye(
-                #     K.shape[0], dtype=K.dtype, device=K.device)
-                # Ki = torch.cholesky_inverse(torch.cholesky(K))
+                ftype = 1
+                if ftype == 1:
+                    U, S, V = svdj(K, max_sweeps=self.max_sweeps)
+                    # self.S = S.clone()
+                    if self.sqrt:
+                        S = S.sqrt()
+                    Si = (1./(S+self.damping))
+                    Ki = U @ Si.diag() @ V.t()
+                elif ftype == 2:
+                    self.Si = Si.clone()
+                    K += self.damping*torch.eye(
+                        K.shape[0], dtype=K.dtype, device=K.device)
+                    Ki = K.inverse().detach()
+                elif ftype == 3:
+                    import skcuda
+                    import skcuda.linalg
+                    import pycuda.autoinit  # NOQA
+                    import pycuda.gpuarray as gpuarray
+                    skcuda.linalg.init()
+                    Ki = torch.Tensor(skcuda.linalg.inv(
+                        gpuarray.to_gpu(K.cpu().numpy())).get())
+                elif ftype == 4:
+                    U, S, V = K.svd()
+                    Ki = U @ (1./(S+self.damping)).diag() @ V.t()
+                elif ftype == 5:
+                    S, V = K.symeig(eigenvectors=True)
+                    Ki = V @ (1./(S+self.damping)).diag() @ V.t()
+                elif ftype == 6:
+                    K += self.damping*torch.eye(
+                        K.shape[0], dtype=K.dtype, device=K.device)
+                    Ki = torch.cholesky_inverse(torch.cholesky(K))
             else:
-                K += self.damping*torch.eye(
-                    K.shape[0], dtype=K.dtype, device=K.device)
-                Ki = K.cpu().inverse().detach()
-                # Ki = torch.Tensor(np.linalg.inv(K.cpu().numpy()))
-                # Ki = torch.Tensor(scipy.linalg.inv(K.cpu().numpy()))
-                # U, S, V = K.cpu().svd()
-                # Ki = U @ (1./(S+self.damping)).diag() @ V.t()
+                ftype = 1
+                if ftype == 1:
+                    K += self.damping*torch.eye(
+                        K.shape[0], dtype=K.dtype, device=K.device)
+                    Ki = K.cpu().inverse().detach()
+                elif ftype == 2:
+                    import numpy as np
+                    Ki = torch.Tensor(np.linalg.inv(K.cpu().numpy()))
+                elif ftype == 3:
+                    import scipy
+                    Ki = torch.Tensor(scipy.linalg.inv(K.cpu().numpy()))
+                elif ftype == 4:
+                    U, S, V = K.cpu().svd()
+                    Ki = U @ (1./(S+self.damping)).diag() @ V.t()
             # self.Ki = Ki.clone()
         return Ki.cuda(), S.clone()
