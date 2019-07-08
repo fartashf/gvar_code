@@ -112,6 +112,8 @@ class Module(object):
 
         self.d_a, self.Q_a = torch.symeig(self.AtA, eigenvectors=True)
         self.d_g, self.Q_g = torch.symeig(self.GtG, eigenvectors=True)
+        # self.Q_a, self.d_a = svdj(self.AtA)[:2]
+        # self.Q_g, self.d_g = svdj(self.GtG)[:2]
 
         self.d_a.mul_((self.d_a > eps).float())
         self.d_g.mul_((self.d_g > eps).float())
@@ -157,6 +159,8 @@ class Module(object):
             return
         d_a = torch.symeig(self.AtA)[0]
         d_g = torch.symeig(self.GtG)[0]
+        # d_a = svdj(self.AtA)[1]
+        # d_g = svdj(self.GtG)[1]
         evals = torch.einsum('i,o->io', d_g, d_a).flatten()
         return [evals]
 

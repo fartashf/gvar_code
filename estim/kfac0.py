@@ -28,12 +28,11 @@ class KFACZeroEstimator(GradientEstimator):
         loss = self.snap_TCov(model, data)
         self.kfac.deactivate()
         self.kfac.update_inv()
-        loss.backward(retain_graph=True)
         # data = next(self.data_iter)
         # loss = model.criterion(model, data)
 
         if in_place:
-            # loss.backward()
+            loss.backward()
             self.kfac.precond_inplace()
             return loss
         g = torch.autograd.grad(loss, model.parameters())
