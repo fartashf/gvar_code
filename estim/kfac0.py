@@ -24,9 +24,7 @@ class KFACZeroEstimator(GradientEstimator):
         if data is None:
             data = next(self.data_iter)
 
-        self.kfac.activate()
         loss = self.snap_TCov(model, data)
-        self.kfac.deactivate()
         self.kfac.update_inv()
         # data = next(self.data_iter)
         # loss = model.criterion(model, data)
@@ -43,6 +41,7 @@ class KFACZeroEstimator(GradientEstimator):
         return torch.cat(self.kfac.get_precond_eigs())
 
     def snap_TCov(self, model, data):
+        self.kfac.activate()
         model.zero_grad()
         loss, output = model.criterion(model, data, return_output=True)
         target = data[1].cuda()
@@ -55,4 +54,5 @@ class KFACZeroEstimator(GradientEstimator):
         loss_sample = F.nll_loss(output, sampled_y, reduction='mean')
         loss_sample.backward(retain_graph=True)
         model.zero_grad()  # clear the gradient for computing true-fisher.
+        self.kfac.deactivate()
         return loss

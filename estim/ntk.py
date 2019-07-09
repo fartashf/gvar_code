@@ -1,6 +1,7 @@
 import torch
 import torch.nn
 import torch.multiprocessing
+import torch.nn.functional as F
 
 from args import opt_to_ntk_kwargs
 from .gestim import GradientEstimator
@@ -10,13 +11,14 @@ from cusvd import svdj
 
 
 class NeuralTangentKernelEstimator(GradientEstimator):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, empirical=False, *args, **kwargs):
         super(NeuralTangentKernelEstimator, self).__init__(*args, **kwargs)
         self.init_data_iter()
         self.ntk = None
         self.Ki = None
         self.S = None
         self.divn = self.opt.ntk_divn
+        self.empirical = empirical
 
     def grad(self, model_new, in_place=False, data=None):
         model = model_new
@@ -27,25 +29,37 @@ class NeuralTangentKernelEstimator(GradientEstimator):
         if data is None:
             data = next(self.data_iter)
 
-        self.ntk.activate()
-        loss = model.criterion(model, data, reduction='none')
-        # loss0 = loss.mean()
-        loss0 = loss.sum()
-        loss0.backward(retain_graph=True)
-        Ki, self.S = self.ntk.get_kernel_inverse()
+        loss0, Ki = self.snap_K(model, data)
         self.Ki = Ki
-        self.ntk.deactivate()
 
         # optim
         model.zero_grad()
         n = data[0].shape[0]
-        loss_ntk = Ki.sum(0) @ loss/n
+        loss_ntk = Ki.sum(0) @ loss0/n
 
         if in_place:
             loss_ntk.backward()
-            return loss0/n
+            return loss0.mean()
         g = torch.autograd.grad(loss_ntk, model.parameters())
         return g
+
+    def snap_K(self, model, data):
+        self.ntk.activate()
+        loss0, output = model.criterion(model, data, reduction='none',
+                                        return_output=True)
+        target = data[1].cuda()
+        with torch.no_grad():
+            if self.empirical:
+                sampled_y = target
+            else:
+                probs = torch.nn.functional.softmax(output, dim=1)
+                sampled_y = torch.multinomial(probs, 1).squeeze()
+        loss_sample = F.nll_loss(output, sampled_y, reduction='none').sum()
+        loss_sample.backward(retain_graph=True)
+
+        Ki, self.S = self.ntk.get_kernel_inverse()
+        self.ntk.deactivate()
+        return loss0, Ki
 
     def get_precond_eigs_nodata(self):
         return self.S

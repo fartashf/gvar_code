@@ -34,8 +34,10 @@ def init_estimator(g_estim, opm, data_loader, opt, tb_logger):
         gest = SVRGEstimator(data_loader, opt, tb_logger)
     elif g_estim == 'sgd':
         gest = SGDEstimator(data_loader, opt, tb_logger)
-    elif g_estim == 'ntk':
-        gest = NeuralTangentKernelEstimator(data_loader, opt, tb_logger)
+    elif g_estim == 'ntk' or g_estim == 'ntke':
+        empirical = g_estim == 'ntke'
+        gest = NeuralTangentKernelEstimator(
+            empirical, data_loader, opt, tb_logger)
     elif g_estim == 'ntkf':
         gest = NeuralTangentKernelFull(data_loader, opt, tb_logger)
     elif g_estim == 'kfaco':
