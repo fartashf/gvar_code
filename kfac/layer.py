@@ -250,6 +250,8 @@ class LinearNoIndep(Linear):
         return
 
     def _get_natural_grad(self, p_grad_mat):
+        # return [p_grad_mat[:, :-1].view(self.module.weight.size()),
+        #         p_grad_mat[:, -1:].view(self.module.bias.size())]
         eps = 1e-10
         damping = self.damping
 
@@ -265,7 +267,7 @@ class LinearNoIndep(Linear):
             Si = S*S*B
         Si += damping
         # Si = 1
-        v = V @ ((V.t() @ AtG.sum(0)) / Si)
+        v = V @ ((V.t() @ p_grad_mat.view(-1)) / Si)  # BUG: AtG.sum(0)
         din = self.Ai.shape[1]
         v = v.view(self.dout, din)
 
@@ -289,6 +291,7 @@ class LinearNoIndep(Linear):
                 AtG = torch.einsum('bi,bo->bio', self.Ai/B, self.Go*B)
                 AtG = AtG.view(B, -1).contiguous()
                 S = svdj(AtG)[1].flatten()
+                # S = torch.svd(AtG)[1].flatten()
                 evals = S*S*B  # AtG = d(1/B sum l_i) / d W
             elif ftype == 2:
                 d_a = torch.symeig(self.Ai.t() @ self.Ai)[0]
