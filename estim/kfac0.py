@@ -9,17 +9,18 @@ import kfac.layer
 
 
 class KFACZeroEstimator(GradientEstimator):
-    def __init__(self, empirical=False, *args, **kwargs):
+    def __init__(self, g_estim='kfac0', empirical=False, *args, **kwargs):
         super(KFACZeroEstimator, self).__init__(*args, **kwargs)
         self.init_data_iter()
         self.kfac = None
         self.empirical = empirical
+        self.g_estim = g_estim
 
     def grad(self, model_new, in_place=False, data=None):
         model = model_new
         if self.kfac is None:
             self.kfac = kfac.layer.Container(
-                model, **opt_to_kfac_kwargs(self.opt))
+                model, **opt_to_kfac_kwargs(self.opt, self.g_estim))
 
         if data is None:
             data = next(self.data_iter)

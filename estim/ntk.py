@@ -44,6 +44,7 @@ class NeuralTangentKernelEstimator(GradientEstimator):
         return g
 
     def snap_K(self, model, data):
+        model.zero_grad()
         self.ntk.activate()
         loss0, output = model.criterion(model, data, reduction='none',
                                         return_output=True)
@@ -59,6 +60,7 @@ class NeuralTangentKernelEstimator(GradientEstimator):
 
         Ki, self.S = self.ntk.get_kernel_inverse()
         self.ntk.deactivate()
+        model.zero_grad()
         return loss0, Ki
 
     def get_precond_eigs_nodata(self):

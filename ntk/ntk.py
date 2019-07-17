@@ -5,7 +5,8 @@ from cusvd import svdj
 
 class NeuralTangentKernel(object):
     def __init__(self, model, damping=1e-3, debug=True, cpu=True,
-                 max_sweeps=100, divn=False, sqrt=False, **kwargs):
+                 max_sweeps=100, divn=False, sqrt=False,
+                 damping_type=0, **kwargs):
         self.model = model
         self.damping = damping
         self.debug = debug
@@ -14,6 +15,7 @@ class NeuralTangentKernel(object):
         self.max_sweeps = max_sweeps
         self.divn = divn
         self.sqrt = sqrt
+        self.damping_type = damping_type
 
     def activate(self):
         self.ntk.activate()
@@ -38,7 +40,20 @@ class NeuralTangentKernel(object):
                     # self.S = S.clone()
                     if self.sqrt:
                         S = S.sqrt()
-                    Si = (1./(S+self.damping))
+                    if self.damping_type == 0:
+                        Si = 1./(S+self.damping)
+                    elif self.damping_type == 1:
+                        Si = 1./S.clamp(self.damping)
+                    elif self.damping_type == 2:
+                        Si = 1/S.clamp(self.damping)
+                        Si[S < self.damping] = 0
+                    elif self.damping_type == 3:
+                        Si = 1/S.clamp(self.damping)
+                        Si[S < self.damping] = 1
+                    elif self.damping_type == 4:
+                        damping = torch.sort(S)[-int(self.damping)]
+                        Si = 1/S.clamp(damping)
+                        Si[S < damping] = 1
                     Ki = U @ Si.diag() @ V.t()
                 elif ftype == 2:
                     self.Si = Si.clone()

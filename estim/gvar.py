@@ -34,8 +34,8 @@ def init_estimator(g_estim, opm, data_loader, opt, tb_logger):
         gest = SVRGEstimator(data_loader, opt, tb_logger)
     elif g_estim == 'sgd':
         gest = SGDEstimator(data_loader, opt, tb_logger)
-    elif g_estim == 'ntk' or g_estim == 'ntke':
-        empirical = g_estim == 'ntke'
+    elif 'ntk' in g_estim:
+        empirical = 'e' in g_estim
         gest = NeuralTangentKernelEstimator(
             empirical, data_loader, opt, tb_logger)
     elif g_estim == 'ntkf':
@@ -45,9 +45,10 @@ def init_estimator(g_estim, opm, data_loader, opt, tb_logger):
     elif g_estim == 'kfac' or g_estim == 'kface':
         empirical = g_estim == 'kface'
         gest = KFACEstimator(opm, empirical, data_loader, opt, tb_logger)
-    elif g_estim == 'kfac0' or g_estim == 'kfac0e':
-        empirical = g_estim == 'kfac0e'
-        gest = KFACZeroEstimator(empirical, data_loader, opt, tb_logger)
+    elif 'kfac0' in g_estim:
+        empirical = 'e' in g_estim
+        gest = KFACZeroEstimator(
+            g_estim, empirical, data_loader, opt, tb_logger)
     elif g_estim == 'bffisher':
         gest = BruteForceFisher(data_loader, opt, tb_logger)
     elif g_estim == 'bffisherf':

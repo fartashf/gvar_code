@@ -257,6 +257,7 @@ def add_args():
     parser.add_argument('--niters',
                         default=argparse.SUPPRESS, type=int)
     parser.add_argument('--log_eigs', action='store_true')
+    parser.add_argument('--one_batch', action='store_true')
     # KFAC
     parser.add_argument('--kf_stat_decay', default=0.95, type=float)
     parser.add_argument('--kf_damping', default=1e-3, type=float)
@@ -275,6 +276,7 @@ def add_args():
     parser.add_argument('--ntk_sweeps', default=100, type=int)
     parser.add_argument('--ntk_divn', action='store_true')
     parser.add_argument('--ntk_sqrt', action='store_true')
+    parser.add_argument('--ntk_damp_t', default=0, type=int)
     # Untrain
     parser.add_argument('--untrain_steps', default=0, type=int)
     parser.add_argument('--untrain_lr', default=0.001, type=float)
@@ -319,15 +321,16 @@ def opt_to_ntk_kwargs(opt):
             }
 
 
-def opt_to_kfac_kwargs(opt):
+def opt_to_kfac_kwargs(opt, g_estim):
     active_only = (list(opt.g_active_only.split(','))
                    if opt.g_active_only != '' else [])
     inactive_mods = (list(opt.g_inactive_mods.split(','))
                      if opt.g_inactive_mods != '' else [])
+    no_indep = 'n' in g_estim
     return {'damping': opt.kf_damping,
             'active_only': active_only,
             'inactive_mods': inactive_mods,
-            'no_indep': opt.kf_no_indep,
+            'no_indep': no_indep,
             'sqrt': opt.kf_sqrt,
             }
 

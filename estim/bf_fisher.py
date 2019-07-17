@@ -45,8 +45,8 @@ class BruteForceFisher(GradientEstimator):
         self.batch_size = n
 
         g = self.J.sum(1)
-        # U, S, V = svdj(self.J, max_sweeps=100)
-        U, S, V = torch.svd(self.J)
+        U, S, V = svdj(self.J, max_sweeps=100)
+        # U, S, V = torch.svd(self.J)
         # eps = 1e-10
         # S.mul_((S > eps).float())
         if self.sqrt:

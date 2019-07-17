@@ -204,7 +204,7 @@ def cifar10_cnn(args):
     gvar_args = [
         ('gvar_estim_iter', 5),  # , 10),  # default
         ('gvar_log_iter', 200),  # 100),  # default
-        ('gvar_start', 0),
+        ('gvar_start', 10000),  # 0
         # ('g_bsnap_iter', 1),
         # ('g_optim', ''),
         # ('g_optim_start', 0),  # [0, 10, 20]),
@@ -213,7 +213,7 @@ def cifar10_cnn(args):
     args_sgd = [('g_estim', ['sgd']),
                 ('optim', 'sgd'),
                 # ('lr', [.01, .02, .05, .1]),
-                ('lr', 0.02),
+                ('lr', [0.05, 0.02]),
                 ]
     args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
@@ -227,32 +227,35 @@ def cifar10_cnn(args):
     #              ]
     # args += [OrderedDict(shared_args+gvar_args+args_kfac)]
 
-    args_kfac = [('optim', ['kfac']),
-                 ('g_estim', ['kfac']),
-                 # ('lr', [.01, 0.005]),
-                 ('lr', 0.005),
-                 # ('kf_damping',  [0.01, 0.05, 0.1]),  # [0.05, 0.1, 0.3]),
-                 ('kf_damping',  0.05),
-                 ('kf_stat_decay', 0),
-                 ]
-    args += [OrderedDict(shared_args+gvar_args+args_kfac)]
+    # args_kfac = [('optim', ['kfac']),
+    #              ('g_estim', ['kfac']),
+    #              # ('lr', [.01, 0.005]),
+    #              ('lr', 0.005),
+    #              # ('kf_damping',  [0.01, 0.05, 0.1]),  # [0.05, 0.1, 0.3]),
+    #              ('kf_damping',  0.05),
+    #              ('kf_stat_decay', 0),
+    #              ]
+    # args += [OrderedDict(shared_args+gvar_args+args_kfac)]
 
     args_ntk = [('optim', 'sgd'),
                 ('g_estim', ['ntk']),
-                # ('lr', [.01, 0.005]),
-                ('lr', 0.005),
-                # ('ntk_damping',  [0.01, 0.05, 0.1]),  # [0.3, 0.5, 1.]),
-                ('ntk_damping',  0.05),
+                # ('lr', [.01, .005, .002, .001, .0005]),
+                # ('ntk_damping',  [0.1, 0.05, 0.02, 0.01]),
+                # ('lr', [.1, .05, .02, .01, .005]),
+                # ('ntk_damping',  [.5, .2, 0.1, 0.05, 0.02, 0.01]),
+                ('lr', [.1, .2, .5, .01, .02, .05]),
+                ('ntk_damping', [1., 2., 5.]),
+                # ('ntk_damping',  0.05),
                 ('ntk_divn', ''),
                 ]
     args += [OrderedDict(shared_args+gvar_args+args_ntk)]
 
     jobs_0 = ['bolt3_gpu0', 'bolt3_gpu1', 'bolt3_gpu2',
-              'bolt2_gpu0', 'bolt2_gpu1', 'bolt2_gpu2', 'bolt2_gpu3',
+              'bolt2_gpu0', 'bolt2_gpu1', 'bolt2_gpu2',   # 'bolt2_gpu3',
               'bolt1_gpu3', 'bolt1_gpu2',
               'bolt1_gpu0', 'bolt1_gpu1'
               ]
-    njobs = [1]*7 + [2]*2 + [0, 2]
+    njobs = [3]*3 + [4]*3 + [3]*4
     return args, log_dir, module_name, exclude, jobs_0, njobs
 
 
@@ -361,3 +364,73 @@ def cifar10_eigs(args):
     args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
     return args, log_dir, module_name, exclude
+
+
+def cifar10_mlp(args):
+    dataset = 'cifar10'
+    module_name = 'main.gvar'
+    log_dir = 'runs_%s_ntk_ssmlp_one_batch' % dataset
+    exclude = ['dataset', 'epochs',
+               'g_epoch', 'lr_decay_epoch', 'gvar_log_iter', 'niters']
+    shared_args = [('dataset', dataset),
+                   ('arch', 'ssmlp'),  # cnn
+                   # ('epochs', [
+                   #     (200, OrderedDict([('lr_decay_epoch', '100,150')])),
+                   # ]),
+                   ('epochs', 20),
+                   ('weight_decay', 0),  # [0, 1e-4]),
+                   ('batch_size', 512),  # 128, 1024, 128),
+                   ('momentum', 0.9),
+                   # ('nodropout', ''),
+                   ('one_batch', ''),
+                   ]
+    gvar_args = [
+        ('gvar_estim_iter', 5),  # , 10),  # default
+        ('gvar_log_iter', 200),  # 100),  # default
+        ('gvar_start', 10000),  # 0
+        # ('g_bsnap_iter', 1),
+        # ('g_optim', ''),
+        # ('g_optim_start', 0),  # [0, 10, 20]),
+        ('g_epoch', ''),
+    ]
+    # args_sgd = [('g_estim', ['sgd']),
+    #             ('optim', 'sgd'),
+    #             # ('lr', [.01, .02, .05, .1]),
+    #             # ('lr', [0.05, 0.02]),
+    #             ('lr', [0.02, 0.05]),
+    #             ]
+    # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
+
+    # args_kfac = [('optim', ['kfac']),
+    #              ('g_estim', ['kfac']),
+    #              # ('lr', [.01, 0.005]),
+    #              ('lr', 0.005),
+    #              # ('kf_damping',  [0.01, 0.05, 0.1]),  # [0.05, 0.1, 0.3]),
+    #              ('kf_damping',  0.05),
+    #              ('kf_stat_decay', 0),
+    #              ]
+    # args += [OrderedDict(shared_args+gvar_args+args_kfac)]
+
+    # args_ntk = [('optim', 'sgd'),
+    #             ('g_estim', ['ntk']),
+    #             ('lr', [0.005, 0.01, 0.02, 0.05]),
+    #             ('ntk_damping',  [1., 0.5, 0.1, 0.05]),
+    #             ('ntk_divn', ''),
+    #             ]
+    # args += [OrderedDict(shared_args+gvar_args+args_ntk)]
+
+    args_kfac = [('optim', ['sgd']),
+                 ('g_estim', ['kfac0']),
+                 ('lr', [0.005, 0.01, 0.02, 0.05]),
+                 ('kf_damping',  [1., 0.5, 0.1, 0.05]),
+                 ('kf_no_indep', ''),
+                 ]
+    args += [OrderedDict(shared_args+gvar_args+args_kfac)]
+
+    jobs_0 = ['bolt3_gpu0', 'bolt3_gpu1', 'bolt3_gpu2',
+              'bolt2_gpu0', 'bolt2_gpu1', 'bolt2_gpu2',   # 'bolt2_gpu3',
+              'bolt1_gpu3', 'bolt1_gpu2',
+              'bolt1_gpu0', 'bolt1_gpu1'
+              ]
+    njobs = [3]*3 + [4]*3 + [3]*4
+    return args, log_dir, module_name, exclude, jobs_0, njobs
