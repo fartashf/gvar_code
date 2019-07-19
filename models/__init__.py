@@ -3,6 +3,7 @@ import torch.nn
 import models.mnist
 import models.cifar10
 import models.logreg
+import models.linreg
 import models.imagenet
 import models.cifar10_wresnet
 import models.cifar10_wresnet2
@@ -64,11 +65,15 @@ def init_model(opt):
         model = models.logreg.Linear(opt.dim, opt.num_class)
     elif opt.dataset == '5class':
         model = models.logreg.Linear(opt.dim, opt.num_class)
+    elif opt.dataset == 'linreg':
+        model = models.linreg.Linear(opt.dim, opt.num_class)
 
     if (opt.optim == 'kfac' or opt.optim == 'ekfac') and opt.kf_nogestim:
         model.criterion = models.loss.KFACNLL()
+    elif opt.dataset == 'linreg':
+        model.criterion = models.loss.MSELoss()
     else:
-        model.criterion = models.loss.nll_loss
+        model.criterion = models.loss.NLLLoss()
     if opt.cuda:
         model.cuda()
 

@@ -22,6 +22,8 @@ def get_loaders(opt):
         return get_logreg_loaders(opt)
     elif 'class' in opt.dataset:
         return get_logreg_loaders(opt)
+    elif opt.dataset == 'linreg':
+        return get_linreg_loaders(opt)
 
 
 def dataset_to_loaders(train_dataset, test_dataset, opt):
@@ -201,9 +203,9 @@ def get_cifar10_loaders(opt):
 def get_cifar100_loaders(opt):
     normalize, transform = get_cifar10_100_transform(opt)
 
-    train_dataset = datasets.CIFAR100(root=opt.data, train=True,
-                                     transform=transforms.Compose(transform),
-                                     download=True)
+    train_dataset = datasets.CIFAR100(
+        root=opt.data, train=True,
+        transform=transforms.Compose(transform), download=True)
     test_dataset = datasets.CIFAR100(
         root=opt.data, train=False, download=True,
         transform=transforms.Compose([
@@ -296,14 +298,14 @@ class DMomSampler(Sampler):
 
     def __iter__(self):
         if self.training:
-            I = self.scheduler.next_epoch()
-            self.indices = I
-            return (I[i] for i in torch.randperm(len(I)))
+            II = self.scheduler.next_epoch()
+            self.indices = II
+            return (II[i] for i in torch.randperm(len(II)))
         return iter(torch.randperm(self.num_samples))
 
     def update(self):
         # self.scheduler.schedule()
-        raise NotImplemented("Should not be called.")
+        raise NotImplementedError("Should not be called.")
 
     def __len__(self):
         if self.training:
@@ -329,14 +331,14 @@ class DelayedSampler(Sampler):
     def __iter__(self):
         if self.training:
             self.indices = np.where(self.count == 0)[0]
-            I = self.indices
+            II = self.indices
             # return (self.indices[i]
             #         for i in torch.randperm(len(self.indices)))
             if self.opt.sampler_repetition:
-                W = self.weights[I]
-                I = [np.ones(int(w), dtype=int)*i for i, w in zip(I, W)]
-                I = np.concatenate(I)
-            return (I[i] for i in torch.randperm(len(I)))
+                W = self.weights[II]
+                II = [np.ones(int(w), dtype=int)*i for i, w in zip(II, W)]
+                II = np.concatenate(II)
+            return (II[i] for i in torch.randperm(len(II)))
         return iter(torch.randperm(self.num_samples))
 
     def update(self, optimizer):
@@ -500,8 +502,8 @@ class DelayedSampler(Sampler):
             self.count = np.maximum(0, self.count - 1)
         if self.opt.sampler_repetition:
             weights = np.ones_like(self.weights)
-            I = np.where(self.count == 0)[0]
-            self.visits[I] += self.weights[I]
+            II = np.where(self.count == 0)[0]
+            self.visits[II] += self.weights[II]
         else:
             weights = self.weights
             self.visits[np.where(self.count == 0)[0]] += 1
@@ -539,8 +541,8 @@ class MinVarSampler(Sampler):
     def __iter__(self):
         if self.training:
             self.indices = np.where(self.count == 0)[0]
-            I = self.indices
-            return (I[i] for i in torch.randperm(len(I)))
+            II = self.indices
+            return (II[i] for i in torch.randperm(len(II)))
         return iter(torch.randperm(self.num_samples))
 
     def update(self, optimizer):
@@ -591,8 +593,8 @@ class InfiniteLoader(object):
             data = next(self.data_iter)
         except StopIteration:
             if isinstance(self.data_loader, list):
-                I = self.data_loader
-                self.data_iter = (I[i] for i in torch.randperm(len(I)))
+                II = self.data_loader
+                self.data_iter = (II[i] for i in torch.randperm(len(II)))
             else:
                 self.data_iter = iter(self.data_loader)
             data = next(self.data_iter)
@@ -639,13 +641,13 @@ class GlusterSampler(Sampler):
 
         I0 = []
         for i in range(assign_i.max()+1):
-            I = list(np.where(assign_i.flat == i)[0])
-            if len(I) >= 1:
-                self.cluster_size[len(self.iters)] = len(I)
-                self.assign_i[I] = len(self.iters)
-                self.iters += [iter(InfiniteLoader(I))]
+            II = list(np.where(assign_i.flat == i)[0])
+            if len(II) >= 1:
+                self.cluster_size[len(self.iters)] = len(II)
+                self.assign_i[II] = len(self.iters)
+                self.iters += [iter(InfiniteLoader(II))]
             else:
-                I0 += I
+                I0 += II
         C = len(self.iters)
         if len(I0) > 0:
             self.cluster_size[C] = len(I0)
@@ -727,7 +729,7 @@ def random_orthogonal_matrix(gain, shape):
     return np.asarray(gain * q, dtype=np.float)
 
 
-class LinearDataset(data.Dataset):
+class LinearClassificationDataset(data.Dataset):
 
     def __init__(self, C, D, num, dim, num_class, train=True):
         X = np.zeros((C.shape[0], num))
@@ -758,12 +760,58 @@ def get_logreg_loaders(opt, **kwargs):
     D = opt.d_const * random_orthogonal_matrix(
         1.0, (opt.dim, opt.dim, opt.num_class))
     # print("Create train")
-    train_dataset = LinearDataset(C, D, opt.num_train_data, opt.dim,
-                                  opt.num_class, train=True)
+    train_dataset = LinearClassificationDataset(
+        C, D, opt.num_train_data, opt.dim, opt.num_class, train=True)
     # print("Create test")
-    test_dataset = LinearDataset(C, D,
-                                 opt.num_test_data, opt.dim, opt.num_class,
-                                 train=False)
+    test_dataset = LinearClassificationDataset(
+        C, D, opt.num_test_data, opt.dim, opt.num_class, train=False)
+    torch.save((train_dataset.X, train_dataset.Y,
+                test_dataset.X, test_dataset.Y,
+                C), opt.logger_name + '/data.pth.tar')
+
+    return dataset_to_loaders(train_dataset, test_dataset, opt)
+
+
+class LinearRegressionDataset(data.Dataset):
+
+    def __init__(self, C, D, num, dim, num_class, train=True):
+        X = np.zeros((dim, num))
+        Y = np.zeros((num_class, num))
+        for i in range(num_class):
+            n = num // num_class
+            e = np.random.normal(0.0, 1.0, (dim, n))
+            # X[:, i * n:(i + 1) * n] = np.dot(D[:, :, i], e) + C[:, i:i + 1]
+            X[:, i * n:(i + 1) * n] = D * e + C
+            e = np.random.normal(0.0, .1, (num_class, n))
+            Y[:, i * n:(i + 1) * n] = i + e  # i + e
+        self.X = X
+        self.Y = Y
+        self.classes = range(num_class)
+
+    def __getitem__(self, index):
+        X = torch.Tensor(self.X[:, index]).float()
+        Y = torch.Tensor(self.Y[:, index]).float()
+        return X, Y
+
+    def __len__(self):
+        return self.X.shape[1]
+
+
+def get_linreg_loaders(opt, **kwargs):
+    # np.random.seed(1234)
+    np.random.seed(2222)
+    # print("Create W")
+    # C = opt.c_const * random_orthogonal_matrix(1.0, (opt.dim, opt.num_class))
+    # D = opt.d_const * random_orthogonal_matrix(
+    #     1.0, (opt.dim, opt.dim, opt.num_class))
+    # print("Create train")
+    C = opt.c_const
+    D = opt.d_const
+    train_dataset = LinearRegressionDataset(
+        C, D, opt.num_train_data, opt.dim, opt.num_class, train=True)
+    # print("Create test")
+    test_dataset = LinearRegressionDataset(
+        C, D, opt.num_test_data, opt.dim, opt.num_class, train=False)
     torch.save((train_dataset.X, train_dataset.Y,
                 test_dataset.X, test_dataset.Y,
                 C), opt.logger_name + '/data.pth.tar')

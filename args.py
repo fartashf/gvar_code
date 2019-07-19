@@ -258,6 +258,12 @@ def add_args():
                         default=argparse.SUPPRESS, type=int)
     parser.add_argument('--log_eigs', action='store_true')
     parser.add_argument('--one_batch', action='store_true')
+    parser.add_argument('--num_train_data',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--num_test_data',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--dim',
+                        default=argparse.SUPPRESS, type=int)
     # KFAC
     parser.add_argument('--kf_stat_decay', default=0.95, type=float)
     parser.add_argument('--kf_damping', default=1e-3, type=float)

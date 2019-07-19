@@ -1,7 +1,6 @@
 import torch
 import torch.nn
 import torch.multiprocessing
-import torch.nn.functional as F
 
 from args import opt_to_ntk_kwargs
 from .gestim import GradientEstimator
@@ -49,13 +48,8 @@ class NeuralTangentKernelEstimator(GradientEstimator):
         loss0, output = model.criterion(model, data, reduction='none',
                                         return_output=True)
         target = data[1].cuda()
-        with torch.no_grad():
-            if self.empirical:
-                sampled_y = target
-            else:
-                probs = torch.nn.functional.softmax(output, dim=1)
-                sampled_y = torch.multinomial(probs, 1).squeeze()
-        loss_sample = F.nll_loss(output, sampled_y, reduction='none').sum()
+        loss_sample = model.criterion.loss_sample(
+            output, target, self.empirical).sum()
         loss_sample.backward(retain_graph=True)
 
         Ki, self.S = self.ntk.get_kernel_inverse()
