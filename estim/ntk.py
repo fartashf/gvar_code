@@ -10,7 +10,8 @@ from cusvd import svdj
 
 
 class NeuralTangentKernelEstimator(GradientEstimator):
-    def __init__(self, empirical=False, *args, **kwargs):
+    def __init__(self, empirical=False,
+                 n_samples=1, *args, **kwargs):
         super(NeuralTangentKernelEstimator, self).__init__(*args, **kwargs)
         self.init_data_iter()
         self.ntk = None
@@ -18,6 +19,7 @@ class NeuralTangentKernelEstimator(GradientEstimator):
         self.S = None
         self.divn = self.opt.ntk_divn
         self.empirical = empirical
+        self.n_samples = n_samples
 
     def grad(self, model_new, in_place=False, data=None):
         model = model_new
@@ -48,8 +50,13 @@ class NeuralTangentKernelEstimator(GradientEstimator):
         loss0, output = model.criterion(model, data, reduction='none',
                                         return_output=True)
         target = data[1].cuda()
-        loss_sample = model.criterion.loss_sample(
-            output, target, self.empirical).sum()
+        S = self.n_samples
+        loss_sample = 0
+        for i in range(S):
+            loss_sample += model.criterion.loss_sample(
+                output, target, self.empirical)
+        loss_sample /= S
+        loss_sample = loss_sample.sum()
         loss_sample.backward(retain_graph=True)
 
         Ki, self.S = self.ntk.get_kernel_inverse()

@@ -37,7 +37,7 @@ def init_estimator(g_estim, opm, data_loader, opt, tb_logger):
     elif 'ntk' in g_estim:
         empirical = 'e' in g_estim
         gest = NeuralTangentKernelEstimator(
-            empirical, data_loader, opt, tb_logger)
+            empirical, opt.ntk_nsamples, data_loader, opt, tb_logger)
     elif g_estim == 'ntkf':
         gest = NeuralTangentKernelFull(data_loader, opt, tb_logger)
     elif g_estim == 'kfaco':
@@ -48,7 +48,7 @@ def init_estimator(g_estim, opm, data_loader, opt, tb_logger):
     elif 'kfac0' in g_estim:
         empirical = 'e' in g_estim
         gest = KFACZeroEstimator(
-            g_estim, empirical, data_loader, opt, tb_logger)
+            g_estim, empirical, opt.kf_nsamples, data_loader, opt, tb_logger)
     elif g_estim == 'bffisher':
         gest = BruteForceFisher(data_loader, opt, tb_logger)
     elif g_estim == 'bffisherf':

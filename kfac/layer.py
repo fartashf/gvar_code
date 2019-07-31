@@ -112,6 +112,7 @@ class Module(object):
 
         self.d_a, self.Q_a = torch.symeig(self.AtA, eigenvectors=True)
         self.d_g, self.Q_g = torch.symeig(self.GtG, eigenvectors=True)
+        # self.d_a[:-512] = 0
         # self.Q_a, self.d_a = svdj(self.AtA)[:2]
         # self.Q_g, self.d_g = svdj(self.GtG)[:2]
 
@@ -249,24 +250,39 @@ class LinearNoIndep(Linear):
     def update_inv(self):
         return
 
+    def _compute_cov(self, Ai, Go):
+        # print(Go)
+        # import ipdb; ipdb.set_trace()
+        B = self.Ai.shape[0]
+        AtG = torch.einsum('bi,bo->boi', Ai/B, Go*B)
+        AtG = AtG.view(B, -1).contiguous()
+        self.AtG = AtG
+        return None, None
+
     def _get_natural_grad(self, p_grad_mat):
         # return [p_grad_mat[:, :-1].view(self.module.weight.size()),
         #         p_grad_mat[:, -1:].view(self.module.bias.size())]
         eps = 1e-10
         damping = self.damping
-
         B = self.Ai.shape[0]
-        AtG = torch.einsum('bi,bo->boi', self.Ai/B, self.Go*B)
-        AtG = AtG.view(B, -1).contiguous()
-        U, S, V = svdj(AtG)
-        # U, S, V = torch.svd(AtG)
-        S.mul_((S > eps).float())
-        if self.sqrt:
-            Si = S*math.sqrt(B)
-        else:
-            Si = S*S*B
-        Si += damping
-        # Si = 1
+
+        AtG = self.AtG
+
+        ftype = 1
+        if ftype == 1:
+            U, S, V = svdj(AtG)
+            # U, S, V = torch.svd(AtG)
+            S.mul_((S > eps).float())
+            if self.sqrt:
+                Si = S*math.sqrt(B)
+            else:
+                Si = S*S*B
+            Si += damping
+            # Si = 1
+        elif ftype == 2:
+            U, S, V = svdj(AtG.t() @ AtG)
+            S.mul_((S > eps).float())
+            Si = S*B+damping
         v = V @ ((V.t() @ p_grad_mat.view(-1)) / Si)  # BUG: AtG.sum(0)
         din = self.Ai.shape[1]
         v = v.view(self.dout, din)

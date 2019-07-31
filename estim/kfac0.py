@@ -1,6 +1,7 @@
 import torch
 import torch.nn
 import torch.multiprocessing
+import numpy as np
 
 from args import opt_to_kfac_kwargs
 from .gestim import GradientEstimator
@@ -8,12 +9,14 @@ import kfac.layer
 
 
 class KFACZeroEstimator(GradientEstimator):
-    def __init__(self, g_estim='kfac0', empirical=False, *args, **kwargs):
+    def __init__(self, g_estim='kfac0', empirical=False,
+                 n_samples=1, *args, **kwargs):
         super(KFACZeroEstimator, self).__init__(*args, **kwargs)
         self.init_data_iter()
         self.kfac = None
         self.empirical = empirical
         self.g_estim = g_estim
+        self.n_samples = n_samples
 
     def grad(self, model_new, in_place=False, data=None):
         model = model_new
@@ -45,9 +48,33 @@ class KFACZeroEstimator(GradientEstimator):
         model.zero_grad()
         loss, output = model.criterion(model, data, return_output=True)
         target = data[1].cuda()
-        loss_sample = model.criterion.loss_sample(
-            output, target, self.empirical).mean()
-        loss_sample.backward(retain_graph=True)
+        ftype = 3
+        if ftype == 1:
+            # Original kfac code
+            loss_sample = model.criterion.loss_sample(
+                output, target, self.empirical)
+            loss_sample = loss_sample.mean()
+            loss_sample.backward(retain_graph=True)
+        elif ftype == 2:
+            loss_sample = 0
+            S = self.n_samples
+            for i in range(S):
+                loss_sample += model.criterion.loss_sample(
+                    output, target, self.empirical)
+            loss_sample /= S
+            loss_sample = loss_sample.mean()
+            loss_sample.backward(retain_graph=True)
+        elif ftype == 3:
+            # sampled
+            F_L, Q_F = model.criterion.fisher(output, self.n_samples)
+            # per example fisher of the loss
+            output = torch.einsum('bo,bop->bp', output, Q_F)
+            output = output.mean()
+            output.backward(retain_graph=True)
+        elif ftype == 4:
+            # identity, only for MSE sum()
+            output = output.sum()/np.sqrt(output.shape[0])
+            output.backward(retain_graph=True)
         model.zero_grad()  # clear the gradient for computing true-fisher.
         self.kfac.deactivate()
         return loss

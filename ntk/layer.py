@@ -170,6 +170,8 @@ class Linear(Module):
         return GoG
 
     def _linear_dot_type2(self, Ai, Go):
+        print(Go)
+        import ipdb; ipdb.set_trace()
         din = Ai.shape[1]
         dout = Go.shape[1]
         AiAi = Ai @ Ai.t()/(din+dout)
