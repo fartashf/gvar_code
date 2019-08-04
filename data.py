@@ -782,8 +782,8 @@ class LinearRegressionDataset(data.Dataset):
             e = np.random.normal(0.0, 1.0, (dim, n))
             # X[:, i * n:(i + 1) * n] = np.dot(D[:, :, i], e) + C[:, i:i + 1]
             X[:, i * n:(i + 1) * n] = D * e + C
-            e = np.random.normal(0.0, .1, (num_class, n))
-            Y[:, i * n:(i + 1) * n] = i/num_class*10 + e  # i + e
+            e = np.random.normal(0.0, 10, (num_class, n))
+            Y[:, i * n:(i + 1) * n] = i/num_class*0 + e  # i + e
         self.X = X
         self.Y = Y
         self.classes = range(num_class)

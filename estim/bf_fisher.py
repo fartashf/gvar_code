@@ -7,13 +7,14 @@ from cusvd import svdj
 
 
 class BruteForceFisher(GradientEstimator):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, n_samples=1, *args, **kwargs):
         super(BruteForceFisher, self).__init__(*args, **kwargs)
         self.init_data_iter()
         self.J = None
         self.batch_size = None
         self.damping = self.opt.kf_damping
         self.sqrt = self.opt.kf_sqrt
+        self.n_samples = n_samples
 
     def grad(self, model_new, in_place=False, data=None):
         """
@@ -32,20 +33,34 @@ class BruteForceFisher(GradientEstimator):
             data = next(self.data_iter)
 
         J = []
+        F = []
         n = data[0].shape[0]
         loss0 = 0
         for i in range(n):
-            loss = model.criterion(model, (data[0][i:i+1], data[1][i:i+1]))/n
+            loss, output = model.criterion(
+                model, (data[0][i:i+1], data[1][i:i+1]), return_output=True)
+            loss /= n
+            F_L, Q_L = model.criterion.fisher(output, self.n_samples)
+            # per example fisher of the loss
+            output = torch.einsum('bo,bop->bp', output, Q_L)
+            output = output.sum(1)  # indep of O dim
+            output /= n
+            fgrad = torch.autograd.grad(
+                output, model.parameters(), retain_graph=True)
+            ff = torch.cat([g.flatten() for g in fgrad])
+            F += [ff]
             with torch.no_grad():
                 loss0 += loss
             grad = torch.autograd.grad(loss, model.parameters())
             gf = torch.cat([g.flatten() for g in grad])
             J += [gf]
         self.J = torch.stack(J, dim=1)
+        self.F = torch.stack(F, dim=1)
         self.batch_size = n
 
         g = self.J.sum(1)
-        U, S, V = svdj(self.J, max_sweeps=100)
+        # U, S, V = svdj(self.J, max_sweeps=100)
+        U, S, V = svdj(self.F, max_sweeps=100)
         # U, S, V = torch.svd(self.J)
         # eps = 1e-10
         # S.mul_((S > eps).float())

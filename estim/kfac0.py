@@ -66,10 +66,10 @@ class KFACZeroEstimator(GradientEstimator):
             loss_sample.backward(retain_graph=True)
         elif ftype == 3:
             # sampled
-            F_L, Q_F = model.criterion.fisher(output, self.n_samples)
+            F_L, Q_L = model.criterion.fisher(output, self.n_samples)
             # per example fisher of the loss
-            output = torch.einsum('bo,bop->bp', output, Q_F)
-            output = output.mean()
+            output = torch.einsum('bo,bop->bp', output, Q_L)
+            output = output.sum(1).mean(0)  # indep of O dim
             output.backward(retain_graph=True)
         elif ftype == 4:
             # identity, only for MSE sum()

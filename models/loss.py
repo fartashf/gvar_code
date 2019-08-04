@@ -90,14 +90,14 @@ class MSELoss(Loss):
             ograd = torch.autograd.grad(loss_sample, [output])[0]
             F_L += torch.einsum('bo,bp->bop', ograd, ograd)
         F_L /= n_samples
-        Q_F = []
+        Q_L = []
         eps = 1e-7
         for i in range(F_L.shape[0]):
             U, S, V = svdj(F_L[i])
             assert all(S+eps > 0), 'S has negative elements'
-            Q_F += [U @ (S+eps).sqrt().diag()]
-        Q_F = torch.stack(Q_F)
-        return F_L, Q_F
+            Q_L += [U @ (S+eps).sqrt().diag()]
+        Q_L = torch.stack(Q_L)
+        return F_L, Q_L
 
     def fisher_fast(self, output, n_samples=-1):
         raise NotImplementedError("")

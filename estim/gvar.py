@@ -50,7 +50,7 @@ def init_estimator(g_estim, opm, data_loader, opt, tb_logger):
         gest = KFACZeroEstimator(
             g_estim, empirical, opt.kf_nsamples, data_loader, opt, tb_logger)
     elif g_estim == 'bffisher':
-        gest = BruteForceFisher(data_loader, opt, tb_logger)
+        gest = BruteForceFisher(opt.kf_nsamples, data_loader, opt, tb_logger)
     elif g_estim == 'bffisherf':
         gest = BruteForceFisherFull(data_loader, opt, tb_logger)
     elif g_estim == 'lanczos':
