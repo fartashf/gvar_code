@@ -722,6 +722,7 @@ def random_orthogonal_matrix(gain, shape):
 
     flat_shape = (shape[0], np.prod(shape[1:]))
     a = np.random.normal(0.0, 1.0, flat_shape)
+    return a.reshape(shape)
     u, _, v = np.linalg.svd(a, full_matrices=False)
     # pick the one with the correct shape
     q = u if u.shape == flat_shape else v
@@ -782,7 +783,7 @@ class LinearRegressionDataset(data.Dataset):
             e = np.random.normal(0.0, 1.0, (dim, n))
             # X[:, i * n:(i + 1) * n] = np.dot(D[:, :, i], e) + C[:, i:i + 1]
             X[:, i * n:(i + 1) * n] = D * e + C
-            e = np.random.normal(0.0, 10, (num_class, n))
+            e = np.random.normal(0.0, .1, (num_class, n))
             Y[:, i * n:(i + 1) * n] = i/num_class*0 + e  # i + e
         self.X = X
         self.Y = Y

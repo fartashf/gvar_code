@@ -73,7 +73,8 @@ def init_model(opt):
     elif opt.dataset == 'linreg':
         model.criterion = models.loss.MSELoss()
     else:
-        model.criterion = models.loss.NLLLoss()
+        # model.criterion = models.loss.NLLLoss()
+        model.criterion = models.loss.CELoss()
     if opt.cuda:
         model.cuda()
 

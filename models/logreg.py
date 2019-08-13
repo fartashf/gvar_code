@@ -9,7 +9,8 @@ class Linear(nn.Module):
 
     def forward(self, x):
         x = self.linear(x)
-        return F.log_softmax(x, dim=-1)
+        # return F.log_softmax(x, dim=-1)
+        return x
 
 
 class TwoLinear(nn.Module):
@@ -21,4 +22,5 @@ class TwoLinear(nn.Module):
     def forward(self, x):
         x = F.relu(self.linear1(x))
         x = self.linear2(x)
-        return F.log_softmax(x, dim=-1)
+        # return F.log_softmax(x, dim=-1)
+        return x

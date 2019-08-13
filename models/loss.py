@@ -15,9 +15,45 @@ class Loss(object):
             return loss, output
         return loss
 
+    def loss_sample(self, output, target, empirical=False):
+        with torch.no_grad():
+            if empirical:
+                sampled_y = target
+            else:
+                sampled_y = self.sample_y(output)
+        loss_sample = self.loss(output, sampled_y, reduction='none')
+        return loss_sample
+
+    def E_f(self, f, output, n_samples=-1):
+        if n_samples == -1:
+            return self.fisher_exact(output)
+
+    def fisher(self, output, n_samples=-1):
+        if n_samples == -1:
+            return self.fisher_exact(output)
+        F_L = 0
+        output = output.detach()
+        output.requires_grad = True
+        for i in range(n_samples):
+            sampled_y = self.sample_y(output)
+            loss_sample = self.loss(output, sampled_y, reduction='none')
+            loss_sample = loss_sample.sum()
+            ograd = torch.autograd.grad(loss_sample, [output])[0]
+            F_L += torch.einsum('bo,bp->bop', ograd, ograd)
+        F_L /= n_samples
+        Q_L = []
+        eps = 1e-7
+        for i in range(F_L.shape[0]):
+            U, S, V = svdj(F_L[i])
+            assert all(S+eps > 0), 'S has negative elements'
+            Q_L += [U @ (S+eps).sqrt().diag()]
+        Q_L = torch.stack(Q_L)
+        return F_L, Q_L
+
 
 class NLLLoss(Loss):
     def __init__(self):
+        raise Exception("use CELoss")
         self.loss = F.nll_loss
         self.do_accuracy = True
 
@@ -46,6 +82,35 @@ class NLLLoss(Loss):
         return F_L
 
 
+class CELoss(Loss):
+    def __init__(self):
+        self.loss = F.cross_entropy
+        self.do_accuracy = True
+
+    def sample_y(self, output):
+        with torch.no_grad():
+            probs = F.softmax(output, dim=-1)
+            sampled_y = torch.multinomial(probs, 1).squeeze(-1)
+        return sampled_y
+
+    def fisher_exact(self, s):
+        sisj = torch.einsum('bo,bp->bop', s, s)
+        d = torch.einsum(
+            'bo,op->bop',
+            s,
+            torch.eye(s.shape[1], dtype=s.dtype, device=s.device))
+        F_L = d - sisj
+        # TODO: analytical expression for Q_L
+        Q_L = []
+        eps = 1e-7
+        for b in range(s.shape[0]):
+            U, S, V = svdj(F_L[b])
+            assert all(S+eps > 0), 'S has negative elements'
+            Q_L += [U @ (S+eps).sqrt().diag()]
+        Q_L = torch.stack(Q_L)
+        return F_L, Q_L
+
+
 class MSELoss(Loss):
     def __init__(self):
         # self.loss = F.mse_loss
@@ -57,69 +122,23 @@ class MSELoss(Loss):
             reduction = kwargs['reduction']
         kwargs['reduction'] = 'none'
 
-        ret = F.mse_loss(*args, **kwargs)
+        ret = 0.5 * F.mse_loss(*args, **kwargs)
         # TODO: what is the prob dist for this loss?
         if reduction == 'mean':
             return ret.sum(1).mean(0)  # ret.mean(1).mean(0)
         return ret.sum(1)  # ret.mean(1)
 
-    def loss_sample(self, output, target, empirical=False):
-        with torch.no_grad():
-            if empirical:
-                sampled_y = target
-            else:
-                sampled_y = torch.normal(output, torch.ones_like(output))
-        loss_sample = self.loss(output, sampled_y, reduction='none')
-        return loss_sample
-
-    def fisher(self, output, n_samples=-1):
-        if n_samples == -1:
-            F_L = torch.eye(output.shape[1], dtype=output.dtype,
-                            device=output.device)
-            F_L = F_L.unsqueeze(0).expand(output.shape + (output.shape[1],))
-            Q_L = F_L
-            return F_L, Q_L
-        F_L = 0
-        output = output.detach()
-        output.requires_grad = True
-        for i in range(n_samples):
-            with torch.no_grad():  # Watch out for other loss functions
-                sampled_y = torch.normal(output, torch.ones_like(output))
-            loss_sample = 0.5 * self.loss(output, sampled_y, reduction='none')
-            loss_sample = loss_sample.sum()
-            ograd = torch.autograd.grad(loss_sample, [output])[0]
-            F_L += torch.einsum('bo,bp->bop', ograd, ograd)
-        F_L /= n_samples
-        Q_L = []
-        eps = 1e-7
-        for i in range(F_L.shape[0]):
-            U, S, V = svdj(F_L[i])
-            assert all(S+eps > 0), 'S has negative elements'
-            Q_L += [U @ (S+eps).sqrt().diag()]
-        Q_L = torch.stack(Q_L)
-        return F_L, Q_L
-
-    def fisher_fast(self, output, n_samples=-1):
-        raise NotImplementedError("")
-        output = output.detach()
-        output.requires_grad = True
+    def sample_y(self, output):
         with torch.no_grad():  # Watch out for other loss functions
-            sampled_y = torch.normal(
-                output, torch.ones_like(output), n_samples)
-        loss_sample = self.loss(
-            output.unsqueeze(1), sampled_y, reduction='none')
-        loss_sample = loss_sample.sum()
-        ograd = torch.autograd.grad(loss_sample, [output])[0]
-        F_L = torch.einsum('bo,bp->bop', ograd, ograd)
-        F_L /= n_samples
-        Q_F = []
-        eps = 1e-7
-        for i in range(F_L.shape[0]):
-            U, S, V = svdj(F_L[i])
-            assert all(S+eps > 0), 'S has negative elements'
-            Q_F += [U @ (S+eps).sqrt().diag()]
-        Q_F = torch.stack(Q_F)
-        return F_L, Q_F
+            sampled_y = torch.normal(output, torch.ones_like(output))
+        return sampled_y
+
+    def fisher_exact(self, output):
+        F_L = torch.eye(output.shape[1], dtype=output.dtype,
+                        device=output.device)
+        F_L = F_L.unsqueeze(0).expand(output.shape + (output.shape[1],))
+        Q_L = F_L
+        return F_L, Q_L
 
 
 class KFACNLL(object):

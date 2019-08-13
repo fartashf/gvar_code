@@ -43,12 +43,13 @@ class BruteForceFisher(GradientEstimator):
             F_L, Q_L = model.criterion.fisher(output, self.n_samples)
             # per example fisher of the loss
             output = torch.einsum('bo,bop->bp', output, Q_L)
-            output = output.sum(1)  # indep of O dim
+            # output = output.sum(1)  # indep of O dim
             output /= n
-            fgrad = torch.autograd.grad(
-                output, model.parameters(), retain_graph=True)
-            ff = torch.cat([g.flatten() for g in fgrad])
-            F += [ff]
+            for j in range(output.shape[1]):
+                fgrad = torch.autograd.grad(
+                    output[:, j], model.parameters(), retain_graph=True)
+                ff = torch.cat([g.flatten() for g in fgrad])
+                F += [ff]
             with torch.no_grad():
                 loss0 += loss
             grad = torch.autograd.grad(loss, model.parameters())
@@ -61,6 +62,7 @@ class BruteForceFisher(GradientEstimator):
         g = self.J.sum(1)
         # U, S, V = svdj(self.J, max_sweeps=100)
         U, S, V = svdj(self.F, max_sweeps=100)
+        # U, S, V = torch.svd(self.F)
         # U, S, V = torch.svd(self.J)
         # eps = 1e-10
         # S.mul_((S > eps).float())

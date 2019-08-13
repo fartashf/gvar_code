@@ -94,7 +94,8 @@ class Wide_ResNet(nn.Module):
         out = self.linear(out)
 
         # return out
-        return F.log_softmax(out, dim=-1)
+        # return F.log_softmax(out, dim=-1)
+        return x
 
 
 if __name__ == '__main__':

@@ -28,4 +28,5 @@ class Model(nn.Module):
 
     def forward(self, x):
         out = self.model(x)
-        return F.log_softmax(out, dim=-1)
+        # return F.log_softmax(out, dim=-1)
+        return out

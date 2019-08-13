@@ -126,7 +126,8 @@ class ResNet(nn.Module):
         out = F.avg_pool2d(out, out.size()[3])
         out = out.view(out.size(0), -1)
         out = self.linear(out)
-        return F.log_softmax(out, dim=-1)
+        # return F.log_softmax(out, dim=-1)
+        return out
 
 
 def resnet8(num_class=10):
@@ -199,7 +200,8 @@ class Convnet(nn.Module):
         if self.dropout:
             x = F.dropout(x, training=self.training)
         x = self.fc2(x)
-        return F.log_softmax(x, dim=-1)
+        # return F.log_softmax(x, dim=-1)
+        return x
 
 
 class MLP(nn.Module):
@@ -228,7 +230,8 @@ class MLP(nn.Module):
         if self.dropout:
             x = F.dropout(x, training=self.training)
         x = self.fc4(x)
-        return F.log_softmax(x, dim=-1)
+        # return F.log_softmax(x, dim=-1)
+        return x
 
 
 class SmallMLP(nn.Module):
@@ -247,7 +250,8 @@ class SmallMLP(nn.Module):
             x = F.dropout(x, training=self.training, p=0.2)
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
-        return F.log_softmax(x, dim=-1)
+        # return F.log_softmax(x, dim=-1)
+        return x
 
 
 class MoreSmallMLP(nn.Module):
@@ -266,7 +270,8 @@ class MoreSmallMLP(nn.Module):
             x = F.dropout(x, training=self.training, p=0.2)
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
-        return F.log_softmax(x, dim=-1)
+        # return F.log_softmax(x, dim=-1)
+        return x
 
 
 class SuperSmallMLP(nn.Module):
@@ -280,7 +285,8 @@ class SuperSmallMLP(nn.Module):
     def forward(self, x):
         x = x.view(-1, 3*32*32)
         x = self.fc1(x)
-        return F.log_softmax(x, dim=-1)
+        # return F.log_softmax(x, dim=-1)
+        return x
 
 
 class SmallCNN(nn.Module):
@@ -311,7 +317,8 @@ class SmallCNN(nn.Module):
         # if self.dropout:
         #     x = F.dropout(x, training=self.training)
         # x = self.fc2(x)
-        return F.log_softmax(x, dim=-1)
+        # return F.log_softmax(x, dim=-1)
+        return x
 
 
 class SuperSmallCNN(nn.Module):
@@ -342,7 +349,8 @@ class SuperSmallCNN(nn.Module):
         # if self.dropout:
         #     x = F.dropout(x, training=self.training)
         # x = self.fc2(x)
-        return F.log_softmax(x, dim=-1)
+        # return F.log_softmax(x, dim=-1)
+        return x
 
 
 class LP(nn.Module):
@@ -357,7 +365,8 @@ class LP(nn.Module):
     def forward(self, x):
         x = x.view(-1, 3*32*32)
         x = F.relu(self.fc1(x))
-        return F.log_softmax(x, dim=-1)
+        # return F.log_softmax(x, dim=-1)
+        return x
 
 
 if __name__ == "__main__":
