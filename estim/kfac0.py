@@ -48,7 +48,7 @@ class KFACZeroEstimator(GradientEstimator):
         model.zero_grad()
         loss, output = model.criterion(model, data, return_output=True)
         target = data[1].cuda()
-        ftype = 3
+        ftype = 1
         if ftype == 1:
             # Original kfac code
             loss_sample = model.criterion.loss_sample(
@@ -69,8 +69,11 @@ class KFACZeroEstimator(GradientEstimator):
             F_L, Q_L = model.criterion.fisher(output, self.n_samples)
             # per example fisher of the loss
             output = torch.einsum('bo,bop->bp', output, Q_L)
-            output = output.sum(1).mean(0)  # indep of O dim
-            output.backward(retain_graph=True)
+            # output = output.sum(1).mean(0)  # indep of O dim
+            # output.backward(retain_graph=True)
+            # TODO: needs a backward that handles multi-dimensional output
+            # but it doesn't compute the derivatives wrt params, only calls
+            # hooks recursively
         elif ftype == 4:
             # identity, only for MSE sum()
             output = output.sum()/np.sqrt(output.shape[0])
