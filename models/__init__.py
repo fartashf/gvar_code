@@ -43,9 +43,11 @@ def init_model(opt):
         model = torch.nn.DataParallel(model)
     elif opt.dataset == 'imagenet':
         model = models.imagenet.Model(opt.arch, opt.pretrained,
-                                      half_trained=opt.half_trained)
+                                      half_trained=opt.half_trained,
+                                      no_parallel=opt.nuq_parallel != 'no')
     elif opt.dataset.startswith('imagenet'):
-        model = models.imagenet.Model(opt.arch, opt.pretrained, opt.num_class)
+        model = models.imagenet.Model(opt.arch, opt.pretrained, opt.num_class,
+                                      no_parallel=opt.nuq_parallel != 'no')
     elif opt.dataset == 'logreg':
         model = models.logreg.Linear(opt.dim, opt.num_class)
     elif opt.dataset == '10class':

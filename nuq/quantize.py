@@ -128,6 +128,7 @@ class QuantizeSingleBucket(object):
         NUQSGD: qdqL2 + levels_exp
         QSGD-inf: qdqLinf + levels_uni
         """
+        self.method = method
         if method == 'q':
             self.levels = get_uniform_levels(bits)
             self.qdq = qdqL2
@@ -168,6 +169,7 @@ class QuantizeMultiBucket(object):
         NUQSGD: qdqL2 + levels_exp
         QSGD-inf: qdqLinf + levels_uni
         """
+        self.method = method
         if method == 'q':
             self.levels = get_uniform_levels(bits)
             self.norm_type = 'fro'
@@ -177,6 +179,8 @@ class QuantizeMultiBucket(object):
         elif method == 'qinf':
             self.levels = get_uniform_levels(bits)
             self.norm_type = float('inf')
+        elif method == 'none':
+            return
 
         self.bucket_size = bucket_size
         self.bits = bits
@@ -184,6 +188,8 @@ class QuantizeMultiBucket(object):
         self.qdq = QDQ(bucket_size, self.levels)
 
     def quantize(self, x):
+        if self.method == 'none':
+            return x
         assert isinstance(x, torch.cuda.FloatTensor)
         bucket_size = self.bucket_size
 

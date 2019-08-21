@@ -6,7 +6,7 @@ import torchvision.models
 
 class Model(nn.Module):
     def __init__(self, arch, pretrained=False, nclass=None,
-                 half_trained=False):
+                 half_trained=False, no_parallel=False):
         super(Model, self).__init__()
         model = torchvision.models.__dict__[arch](pretrained)
         if half_trained:
@@ -14,10 +14,11 @@ class Model(nn.Module):
             sd = dict((k.replace('module.', ''), v)
                       for k, v in checkpoint['state_dict'].items())
             model.load_state_dict(sd)
-        if arch.startswith('alexnet') or arch.startswith('vgg'):
-            model.features = torch.nn.DataParallel(model.features)
-        else:
-            model = torch.nn.DataParallel(model)
+        if not no_parallel:
+            if arch.startswith('alexnet') or arch.startswith('vgg'):
+                model.features = torch.nn.DataParallel(model.features)
+            else:
+                model = torch.nn.DataParallel(model)
         if nclass is not None and nclass != model.module.fc.out_features:
             if arch.startswith('resnet'):
                 model.module.fc = nn.Linear(model.module.fc.in_features,

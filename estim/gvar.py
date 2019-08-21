@@ -7,6 +7,8 @@ from estim.gluster import GlusterOnlineEstimator, GlusterBatchEstimator
 from estim.svrg import SVRGEstimator
 from estim.ntk import NTKEstimator
 from estim.nuq import NUQEstimator
+from estim.nuq import NUQEstimatorSingleGPUParallel
+from estim.nuq import NUQEstimatorMultiGPUParallel
 
 
 class MinVarianceGradient(object):
@@ -28,7 +30,14 @@ class MinVarianceGradient(object):
         elif opt.g_estim == 'ntk':
             gest = NTKEstimator(data_loader, opt, tb_logger)
         elif opt.g_estim == 'nuq':
-            gest = NUQEstimator(data_loader, opt, tb_logger)
+            if opt.nuq_parallel == 'no':
+                gest = NUQEstimator(data_loader, opt, tb_logger)
+            elif opt.nuq_parallel == 'gpu1':
+                gest = NUQEstimatorSingleGPUParallel(
+                    data_loader, opt, tb_logger)
+            else:
+                gest = NUQEstimatorMultiGPUParallel(
+                    data_loader, opt, tb_logger)
         self.sgd = sgd
         self.gest = gest
         self.opt = opt
