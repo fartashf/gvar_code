@@ -72,6 +72,8 @@ def init_model(opt):
         model.criterion = models.loss.KFACNLL()
     elif opt.dataset == 'linreg':
         model.criterion = models.loss.MSELoss()
+    elif opt.l2_fisher:
+        model.criterion = models.loss.CELossL2Fisher()
     else:
         # model.criterion = models.loss.NLLLoss()
         model.criterion = models.loss.CELoss()

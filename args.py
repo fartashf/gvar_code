@@ -277,6 +277,7 @@ def add_args():
     parser.add_argument('--kf_no_indep', action='store_true')
     parser.add_argument('--kf_sqrt', action='store_true')
     parser.add_argument('--kf_nsamples', default=1, type=int)
+    parser.add_argument('--l2_fisher', action='store_true')
     # NTK
     parser.add_argument('--ntk_damping', default=1e-3, type=float)
     parser.add_argument('--ntk_cpu', action='store_true')
