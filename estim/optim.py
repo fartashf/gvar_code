@@ -74,6 +74,7 @@ class OptimizerFactory(object):
                 TInv=opt.kf_TInv)
             model.criterion.optim = optimizer
         self.optimizer = optimizer
+        self.gvar.gest.optimizer = optimizer  # TODO: refactor
         if self.param_groups is not None:
             self.optimizer.param_groups = self.param_groups
         else:

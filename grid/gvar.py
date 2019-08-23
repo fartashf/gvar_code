@@ -1739,6 +1739,82 @@ def cifar10_gvar_kfac(args):
     return args, log_dir, module_name, exclude
 
 
+def cifar10_svrg_clip(args):
+    dataset = 'cifar10'
+    module_name = 'main.gvar'
+    log_dir = 'runs_%s_svrg_clip' % dataset
+    exclude = ['dataset', 'epochs', 'weight_decay',
+               'g_epoch', 'resume', 'ckpt_name', 'lr_decay_epoch',
+               'gvar_log_iter', 'gvar_start', 'g_debug', 'g_bsnap_iter',
+               'niters', 'g_osnap_iter', 'g_beta', 'g_min_size', 'g_init_mul',
+               'g_reinit_iter']
+    # epoch_iters = 390
+    shared_args = [('dataset', dataset),
+                   # ('arch', 'resnet32'),
+                   # ('arch', 'resnet20'),
+                   # ('arch', 'resnet56'),
+                   ('arch', 'resnet8'),
+                   # ('epochs', [
+                   #     (200, OrderedDict([('lr_decay_epoch', '100,150')])),
+                   # ]),
+                   ('niters', 20000),  # 80000),
+                   ('lr_decay_epoch', '40000,60000'),
+                   # ('lr', 0.1),
+                   ('weight_decay', 1e-4),
+                   ('gvar_log_iter', 200),
+                   # ('batch_size', [128, 256]),  # [128, 64]),
+                   # ('batch_size', [32, 128, 1024]),
+                   ]
+    gvar_args = [
+                  # ('gvar_estim_iter', 10),  # default
+                  # ('gvar_log_iter', 100),  # default
+                  # ('gvar_start', 101),
+                  # ('g_bsnap_iter', 1),
+                  # ('g_optim', ''),
+                  # ('g_optim_start', 101),
+                  ('g_epoch', ''),
+                  ('gvar_start', 0),
+                  ('g_bsnap_iter', 2),
+                  # ('g_optim_start', [5, 10, 20]),
+                  ]
+    # args_sgd = [('g_estim', ['sgd']),
+    #             ('batch_size', 64),  # [64, 128]),  # 128, 1024]),
+    #             # ('batch_size', [128, 64]),  # [128, 256]),  # [128, 64]),
+    #             ('optim', [
+    #                 ('sgd', OrderedDict([('lr', [.1])])),
+    #                 ('adam', OrderedDict([('lr', [1e-3])])),
+    #                 # ('kfac', OrderedDict([('lr', 0.02),  # 0.01),
+    #                 #                       ('kf_damping', 0.03)])),
+    #                 # ('adamw', OrderedDict([('lr', [.01, 1e-3])])),
+    #                 ]),
+    #             ]
+    # args += [OrderedDict(shared_args+args_sgd+gvar_args)]
+
+    args_svrg = [('g_estim', ['svrg']),
+                 ('batch_size', 64),
+                 ('g_optim', ''),
+                 ('g_optim_start', 2),  # 5, 10, 20]),
+                 ('optim', [
+                     ('sgd', OrderedDict([('lr', [.1])])),
+                     # ('adam', OrderedDict([('lr', [1e-3])])),
+                 ])
+                 ]
+    args += [OrderedDict(shared_args+args_svrg+gvar_args)]
+
+    args_svrg = [('g_estim', ['svrgc']),
+                 ('batch_size', 64),
+                 ('g_optim', ''),
+                 ('g_optim_start', 2),  # 5, 10, 20]),
+                 ('optim', [
+                     ('adam', OrderedDict([('lr', [1e-3])])),
+                 ]),
+                 ('svrgc_clip', [0, 1e-5, 0.01, 1]),
+                 ]
+    args += [OrderedDict(shared_args+args_svrg+gvar_args)]
+
+    return args, log_dir, module_name, exclude
+
+
 def main():
     args = []
     # args, log_dir, module_name, exclude = mnist_gvar(args)
