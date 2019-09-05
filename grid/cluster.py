@@ -65,8 +65,8 @@ def vector(sargs):
 #SBATCH --job-name=array
 #SBATCH --output=jobs/log/array_%A_%a.log
 #SBATCH --array=0-{njobs}%{ntasks}
-#SBATCH --time=24:00:00
-#SBATCH --gres=gpu:1              # Number of GPUs (per node)
+#SBATCH --time=300:00:00
+#SBATCH --gres=gpu:4              # Number of GPUs (per node)
 #SBATCH -c 12
 #SBATCH --mem=16G
 #SBATCH -p {partition}
