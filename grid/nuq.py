@@ -273,19 +273,19 @@ def cifar10_full(args):
                  ('g_optim_start', 0),
                  # ('g_epoch', ''),
                  ]
-    # args_sgd = [('g_estim', ['sgd'])]
-    # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
+    args_sgd = [('g_estim', ['sgd'])]
+    args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
-    # args_nuq = [
-    #     ('g_estim', ['nuq']),
-    #     ('nuq_bits', 4),
-    #     ('nuq_bucket_size', 8192),
-    #     ('nuq_ngpu', [4, 8]),  # 2
-    #     ('nuq_method', ['q', 'qinf',
-    #                     ('nuq', OrderedDict([('nuq_mul', 0.5)]))
-    #                     ])
-    # ]
-    # args += [OrderedDict(shared_args+gvar_args+args_nuq)]
+    args_nuq = [
+        ('g_estim', ['nuq']),
+        ('nuq_bits', 4),
+        ('nuq_bucket_size', 8192),
+        ('nuq_ngpu', [4, 8]),  # 2
+        ('nuq_method', ['q', 'qinf',
+                        ('nuq', OrderedDict([('nuq_mul', 0.5)]))
+                        ])
+    ]
+    args += [OrderedDict(shared_args+gvar_args+args_nuq)]
 
     args_nuq = [
         ('g_estim', ['nuq']),
@@ -329,22 +329,22 @@ def imagenet_full(args):
                  ('g_optim_start', 0),
                  # ('g_epoch', ''),
                  ]
-    # args_sgd = [('g_estim', ['sgd'])]
-    # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
+    args_sgd = [('g_estim', ['sgd'])]
+    args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
-    # args_nuq = [
-    #     ('g_estim', ['nuq']),
-    #     ('nuq_bits', 4),
-    #     ('nuq_bucket_size', 8192),
-    #     ('nuq_ngpu', 2),  # 4
-    #     ('nuq_method', ['q',  # ('q', OrderedDict([('lr', 0.01)])),
-    #                     'qinf',  # ('qinf', OrderedDict([('lr', 0.05)])),
-    #                     ('nuq', OrderedDict([('nuq_mul', 0.5),
-    #                                          ]))  # ('lr', 0.05)
-    #                     ]),
-    #     ('nuq_parallel', 'ngpu')
-    # ]
-    # args += [OrderedDict(shared_args+gvar_args+args_nuq)]
+    args_nuq = [
+        ('g_estim', ['nuq']),
+        ('nuq_bits', 4),
+        ('nuq_bucket_size', 8192),
+        ('nuq_ngpu', 2),  # 4
+        ('nuq_method', ['q',  # ('q', OrderedDict([('lr', 0.01)])),
+                        'qinf',  # ('qinf', OrderedDict([('lr', 0.05)])),
+                        ('nuq', OrderedDict([('nuq_mul', 0.5),
+                                             ]))  # ('lr', 0.05)
+                        ]),
+        ('nuq_parallel', 'ngpu')
+    ]
+    args += [OrderedDict(shared_args+gvar_args+args_nuq)]
 
     args_nuq = [
         ('g_estim', ['nuq']),
@@ -391,13 +391,13 @@ def cifar10_gvar(args):
                  # ('g_optim_start', 0),
                  # ('g_epoch', ''),
                  ]
-    # args_sgd = [('g_estim', ['sgd'])]
-    # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
+    args_sgd = [('g_estim', ['sgd'])]
+    args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
     args_nuq = [
         ('g_estim', ['nuq']),
         ('nuq_bits', 4),
-        ('nuq_bucket_size', 64),  # 8192),
+        ('nuq_bucket_size', 8192),  # 64
         ('nuq_ngpu', 8),
         ('nuq_method', ['q', 'qinf',
                         ('nuq', OrderedDict([('nuq_mul', 0.5)])),
@@ -405,20 +405,20 @@ def cifar10_gvar(args):
     ]
     args += [OrderedDict(shared_args+gvar_args+args_nuq)]
 
-    # args_nuq = [
-    #     ('g_estim', ['nuq']),
-    #     ('nuq_ngpu', 8),
-    #     ('nuq_method', 'none')
-    # ]
-    # args += [OrderedDict(shared_args+gvar_args+args_nuq)]
+    args_nuq = [
+        ('g_estim', ['nuq']),
+        ('nuq_ngpu', 8),
+        ('nuq_method', 'none')
+    ]
+    args += [OrderedDict(shared_args+gvar_args+args_nuq)]
 
     return args, log_dir, module_name, exclude
 
 
-def imagenet_full8(args):
+def imagenet_full_n(args):
     dataset = 'imagenet'
     module_name = 'main.gvar'
-    log_dir = 'runs_%s_full8' % dataset
+    log_dir = 'runs_%s_full_n' % dataset
     exclude = ['dataset', 'epochs', 'lr_decay_epoch', 'g_epoch',
                'pretrained', 'niters', 'epoch_iters',
                'gvar_log_iter', 'gvar_start', 'g_bsnap_iter', 'g_optim',
@@ -432,7 +432,7 @@ def imagenet_full8(args):
                    # ('test_batch_size', 64),
                    ('niters', 60*10000),  # 60*10000),
                    ('epoch_iters', 10000),
-                   ('lr', 0.02),  # [0.05, 0.02, 0.01]),  # 0.1),
+                   ('lr', 0.1),  # [0.05, 0.02, 0.01]),  # 0.1),
                    ('lr_decay_epoch', '300000,450000'),  # '200000,400000'),
                    ('momentum', 0.9),
                    ('weight_decay', 1e-4),
@@ -449,24 +449,31 @@ def imagenet_full8(args):
                  ]
     # args_sgd = [('g_estim', ['sgd'])]
     # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
-
-    # args_nuq = [
-    #     ('g_estim', ['nuq']),
-    #     ('nuq_bits', 4),
-    #     ('nuq_bucket_size', 8192),
-    #     ('nuq_ngpu', 2),  # 4
-    #     ('nuq_method', ['q',  # ('q', OrderedDict([('lr', 0.01)])),
-    #                     'qinf',  # ('qinf', OrderedDict([('lr', 0.05)])),
-    #                     ('nuq', OrderedDict([('nuq_mul', 0.5),
-    #                                          ]))  # ('lr', 0.05)
-    #                     ]),
-    #     ('nuq_parallel', 'ngpu')
-    # ]
-    # args += [OrderedDict(shared_args+gvar_args+args_nuq)]
+    args_nuq = [
+        ('g_estim', ['nuq']),
+        ('nuq_ngpu', 2),
+        ('nuq_method', 'none'),
+        ('nuq_parallel', 'ngpu')
+    ]
+    args += [OrderedDict(shared_args+gvar_args+args_nuq)]
 
     args_nuq = [
         ('g_estim', ['nuq']),
-        ('nuq_ngpu', 2),  # [4, 8]),  # 2
+        ('nuq_bits', 4),
+        ('nuq_bucket_size', 8192),
+        ('nuq_ngpu', 4),  # 4
+        ('nuq_method', ['q',  # ('q', OrderedDict([('lr', 0.01)])),
+                        'qinf',  # ('qinf', OrderedDict([('lr', 0.05)])),
+                        ('nuq', OrderedDict([('nuq_mul', 0.5),
+                                             ]))  # ('lr', 0.05)
+                        ]),
+        ('nuq_parallel', 'ngpu')
+    ]
+    args += [OrderedDict(shared_args+gvar_args+args_nuq)]
+
+    args_nuq = [
+        ('g_estim', ['nuq']),
+        ('nuq_ngpu', 4),  # [4, 8]),  # 2
         ('nuq_method', 'none'),
         ('nuq_parallel', 'ngpu')
     ]

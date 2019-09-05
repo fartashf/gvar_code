@@ -2,6 +2,7 @@ import copy
 import torch
 import torch.nn
 import torch.multiprocessing
+import logging
 
 from args import opt_to_nuq_kwargs
 from .gestim import GradientEstimator
@@ -114,19 +115,26 @@ class NUQEstimatorMultiGPUParallel(GradientEstimator):
         super(NUQEstimatorMultiGPUParallel, self).__init__(*args, **kwargs)
         self.init_data_iter()
         nuq_kwargs = opt_to_nuq_kwargs(self.opt)
-        self.ngpu = self.opt.nuq_ngpu
+        self.ngpu = nuq_kwargs['ngpu']
         self.acc_grad = None
         self.models = None
         self.qdq = []
+        self.ncuda = nuq_kwargs['ncuda']
+        if self.ncuda == 0:
+            self.ncuda = self.ngpu
+        self.ncuda = min(torch.cuda.device_count(), self.ncuda)
+        self.devices = range(self.ngpu)
+        if self.ncuda != 0:
+            self.devices = [x % self.ncuda for x in self.devices]
         for i in range(self.ngpu):
-            with torch.cuda.device(i):
+            with torch.cuda.device(self.devices[i]):
                 self.qdq += [QuantizeMultiBucket(**nuq_kwargs)]
 
     def grad(self, model_new, in_place=False):
         if self.models is None:
             self.models = [model_new]
             for i in range(1, self.ngpu):
-                with torch.cuda.device(i):
+                with torch.cuda.device(self.devices[i]):
                     self.models += [copy.deepcopy(model_new)]
                     self.models[-1] = self.models[-1].cuda()
         else:
@@ -144,7 +152,7 @@ class NUQEstimatorMultiGPUParallel(GradientEstimator):
         for i in range(self.ngpu):
             models[i].zero_grad()  # criterion does it
             data = next(self.data_iter)
-            with torch.cuda.device(i):
+            with torch.cuda.device(self.devices[i]):
                 loss += [models[i].criterion(models[i], data)]
                 loss[i].backward()
 
@@ -158,7 +166,7 @@ class NUQEstimatorMultiGPUParallel(GradientEstimator):
         # quantize all grads
         for i in range(self.ngpu):
             with torch.no_grad():
-                with torch.cuda.device(i):
+                with torch.cuda.device(self.devices[i]):
                     torch.cuda.synchronize()
                     for p in models[i].parameters():
                         p.grad.copy_(self.qdq[i].quantize(p.grad)/self.ngpu)
@@ -167,7 +175,12 @@ class NUQEstimatorMultiGPUParallel(GradientEstimator):
         # aggregate grads into gpu0
         for i in range(1, self.ngpu):
             for p0, pi in zip(models[0].parameters(), models[i].parameters()):
-                p0.grad.add_(pi.grad.to('cuda:0'))
+                pig = pi.grad.to('cuda:0')
+                inan = torch.isfinite(pig).float()
+                if (1-inan).sum() > 0:
+                    logging.info('!!!!!! NaN found !!!!!!!!')
+                pig.mul_(inan)  # TODO: fix nans
+                p0.grad.add_(pig)
 
         if in_place:
             return loss
