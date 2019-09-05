@@ -4,7 +4,7 @@ DEBUG := 1
 # Pretty build
 # Q ?= @
 
-CXX := g++
+CXX := g++-5
 
 # PYTHON Header path
 PYTHON_HEADER_DIR := $(shell python -c 'from distutils.sysconfig import get_python_inc; print(get_python_inc())')
