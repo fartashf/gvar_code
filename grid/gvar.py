@@ -1815,6 +1815,38 @@ def cifar10_svrg_clip(args):
     return args, log_dir, module_name, exclude
 
 
+def logreg_2dvis(args):
+    dataset = 'logreg'
+    module_name = 'main.gvar'
+    log_dir = 'runs_%s_2dvis' % dataset
+    exclude = ['dataset', 'epochs', 'lr_decay_epoch', 'weight_decay',
+               'g_epoch', 'g_bsnap_iter', 'g_min_size']
+    shared_args = [('dataset', dataset),
+                   ('lr', [.0005]),
+                   ('epochs', 2),
+                   ('lr_decay_epoch', '1,2'),
+                   ('lr_decay_rate', 0),
+                   ('c_const', 5),
+                   ('d_const', 1.5),
+                   ('batch_size', 10),
+                   ]
+    gluster_args = [
+        ('g_estim', 'gluster'),
+        ('g_nclusters', [4]),
+        ('g_debug', ''),
+        ('gb_citers', 10),
+        ('g_min_size', 1),
+        ('gvar_start', 1),
+        ('g_bsnap_iter', 10),
+        ('g_epoch', ''),
+        ('epoch_iters', [100, 200, 400]),
+    ]
+
+    args += [OrderedDict(shared_args+gluster_args)]
+
+    return args, log_dir, module_name, exclude
+
+
 def main():
     args = []
     # args, log_dir, module_name, exclude = mnist_gvar(args)

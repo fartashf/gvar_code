@@ -15,7 +15,8 @@ def bolt(sargs, num_runs):
     # jobs_0 = ['bolt2_gpu0,3', 'bolt2_gpu1,2',
     #           'bolt1_gpu0,1', 'bolt1_gpu2,3',
     #           ]
-    jobs_0 = ['bolt3_gpu2',
+    jobs_0 = [# 'bolt3_gpu2',
+        'bolt1_gpu0',
               ]
     # jobs_0 = ['bolt3_gpu0', 'bolt3_gpu1', 'bolt3_gpu2',
     #           'bolt2_gpu0', 'bolt2_gpu1', 'bolt2_gpu2', 'bolt2_gpu3',

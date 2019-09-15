@@ -1,3 +1,11 @@
+## Aug 30
+reruns for visualization and neurips workshop
+
+```
+CUDA_VISIBLE_DEVICES=0 python -m main.gvar --dataset mnist --lr 0.01 --epochs 30 --lr_decay_epoch 30 --arch cnn --gvar_start 1 --g_bsnap_iter 1  --g_optim_start 2 --g_epoch  --g_estim gluster --g_nclusters 10 --g_debug  --g_online  --g_osnap_iter 10 --g_beta 0.99 --g_min_size 0.01 --g_init_mul 2 --g_reinit_iter 1 --logger_name runs/X
+CUDA_VISIBLE_DEVICES=0 python -m main.gvar --dataset mnist --lr 0.01 --epochs 30 --lr_decay_epoch 30 --arch cnn  --g_estim gluster --g_nclusters 10 --g_epoch --g_debug --logger_name runs/X --gb_citers 2 --g_min_size 100 --gvar_start 2 --g_bsnap_iter 2
+```
+
 ## May 6
 ```
 CUDA_VISIBLE_DEVICES=2 python main.py --dataset cifar10 --optimizer kfac --network resnet --depth 20  --epoch 100 --milestone 40,80 --learning_rate 0.01 --damping 0.03 --weight_decay 0.003 --batch_size 32
