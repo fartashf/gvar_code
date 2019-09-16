@@ -1,31 +1,33 @@
 from __future__ import print_function
 import numpy as np
 import logging
-import yaml
 import os
 import time
+import sys
 
 import torch
 import torch.nn
 import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
 
-import utils
+from args import get_opt
 import models
 from data import get_loaders
-from args import add_args
 from gluster.gluster import GradientClusterBatch, GradientClusterOnline
 from log_utils import AverageMeter
+from args import opt_to_gluster_kwargs
+from log_utils import TBXWrapper
+tb_logger = TBXWrapper()
 
 
 def test_batch(model, data_loader, opt, dataset):
     citers = opt.gb_citers
 
     try:
-        os.makedirs(opt.run_dir)
+        os.makedirs(opt.logger_name)
     except os.error:
         pass
-    gb_fname = os.path.join(opt.run_dir, 'bgluster_%s.pth.tar' % dataset)
+    gb_fname = os.path.join(opt.logger_name, 'bgluster_%s.pth.tar' % dataset)
 
     # data = train_loader, test_loader, train_test_loader
     if dataset == 'train_test':
@@ -35,16 +37,15 @@ def test_batch(model, data_loader, opt, dataset):
 
     # model's weight are not going to change, opt.step() is not called
     gluster = GradientClusterBatch(
-            model, opt.g_min_size, nclusters=opt.g_nclusters,
-            no_grad=opt.g_no_grad, active_only=opt.g_active_only)
+            model, **opt_to_gluster_kwargs(opt))
 
     gluster_tc = np.zeros(citers)
     total_dist = []
     pred_i = 0
     loss_i = 0
-    reinits = 0
+    # reinits = 0
     GG_i = 0
-    reinited = False
+    # reinited = False
     for i in range(citers):
         tic = time.time()
         stat = gluster.update_batch(
@@ -58,14 +59,16 @@ def test_batch(model, data_loader, opt, dataset):
             assert pred_i.sum() == stat[3].sum(), 'predictions changed'
             assert loss_i.sum() == stat[4].sum(), 'loss changed'
             dt_down = stat[0].sum() <= total_dist.sum()+1e-5
-            if reinited:
-                if not dt_down:
-                    logging.info('^^^^ Total dists went up ^^^^')
-            else:
-                assert dt_down, 'Total dists went up'
-        reinits_new = gluster.reinits.sum().item()
-        reinited = (reinits_new > reinits)
-        reinits = reinits_new
+            # if reinited:
+            #     if not dt_down:
+            #         logging.info('^^^^ Total dists went up ^^^^')
+            # else:
+            #     assert dt_down, 'Total dists went up'
+            if not dt_down:
+                logging.info('^^^^ Total dists went up ^^^^')
+        # reinits_new = gluster.reinits.sum().item()
+        # reinited = (reinits_new > reinits)
+        # reinits = reinits_new
         total_dist, assign_i, target_i, pred_i, loss_i, topk_i, GG_i = stat
         torch.save({'assign': assign_i, 'target': target_i,
                     'pred': pred_i, 'loss': loss_i,
@@ -80,10 +83,10 @@ def test_online(model, data_loader, opt, dataset):
     citers = opt.gb_citers
 
     try:
-        os.makedirs(opt.run_dir)
+        os.makedirs(opt.logger_name)
     except os.error:
         pass
-    gb_fname = os.path.join(opt.run_dir, 'bgluster_%s.pth.tar' % dataset)
+    gb_fname = os.path.join(opt.logger_name, 'bgluster_%s.pth.tar' % dataset)
 
     # data = train_loader, test_loader, train_test_loader
     if dataset == 'train_test':
@@ -93,9 +96,7 @@ def test_online(model, data_loader, opt, dataset):
 
     # model's weight are not going to change, opt.step() is not called
     gluster = GradientClusterOnline(
-            model, opt.g_beta, opt.g_min_size,
-            opt.g_reinit, nclusters=opt.g_nclusters,
-            no_grad=opt.g_no_grad, active_only=opt.g_active_only)
+            model, **opt_to_gluster_kwargs(opt))
 
     train_size = len(data_loader.dataset)
     gluster_tc = []
@@ -180,20 +181,13 @@ def test_online(model, data_loader, opt, dataset):
 
 
 def main():
-    args = add_args()
-    yaml_path = os.path.join('options/{}/{}'.format(args.dataset,
-                                                    args.path_opt))
-    opt = {}
-    with open(yaml_path, 'r') as handle:
-        opt = yaml.load(handle)
-    od = vars(args)
-    for k, v in od.items():
-        opt[k] = v
-    opt = utils.DictWrapper(opt)
-
-    opt.cuda = not opt.no_cuda and torch.cuda.is_available()
-
-    logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
+    opt = get_opt()
+    tb_logger.configure(opt.logger_name, flush_secs=5, opt=opt)
+    logfname = os.path.join(opt.logger_name, 'log.txt')
+    logging.basicConfig(
+        filename=logfname,
+        format='%(asctime)s %(message)s', level=logging.INFO)
+    logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
     logging.info(str(opt.d))
 
@@ -213,17 +207,18 @@ def main():
     model.eval()
 
     # optionally resume from a checkpoint
-    model_path = os.path.join(opt.run_dir, opt.ckpt_name)
-    if os.path.isfile(model_path):
-        print("=> loading checkpoint '{}'".format(model_path))
-        checkpoint = torch.load(model_path)
-        epoch = checkpoint['epoch']
-        model.load_state_dict(checkpoint['model'])
-        best_prec1 = checkpoint['best_prec1']
-        print("=> loaded checkpoint '{}' (epoch {}, best_prec {})"
-              .format(model_path, epoch, best_prec1))
-    else:
-        print("=> no checkpoint found at '{}'".format(model_path))
+    model_path = os.path.join(opt.resume, opt.ckpt_name)
+    if opt.resume != '':
+        if os.path.isfile(model_path):
+            print("=> loading checkpoint '{}'".format(model_path))
+            checkpoint = torch.load(model_path)
+            best_prec1 = checkpoint['best_prec1']
+            epoch = checkpoint['epoch']
+            model.load_state_dict(checkpoint['model'])
+            print("=> loaded checkpoint '{}' (epoch {}, best_prec {})"
+                  .format(model_path, epoch, best_prec1))
+        else:
+            print("=> no checkpoint found at '{}'".format(model_path))
 
     if opt.g_online:
         test = test_online

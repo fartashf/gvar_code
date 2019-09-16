@@ -1,3 +1,15 @@
+## Sep 15
+tsne
+
+```
+CUDA_VISIBLE_DEVICES=0 python -m main.gvar --dataset mnist --lr 0.01 --epochs 1 --lr_decay_epoch 30 --arch cnn --gvar_start 100000 --logger_name runs/mnist/epoch_1 --g_estim sgd
+CUDA_VISIBLE_DEVICES=0 python -m main.gvar --dataset mnist --lr 0.01 --epochs 10 --lr_decay_epoch 30 --arch cnn --gvar_start 100000 --logger_name runs/mnist/epoch_10 --g_estim sgd
+CUDA_VISIBLE_DEVICES=0 python -m main.gvar --dataset mnist --lr 0.01 --epochs 30 --lr_decay_epoch 30 --arch cnn --gvar_start 100000 --logger_name runs/mnist/epoch_30 --g_estim sgd
+CUDA_VISIBLE_DEVICES=0 ipython --pdb -m main.pretrained -- --dataset mnist --arch cnn --logger_name runs/mnist/bgluster,epoch_1 --gb_citers 20 --g_nclusters 20 --g_debug --resume runs/mnist/epoch_1
+CUDA_VISIBLE_DEVICES=0 ipython --pdb -m main.pretrained -- --dataset mnist --arch cnn --logger_name runs/mnist/bgluster,epoch_10 --gb_citers 20 --g_nclusters 20 --g_debug --resume runs/mnist/epoch_10
+CUDA_VISIBLE_DEVICES=0 ipython --pdb -m main.pretrained -- --dataset mnist --arch cnn --logger_name runs/mnist/bgluster,epoch_30 --gb_citers 20 --g_nclusters 20 --g_debug --resume runs/mnist/epoch_30
+```
+
 ## Aug 30
 reruns for visualization and neurips workshop
 
