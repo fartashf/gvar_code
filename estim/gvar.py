@@ -5,7 +5,7 @@ import torch.multiprocessing
 from estim.sgd import SGDEstimator
 from estim.gluster import GlusterOnlineEstimator, GlusterBatchEstimator
 from estim.svrg import SVRGEstimator
-from estim.ntk import NTKEstimator
+# from estim.ntk import NTKEstimator
 from estim.nuq import NUQEstimator
 from estim.nuq import NUQEstimatorSingleGPUParallel
 from estim.nuq import NUQEstimatorMultiGPUParallel
