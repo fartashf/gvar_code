@@ -449,19 +449,19 @@ def imagenet_full_n(args):
                  ]
     # args_sgd = [('g_estim', ['sgd'])]
     # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
-    args_nuq = [
-        ('g_estim', ['nuq']),
-        ('nuq_ngpu', 2),
-        ('nuq_method', 'none'),
-        ('nuq_parallel', 'ngpu')
-    ]
-    args += [OrderedDict(shared_args+gvar_args+args_nuq)]
+    # args_nuq = [
+    #     ('g_estim', ['nuq']),
+    #     ('nuq_ngpu', 2),
+    #     ('nuq_method', 'none'),
+    #     ('nuq_parallel', 'ngpu')
+    # ]
+    # args += [OrderedDict(shared_args+gvar_args+args_nuq)]
 
     args_nuq = [
         ('g_estim', ['nuq']),
         ('nuq_bits', 4),
         ('nuq_bucket_size', 8192),
-        ('nuq_ngpu', 4),  # 4
+        ('nuq_ngpu', 8),  # 4
         ('nuq_method', ['q',  # ('q', OrderedDict([('lr', 0.01)])),
                         'qinf',  # ('qinf', OrderedDict([('lr', 0.05)])),
                         ('nuq', OrderedDict([('nuq_mul', 0.5),
@@ -473,7 +473,7 @@ def imagenet_full_n(args):
 
     args_nuq = [
         ('g_estim', ['nuq']),
-        ('nuq_ngpu', 4),  # [4, 8]),  # 2
+        ('nuq_ngpu', 8),  # [4, 8]),  # 2
         ('nuq_method', 'none'),
         ('nuq_parallel', 'ngpu')
     ]
