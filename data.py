@@ -22,6 +22,10 @@ def get_loaders(opt):
         return get_logreg_loaders(opt)
     elif 'class' in opt.dataset:
         return get_logreg_loaders(opt)
+    elif opt.dataset == 'rcv1':
+        return get_rcv1_loaders(opt)
+    elif opt.dataset == 'covtype':
+        return get_covtype_loaders(opt)
 
 
 def dataset_to_loaders(train_dataset, test_dataset, opt):
@@ -199,8 +203,8 @@ def get_cifar100_loaders(opt):
     normalize, transform = get_cifar10_100_transform(opt)
 
     train_dataset = datasets.CIFAR100(root=opt.data, train=True,
-                                     transform=transforms.Compose(transform),
-                                     download=True)
+                                      transform=transforms.Compose(transform),
+                                      download=True)
     test_dataset = datasets.CIFAR100(
         root=opt.data, train=False, download=True,
         transform=transforms.Compose([
@@ -293,14 +297,14 @@ class DMomSampler(Sampler):
 
     def __iter__(self):
         if self.training:
-            I = self.scheduler.next_epoch()
-            self.indices = I
-            return (I[i] for i in torch.randperm(len(I)))
+            II = self.scheduler.next_epoch()
+            self.indices = II
+            return (II[i] for i in torch.randperm(len(II)))
         return iter(torch.randperm(self.num_samples))
 
     def update(self):
         # self.scheduler.schedule()
-        raise NotImplemented("Should not be called.")
+        raise NotImplementedError("Should not be called.")
 
     def __len__(self):
         if self.training:
@@ -326,14 +330,14 @@ class DelayedSampler(Sampler):
     def __iter__(self):
         if self.training:
             self.indices = np.where(self.count == 0)[0]
-            I = self.indices
+            II = self.indices
             # return (self.indices[i]
             #         for i in torch.randperm(len(self.indices)))
             if self.opt.sampler_repetition:
-                W = self.weights[I]
-                I = [np.ones(int(w), dtype=int)*i for i, w in zip(I, W)]
-                I = np.concatenate(I)
-            return (I[i] for i in torch.randperm(len(I)))
+                W = self.weights[II]
+                II = [np.ones(int(w), dtype=int)*i for i, w in zip(II, W)]
+                II = np.concatenate(II)
+            return (II[i] for i in torch.randperm(len(II)))
         return iter(torch.randperm(self.num_samples))
 
     def update(self, optimizer):
@@ -497,8 +501,8 @@ class DelayedSampler(Sampler):
             self.count = np.maximum(0, self.count - 1)
         if self.opt.sampler_repetition:
             weights = np.ones_like(self.weights)
-            I = np.where(self.count == 0)[0]
-            self.visits[I] += self.weights[I]
+            II = np.where(self.count == 0)[0]
+            self.visits[II] += self.weights[II]
         else:
             weights = self.weights
             self.visits[np.where(self.count == 0)[0]] += 1
@@ -536,8 +540,8 @@ class MinVarSampler(Sampler):
     def __iter__(self):
         if self.training:
             self.indices = np.where(self.count == 0)[0]
-            I = self.indices
-            return (I[i] for i in torch.randperm(len(I)))
+            II = self.indices
+            return (II[i] for i in torch.randperm(len(II)))
         return iter(torch.randperm(self.num_samples))
 
     def update(self, optimizer):
@@ -588,8 +592,8 @@ class InfiniteLoader(object):
             data = next(self.data_iter)
         except StopIteration:
             if isinstance(self.data_loader, list):
-                I = self.data_loader
-                self.data_iter = (I[i] for i in torch.randperm(len(I)))
+                II = self.data_loader
+                self.data_iter = (II[i] for i in torch.randperm(len(II)))
             else:
                 self.data_iter = iter(self.data_loader)
             data = next(self.data_iter)
@@ -636,13 +640,13 @@ class GlusterSampler(Sampler):
 
         I0 = []
         for i in range(assign_i.max()+1):
-            I = list(np.where(assign_i.flat == i)[0])
-            if len(I) >= 1:
-                self.cluster_size[len(self.iters)] = len(I)
-                self.assign_i[I] = len(self.iters)
-                self.iters += [iter(InfiniteLoader(I))]
+            II = list(np.where(assign_i.flat == i)[0])
+            if len(II) >= 1:
+                self.cluster_size[len(self.iters)] = len(II)
+                self.assign_i[II] = len(self.iters)
+                self.iters += [iter(InfiniteLoader(II))]
             else:
-                I0 += I
+                I0 += II
         C = len(self.iters)
         if len(I0) > 0:
             self.cluster_size[C] = len(I0)
@@ -747,6 +751,48 @@ class LinearDataset(data.Dataset):
         return self.X.shape[1]
 
 
+class LibSVMDataset(data.Dataset):
+    def __init__(self, fpath, num_class=2, ratio=1, perm=None, xmean=None,
+                 xstd=None):
+        import sklearn
+        import sklearn.datasets
+        self.data = sklearn.datasets.load_svmlight_file(fpath)
+        if xmean is None:
+            self.xmean = np.array(self.data[0].mean(0))
+            E2x = self.xmean**2
+            Ex2 = self.data[0].copy()
+            Ex2.data **= 2
+            Vx = Ex2.mean(0) - E2x
+            self.xstd = np.array(np.sqrt(Vx))
+            self.xmean, self.xstd = self.xmean.flatten(), self.xstd.flatten()
+        else:
+            self.xmean, self.xstd = xmean, xstd
+        self.ymin = self.data[1].min()
+        self.ymax = self.data[1].max()
+        self.num_class = num_class
+        self.classes = range(int(num_class))
+        N = self.data[0].shape[0]
+        # print(self.data[0].shape[1])
+        # import ipdb; ipdb.set_trace()
+        if perm is None:
+            perm = np.random.permutation(N)
+            self.ids = perm[:int(N*ratio)]
+            self.no_ids = perm[int(N*ratio):]
+        else:
+            self.ids = perm
+
+    def __getitem__(self, index):
+        index = self.ids[index]
+        xnorm = (self.data[0][index].toarray().flat
+                 - self.xmean)/(self.xstd+1e-5)
+        X = torch.Tensor(xnorm).float()
+        Y = int((self.data[1][index]-self.ymin)/self.num_class)
+        return X, Y
+
+    def __len__(self):
+        return len(self.ids)
+
+
 def get_logreg_loaders(opt, **kwargs):
     # np.random.seed(1234)
     np.random.seed(2222)
@@ -766,3 +812,33 @@ def get_logreg_loaders(opt, **kwargs):
                 C), opt.logger_name + '/data.pth.tar')
 
     return dataset_to_loaders(train_dataset, test_dataset, opt)
+
+
+def get_rcv1_loaders(opt, **kwargs):
+    # train_dataset = LibSVMDataset(
+    #     os.path.join(opt.data, 'rcv1_train.binary.bz2'),
+    #     num_class=opt.num_class, ratio=0.5)
+    # perm = train_dataset.no_ids
+    # test_dataset = LibSVMDataset(
+    #     os.path.join(opt.data, 'rcv1_train.binary.bz2'),
+    #     num_class=opt.num_class, perm=perm)
+    train_dataset = LibSVMDataset(
+        os.path.join(opt.data, 'rcv1_train.binary.bz2'),
+        num_class=opt.num_class)
+    xmean, xstd = train_dataset.xmean, train_dataset.xstd
+    test_dataset = LibSVMDataset(
+        os.path.join(opt.data, 'rcv1_test.binary.bz2'), xmean=xmean, xstd=xstd)
+    return dataset_to_loaders(train_dataset, test_dataset, opt, **kwargs)
+
+
+def get_covtype_loaders(opt, **kwargs):
+    np.random.seed(2222)
+    train_dataset = LibSVMDataset(
+        os.path.join(opt.data, 'covtype.libsvm.binary.scale.bz2'),
+        num_class=opt.num_class, ratio=0.5)
+    xmean, xstd = train_dataset.xmean, train_dataset.xstd
+    perm = train_dataset.no_ids
+    test_dataset = LibSVMDataset(
+        os.path.join(opt.data, 'covtype.libsvm.binary.scale.bz2'),
+        num_class=opt.num_class, perm=perm, xmean=xmean, xstd=xstd)
+    return dataset_to_loaders(train_dataset, test_dataset, opt, **kwargs)

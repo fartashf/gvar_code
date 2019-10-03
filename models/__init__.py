@@ -52,6 +52,8 @@ def init_model(opt):
         model = models.logreg.Linear(opt.dim, opt.num_class)
     elif opt.dataset == '5class':
         model = models.logreg.Linear(opt.dim, opt.num_class)
+    elif opt.dataset == 'rcv1' or opt.dataset == 'covtype':
+        model = models.logreg.Linear(opt.dim, opt.num_class)
 
     if opt.optim == 'kfac' or opt.optim == 'ekfac':
         model.criterion = models.loss.KFACNLL()
