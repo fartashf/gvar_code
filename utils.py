@@ -75,7 +75,7 @@ def adjust_learning_rate(optimizer, epoch, opt):
         last_epoch = 2. ** (float(epoch) / int(opt.lr_decay_epoch)) - 1
     else:
         last_epoch = epoch // int(opt.lr_decay_epoch)
-    lr = base_lr(optimizer, opt) * (0.1 ** last_epoch)
+    lr = base_lr(optimizer, opt) * (opt.lr_decay_rate ** last_epoch)
     print(lr)
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr

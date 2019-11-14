@@ -26,6 +26,8 @@ def get_loaders(opt):
         return get_rcv1_loaders(opt)
     elif opt.dataset == 'covtype':
         return get_covtype_loaders(opt)
+    elif opt.dataset == 'protein':
+        return get_protein_loaders(opt)
 
 
 def dataset_to_loaders(train_dataset, test_dataset, opt):
@@ -751,12 +753,10 @@ class LinearDataset(data.Dataset):
         return self.X.shape[1]
 
 
-class LibSVMDataset(data.Dataset):
-    def __init__(self, fpath, num_class=2, ratio=1, perm=None, xmean=None,
+class PlainDataset(data.Dataset):
+    def __init__(self, data, num_class=2, ratio=1, perm=None, xmean=None,
                  xstd=None):
-        import sklearn
-        import sklearn.datasets
-        self.data = sklearn.datasets.load_svmlight_file(fpath)
+        self.data = data
         if xmean is None:
             self.xmean = np.array(self.data[0].mean(0))
             E2x = self.xmean**2
@@ -793,6 +793,30 @@ class LibSVMDataset(data.Dataset):
         return len(self.ids)
 
 
+class LibSVMDataset(PlainDataset):
+    def __init__(self, fpath, *args, **kwargs):
+        import sklearn
+        import sklearn.datasets
+        data = sklearn.datasets.load_svmlight_file(fpath)
+        super(LibSVMDataset, self).__init__(data, *args, **kwargs)
+
+
+class CSVDataset(PlainDataset):
+    def __init__(self, fpath, *args, **kwargs):
+        train_data = []
+        train_labels = []
+        import csv
+        with open() as csv_file:
+            csv_reader = csv.reader(csv_file, delimiter='\t')
+            for row in csv_reader:
+                train_data += [float(x) for x in row[3:]]
+                train_labels += [int(row[2])]
+        train_data = np.array(train_data)
+        train_labels = np.array(train_labels)
+        data = [train_data, train_labels]
+        super(CSVDataset, self).__init__(data, *args, **kwargs)
+
+
 def get_logreg_loaders(opt, **kwargs):
     # np.random.seed(1234)
     np.random.seed(2222)
@@ -827,7 +851,8 @@ def get_rcv1_loaders(opt, **kwargs):
         num_class=opt.num_class)
     xmean, xstd = train_dataset.xmean, train_dataset.xstd
     test_dataset = LibSVMDataset(
-        os.path.join(opt.data, 'rcv1_test.binary.bz2'), xmean=xmean, xstd=xstd)
+        # os.path.join(opt.data, 'rcv1_test.binary.bz2'), xmean=xmean, xstd=xstd)
+        os.path.join(opt.data, 'rcv1_train.binary.bz2'), xmean=xmean, xstd=xstd)
     return dataset_to_loaders(train_dataset, test_dataset, opt, **kwargs)
 
 
@@ -840,5 +865,18 @@ def get_covtype_loaders(opt, **kwargs):
     perm = train_dataset.no_ids
     test_dataset = LibSVMDataset(
         os.path.join(opt.data, 'covtype.libsvm.binary.scale.bz2'),
+        num_class=opt.num_class, perm=perm, xmean=xmean, xstd=xstd)
+    return dataset_to_loaders(train_dataset, test_dataset, opt, **kwargs)
+
+
+def get_protein_loaders(opt, **kwargs):
+    np.random.seed(2222)
+    train_dataset = CSVDataset(
+        os.path.join(opt.data, 'bio_train.dat'),
+        num_class=opt.num_class, ratio=0.5)
+    xmean, xstd = train_dataset.xmean, train_dataset.xstd
+    perm = train_dataset.no_ids
+    test_dataset = CSVDataset(
+        os.path.join(opt.data, 'bio_train.dat'),
         num_class=opt.num_class, perm=perm, xmean=xmean, xstd=xstd)
     return dataset_to_loaders(train_dataset, test_dataset, opt, **kwargs)
