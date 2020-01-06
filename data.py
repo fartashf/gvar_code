@@ -20,6 +20,8 @@ def get_loaders(opt):
         return get_imagenet_loaders(opt)
     elif opt.dataset == 'logreg':
         return get_logreg_loaders(opt)
+    elif opt.dataset == 'linreg':
+        return get_linreg_loaders(opt)
     elif 'class' in opt.dataset:
         return get_logreg_loaders(opt)
     elif opt.dataset == 'rcv1':
@@ -716,13 +718,15 @@ class GlusterImbalanceSampler(GlusterSampler):
         return self.num_samples
 
 
-def random_orthogonal_matrix(gain, shape):
+def random_orthogonal_matrix(gain, shape, noortho=True):
     if len(shape) < 2:
         raise RuntimeError("Only shapes of length 2 or more are "
                            "supported.")
 
     flat_shape = (shape[0], np.prod(shape[1:]))
     a = np.random.normal(0.0, 1.0, flat_shape)
+    if noortho:
+        return a.reshape(shape)
     u, _, v = np.linalg.svd(a, full_matrices=False)
     # pick the one with the correct shape
     q = u if u.shape == flat_shape else v
@@ -821,9 +825,10 @@ def get_logreg_loaders(opt, **kwargs):
     # np.random.seed(1234)
     np.random.seed(2222)
     # print("Create W")
-    C = opt.c_const * random_orthogonal_matrix(1.0, (opt.dim, opt.num_class))
+    C = opt.c_const * random_orthogonal_matrix(1.0, (opt.dim, opt.num_class),
+                                               noortho=True)
     D = opt.d_const * random_orthogonal_matrix(
-        1.0, (opt.dim, opt.dim, opt.num_class))
+        1.0, (opt.dim, opt.dim, opt.num_class), noortho=True)
     # print("Create train")
     train_dataset = LinearDataset(C, D, opt.num_train_data, opt.dim,
                                   opt.num_class, train=True)
@@ -831,6 +836,53 @@ def get_logreg_loaders(opt, **kwargs):
     test_dataset = LinearDataset(C, D,
                                  opt.num_test_data, opt.dim, opt.num_class,
                                  train=False)
+    torch.save((train_dataset.X, train_dataset.Y,
+                test_dataset.X, test_dataset.Y,
+                C), opt.logger_name + '/data.pth.tar')
+
+    return dataset_to_loaders(train_dataset, test_dataset, opt)
+
+
+class LinearRegressionDataset(data.Dataset):
+
+    def __init__(self, C, D, num, dim, num_class, train=True):
+        X = np.zeros((dim, num))
+        Y = np.zeros((num_class, num))
+        for i in range(num_class):
+            n = num // num_class
+            e = np.random.normal(0.0, 1.0, (dim, n))
+            # X[:, i * n:(i + 1) * n] = np.dot(D[:, :, i], e) + C[:, i:i + 1]
+            X[:, i * n:(i + 1) * n] = D * e + C
+            e = np.random.normal(0.0, .1, (num_class, n))
+            Y[:, i * n:(i + 1) * n] = i/num_class*0 + e  # i + e
+        self.X = X
+        self.Y = Y
+        self.classes = range(num_class)
+
+    def __getitem__(self, index):
+        X = torch.Tensor(self.X[:, index]).float()
+        Y = torch.Tensor(self.Y[:, index]).float()
+        return X, Y
+
+    def __len__(self):
+        return self.X.shape[1]
+
+
+def get_linreg_loaders(opt, **kwargs):
+    # np.random.seed(1234)
+    np.random.seed(2222)
+    # print("Create W")
+    # C = opt.c_const * random_orthogonal_matrix(1.0, (opt.dim, opt.num_class))
+    # D = opt.d_const * random_orthogonal_matrix(
+    #     1.0, (opt.dim, opt.dim, opt.num_class))
+    # print("Create train")
+    C = opt.c_const
+    D = opt.d_const
+    train_dataset = LinearRegressionDataset(
+        C, D, opt.num_train_data, opt.dim, opt.num_class, train=True)
+    # print("Create test")
+    test_dataset = LinearRegressionDataset(
+        C, D, opt.num_test_data, opt.dim, opt.num_class, train=False)
     torch.save((train_dataset.X, train_dataset.Y,
                 test_dataset.X, test_dataset.Y,
                 C), opt.logger_name + '/data.pth.tar')

@@ -126,7 +126,8 @@ class ResNet(nn.Module):
         out = F.avg_pool2d(out, out.size()[3])
         out = out.view(out.size(0), -1)
         out = self.linear(out)
-        return F.log_softmax(out, dim=-1)
+        # return F.log_softmax(out, dim=-1)
+        return out
 
 
 def resnet8(num_class=10):
@@ -199,7 +200,8 @@ class Convnet(nn.Module):
         if self.dropout:
             x = F.dropout(x, training=self.training)
         x = self.fc2(x)
-        return F.log_softmax(x, dim=-1)
+        # return F.log_softmax(x, dim=-1)
+        return x
 
 
 class MLP(nn.Module):
@@ -228,7 +230,8 @@ class MLP(nn.Module):
         if self.dropout:
             x = F.dropout(x, training=self.training)
         x = self.fc4(x)
-        return F.log_softmax(x, dim=-1)
+        # return F.log_softmax(x, dim=-1)
+        return x
 
 
 if __name__ == "__main__":

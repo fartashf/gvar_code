@@ -8,7 +8,7 @@ import torch
 import torch.nn
 import torch.backends.cudnn as cudnn
 import torch.optim
-import torch.nn.functional as F
+# import torch.nn.functional as F
 import torch.multiprocessing
 
 import utils
@@ -28,15 +28,20 @@ def test(tb_logger, model, test_loader,
     test_loss = 0
     correct = 0
     with torch.no_grad():
-        for data, target, idx in test_loader:
+        for data in test_loader:
             if opt.cuda:
-                data, target = data.cuda(), target.cuda()
-            output = model(data)
-            loss = F.nll_loss(output, target, reduction='none')
+                target = data[1].cuda()
+            # if opt.cuda:
+            #     data, target = data.cuda(), target.cuda()
+            # output = model(data)
+            # loss = F.nll_loss(output, target, reduction='none')
+            loss, output = model.criterion(
+                model, data, reduction='none', return_output=True)
             test_loss += loss.sum().item()
             # get the index of the max log-probability
-            pred = output.data.max(1, keepdim=True)[1]
-            correct += pred.eq(target.data.view_as(pred)).cpu().sum().item()
+            if model.criterion.do_accuracy:
+                pred = output.data.max(1, keepdim=True)[1]
+                correct += pred.eq(target.view_as(pred)).cpu().sum().item()
 
         wrong = len(test_loader.dataset) - correct
         test_loss /= len(test_loader.dataset)

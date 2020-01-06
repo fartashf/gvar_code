@@ -36,6 +36,8 @@ class GlusterEstimator(SGDEstimator):
         data = next(self.data_iter)
 
         assign_i = self.sampler.assign_i
+        assert assign_i is not None,\
+            'goptim with Gluster should begin after an epoch'
         cluster_size = self.sampler.cluster_size
         idx = data[2]
         ci = assign_i[idx].flatten()

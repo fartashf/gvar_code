@@ -295,7 +295,9 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
         data = [data]
         run_names = [run_names]
 
-    color = ['blue', 'orangered', 'limegreen', 'darkkhaki', 'cyan', 'grey']
+    # color = ['blue', 'orangered', 'limegreen', 'darkkhaki', 'cyan', 'grey']
+    import seaborn as sns
+    color = sns.color_palette("bright", 6)
     color = color[:ncolor]
     style = ['-', '--', ':', '-.']
     # plt.rcParams.update({'font.size': 12})
@@ -330,6 +332,7 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
     else:
         ax = plt.gca()
         ax.ticklabel_format(axis='y', style='sci', scilimits=(-3, 3))
+        ax.ticklabel_format(axis='x', style='sci', scilimits=(-3, 3))
     if ylim is not None:
         plt.ylim(ylim)
     # plt.xlim([0, 25000])
