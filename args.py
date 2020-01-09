@@ -277,6 +277,12 @@ def add_args():
                         default=argparse.SUPPRESS, type=float)
     parser.add_argument('--d_const',
                         default=argparse.SUPPRESS, type=float)
+    parser.add_argument('--num_train_data',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--num_test_data',
+                        default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--dim',
+                        default=argparse.SUPPRESS, type=int)
     args = parser.parse_args()
     return args
 

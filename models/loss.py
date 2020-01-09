@@ -125,6 +125,8 @@ class MSELoss(Loss):
         ret = 0.5 * F.mse_loss(*args, **kwargs)
         if reduction == 'mean':
             return ret.sum(1).mean(0)  # ret.mean(1).mean(0)
+        elif reduction == 'sum':
+            return ret.sum()
         return ret.sum(1)  # ret.mean(1)
 
     def _sample_y(self, output):

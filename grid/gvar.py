@@ -1957,6 +1957,62 @@ def logreg_2dvis(args):
     return args, log_dir, module_name, exclude
 
 
+def linreg(args):
+    dataset = 'linreg'
+    module_name = 'main.gvar'
+    log_dir = 'runs_%s_dim1000_niters1e5_bs10_lr5e-5' % dataset
+    exclude = ['dataset', 'lr', 'weight_decay', 'epochs', 'lr_decay_epoch',
+               'optim', 'g_optim', 'g_epoch', 'gvar_start', 'g_optim_start',
+               'g_bsnap_iter', 'dim', 'niters']
+    shared_args = [('dataset', dataset),
+                   ('lr', 5e-5),
+                   ('weight_decay', 0),
+                   # ('epochs', 50),
+                   # ('lr_decay_epoch', 50),
+                   ('niters', 100000),
+                   ('lr_decay_epoch', 100000),
+                   ('dim', 1280),
+                   # ('seed', [123, 456, 789]),
+                   ]
+    gvar_args = [
+        # ('gvar_estim_iter', 10),  # default
+        # ('gvar_log_iter', 100),  # default
+        ('optim', 'sgd'),
+        ('g_optim', ''),
+        # ('g_epoch', ''),
+        ('gvar_start', 10),
+        ('g_optim_start', 1000),
+        ('g_bsnap_iter', 1000),
+        # ('g_mlr', [1, 2]),
+    ]
+
+    args_sgd = [
+        ('g_estim', ['sgd']),
+        ('batch_size', [10, 20]),
+    ]
+    args += [OrderedDict(shared_args+args_sgd+gvar_args)]
+
+    shared_args2 = [
+        ('batch_size', 10),
+    ]
+    args_svrg = [
+        ('g_estim', ['svrg']),
+    ]
+    args += [OrderedDict(shared_args+args_svrg+gvar_args+shared_args2)]
+
+    gluster_args = [
+        ('g_estim', 'gluster'),
+        ('g_nclusters', [10]),
+        ('g_debug', ''),
+        ('gb_citers', 10),
+        ('g_min_size', 1),
+    ]
+
+    args += [OrderedDict(shared_args+gluster_args+gvar_args+shared_args2)]
+
+    return args, log_dir, module_name, exclude
+
+
 def main():
     args = []
     # args, log_dir, module_name, exclude = mnist_gvar(args)
