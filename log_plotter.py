@@ -73,6 +73,10 @@ def get_data(logdir, run_names, tag_names):
 
 def get_data_pth(logdir, run_names, tag_names, batch_size=None):
     data = []
+    if 'acc_gap' in tag_names:
+        tag_names += ['Tacc', 'Vacc']
+    if 'loss_gap' in tag_names:
+        tag_names += ['Tloss', 'Vloss']
     for run_name in run_names:
         d = {}
         logdata = torch.load(run_name + '/log.pth.tar')
@@ -198,6 +202,8 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'est_snr': 'Mean SNR', 'gb_td': 'Total distortion',
               'gb_cs': 'Cluster size',
               'gb_reinits': '# of Reinits',
+              'acc_gap': 'Accuracy gap',
+              'loss_gap': 'Loss gap',
               'est_nvar': 'Mean Normalized Variance'}
     titles = {'Tacc': 'Training Accuracy', 'Terror': 'Training Error',
               'train/accuracy': 'Training Accuracy',
@@ -242,6 +248,8 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'est_nvar': 'Optimization Step Normalized Variance (w/o lr)',
               'gb_td': 'Total distortion of the Gluster objective.',
               'gb_cs': 'Size of Cluster #0',
+              'acc_gap': 'Accuracy generalization gap (Tacc-Vacc)',
+              'loss_gap': 'Loss generalization gap (Vloss-Tloss)',
               'gb_reinits': 'Total number of reinitializations.'}
     yscale_log = ['Tloss', 'Vloss', 'tau', 'lr', 'loss']  # 'est_var', 'gb_td'
     yscale_base = ['tau']
@@ -302,6 +310,12 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
     plt.grid(linewidth=1)
     legends = []
     for i in range(len(data)):
+        if 'acc_gap' in tag_name:
+            data[i]['acc_gap'] = data[i]['Tacc']-data[i]['Vacc']
+            data[i]['acc_gap'][0] = data[i]['Tacc'][0]
+        if 'loss_gap' in tag_name:
+            data[i]['loss_gap'] = data[i]['Vloss']-data[i]['Tloss']
+            data[i]['loss_gap'][0] = data[i]['Tloss'][0]
         if tag_name not in data[i]:
             continue
         legends += [get_legend(lg_tags, run_names[i], lg_replace)]
