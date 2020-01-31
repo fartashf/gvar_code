@@ -72,6 +72,9 @@ class GlusterEstimator(SGDEstimator):
             loss.backward()
             return loss
         g = torch.autograd.grad(loss, model.parameters())
+        if self.opt.g_clip > 0:
+            for gg in g:
+                gg.clamp_(-self.opt.g_clip, self.opt.g_clip)
         return g
 
     def state_dict(self):
@@ -109,9 +112,13 @@ class GlusterBatchEstimator(GlusterEstimator):
         # TODO: refactor this
         # nclusters = self.gluster.nclusters
         for i in range(citers):
+            if self.opt.wnoise:
+                wnoise = self.add_weight_noise(modelg)
             stat = self.gluster.update_batch(
                     self.raw_loader, len(self.raw_loader.dataset),
                     ci=i, citers=citers, do_log=False)
+            if self.opt.wnoise:
+                self.remove_weight_noise(modelg, wnoise)
             # normC = self.gluster.get_center_norms()
             total_dist, assign_i = stat[0], stat[1]
             # correct = topk_i[:, 0]

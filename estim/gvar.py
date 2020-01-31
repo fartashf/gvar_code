@@ -2,6 +2,7 @@ import torch
 import torch.nn
 import torch.multiprocessing
 
+from data import get_minvar_loader
 from estim.sgd import SGDEstimator
 from estim.gluster import GlusterOnlineEstimator, GlusterBatchEstimator
 from estim.svrg import SVRGEstimator
@@ -10,25 +11,26 @@ from estim.ntk import NTKEstimator
 
 
 class MinVarianceGradient(object):
-    def __init__(self, model, data_loader, opt, tb_logger):
+    def __init__(self, model, train_loader, opt, tb_logger):
         self.model = model
-        sgd = SGDEstimator(data_loader, opt, tb_logger)
+        minvar_loader = get_minvar_loader(train_loader, opt)
+        sgd = SGDEstimator(train_loader, opt, tb_logger)
         # gluster or SVRG
         if opt.g_estim == 'gluster':
             if opt.g_online:
                 gest = GlusterOnlineEstimator(
-                        data_loader, opt, tb_logger)
+                        minvar_loader, opt, tb_logger)
             else:
                 gest = GlusterBatchEstimator(
-                        data_loader, opt, tb_logger)
+                        minvar_loader, opt, tb_logger)
         elif opt.g_estim == 'svrg':
-            gest = SVRGEstimator(data_loader, opt, tb_logger)
+            gest = SVRGEstimator(minvar_loader, opt, tb_logger)
         elif opt.g_estim == 'svrgc':
-            gest = SVRGClipEstimator(data_loader, opt, tb_logger)
+            gest = SVRGClipEstimator(minvar_loader, opt, tb_logger)
         elif opt.g_estim == 'sgd':
-            gest = SGDEstimator(data_loader, opt, tb_logger)
+            gest = SGDEstimator(minvar_loader, opt, tb_logger)
         elif opt.g_estim == 'ntk':
-            gest = NTKEstimator(data_loader, opt, tb_logger)
+            gest = NTKEstimator(minvar_loader, opt, tb_logger)
         self.sgd = sgd
         self.gest = gest
         self.opt = opt

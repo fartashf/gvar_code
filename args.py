@@ -150,6 +150,8 @@ def add_args():
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--nodropout',
                         default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--nobatchnorm',
+                        default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--num_class',
                         default=argparse.SUPPRESS, type=int)
     parser.add_argument('--minvar',
@@ -256,6 +258,8 @@ def add_args():
     parser.add_argument('--niters',
                         default=argparse.SUPPRESS, type=int)
     parser.add_argument('--svrgc_clip', default=1, type=float)
+    parser.add_argument('--g_clip', default=-1, type=float)
+    parser.add_argument('--max_train_size', default=-1, type=int)
     # KFAC
     parser.add_argument('--kf_stat_decay', default=0.95, type=float)
     parser.add_argument('--kf_damping', default=1e-3, type=float)

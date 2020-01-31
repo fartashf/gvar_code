@@ -7,7 +7,6 @@ import optim.kfac
 import optim.ekfac
 
 import utils
-from data import get_minvar_loader
 from log_utils import LogCollector
 from estim.gvar import MinVarianceGradient
 
@@ -22,8 +21,7 @@ class OptimizerFactory(object):
         self.logger = LogCollector(opt)
         self.param_groups = None
         self.gest_used = False
-        minvar_loader = get_minvar_loader(train_loader, opt)
-        self.gvar = MinVarianceGradient(model, minvar_loader, opt, tb_logger)
+        self.gvar = MinVarianceGradient(model, train_loader, opt, tb_logger)
         self.reset()
 
     def reset(self):

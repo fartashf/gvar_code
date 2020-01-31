@@ -34,6 +34,7 @@ class GradientEstimator(object):
     def grad_estim(self, model):
         # insuring continuity of data seen in training
         # TODO: make sure sub-classes never use any other data_iter, e.g. raw
+        # NOT USED FOR TRAINING, ONLY ESTIM, DO NOT MODIFY
         dt = self.data_iter
         self.data_iter = self.estim_iter
         ret = self.grad(model)
@@ -41,6 +42,19 @@ class GradientEstimator(object):
         #     self.update_avg_sq(self, ret)
         self.data_iter = dt
         return ret
+
+    def add_weight_noise(self, model):
+        s = self.opt.wnoise_stddev
+        wnoise = [torch.zeros_like(p) for p in model.parameters()]
+        with torch.no_grad():
+            for p, n in zip(model.parameters(), wnoise):
+                p.add_(n.normal_(0, s))
+        return wnoise
+
+    def remove_weight_noise(self, model, wnoise):
+        with torch.no_grad():
+            for p, n in zip(model.parameters(), wnoise):
+                p.sub_(n)
 
     def get_Ege_var(self, model, gviter):
         # estimate grad mean and variance

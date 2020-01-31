@@ -130,6 +130,8 @@ class IndexedDataset(data.Dataset):
 
     def __getitem__(self, index):
         subindex = index
+        if self.opt.max_train_size > 0:
+            subindex = subindex % self.opt.max_train_size
         if index >= len(self.ds):
             subindex = self.dup_ids[(index-len(self.ds))//self.dup_cnt]
         img, target = self.ds[subindex]

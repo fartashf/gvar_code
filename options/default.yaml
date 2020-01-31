@@ -38,6 +38,7 @@ tauXstdL: False
 scheduler: False
 pretrained: False
 nodropout: False
+nobatchnorm: False
 minvar: False
 instantw: False
 lr_decay_rate: 0.1

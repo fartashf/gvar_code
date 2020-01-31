@@ -31,8 +31,20 @@ def init_model(opt):
         # model.cuda()
         if opt.arch == 'cnn':
             model = models.cifar10.Convnet(num_class=opt.num_class)
+        elif opt.arch == 'scnn':
+            model = models.cifar10.SmallCNN(num_class=opt.num_class)
+        elif opt.arch == 'sscnn':
+            model = models.cifar10.SuperSmallCNN(num_class=opt.num_class)
         elif opt.arch == 'mlp':
             model = models.cifar10.MLP(num_class=opt.num_class)
+        elif opt.arch == 'smlp':
+            model = models.cifar10.SmallMLP(num_class=opt.num_class)
+        elif opt.arch == 'msmlp':
+            model = models.cifar10.MoreSmallMLP(num_class=opt.num_class)
+        elif opt.arch == 'ssmlp':
+            model = models.cifar10.SuperSmallMLP(num_class=opt.num_class)
+        elif opt.arch == 'linear':
+            model = models.cifar10.LP(num_class=opt.num_class)
         elif opt.arch.startswith('wrn'):
             depth, widen_factor = map(int, opt.arch[3:].split('-'))
             # model = models.cifar10_wresnet.Wide_ResNet(28, 10, 0.3, 10)
@@ -40,7 +52,7 @@ def init_model(opt):
                 depth, opt.num_class, widen_factor, 0.3)
         else:
             model = models.cifar10.__dict__[opt.arch](
-                num_class=opt.num_class)
+                num_class=opt.num_class, nobatchnorm=opt.nobatchnorm)
         model = torch.nn.DataParallel(model)
     elif opt.dataset == 'imagenet':
         model = models.imagenet.Model(opt.arch, opt.pretrained,
