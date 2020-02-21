@@ -8,6 +8,7 @@ import models.imagenet
 import models.cifar10_wresnet
 import models.cifar10_wresnet2
 import models.loss
+import models.cifar10_vgg
 
 
 def init_model(opt):
@@ -50,6 +51,9 @@ def init_model(opt):
             # model = models.cifar10_wresnet.Wide_ResNet(28, 10, 0.3, 10)
             model = models.cifar10_wresnet2.WideResNet(
                 depth, opt.num_class, widen_factor, 0.3)
+        elif opt.arch.startswith('vgg'):
+            model = models.cifar10_vgg.__dict__[opt.arch](
+                num_class=opt.num_class)
         else:
             model = models.cifar10.__dict__[opt.arch](
                 num_class=opt.num_class, nobatchnorm=opt.nobatchnorm)
