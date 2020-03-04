@@ -288,7 +288,7 @@ def cifar100_gvar(args):
 def imagenet_gvar(args):
     dataset = 'imagenet'
     module_name = 'main.gvar'
-    log_dir = 'runs_%s_gvar' % dataset
+    log_dir = 'runs_%s_gvar_cbiters' % dataset
     exclude = ['dataset', 'lr', 'weight_decay', 'epochs', 'lr_decay_epoch',
                'optim', 'g_optim', 'g_epoch', 'gvar_start', 'g_optim_start',
                'g_bsnap_iter', 'dim', 'niters', 'gvar_log_iter',
@@ -301,16 +301,15 @@ def imagenet_gvar(args):
                    ('lr_decay_epoch', '40000,60000'),
                    # ('seed', [123, 456, 789]),
                    # ('label_smoothing', [None, 0.1]),
-                   # ('data_aug', [None, '']),
-                   ('corrupt_perc', [None, 20]),
-                   ('duplicate', [None, '10,10000']),
+                   # ('corrupt_perc', [None, 20]),
+                   # ('duplicate', [None, '10,10000']),
                    ]
     gvar_args = [
         ('gvar_estim_iter', 10),  # default 10
         ('gvar_log_iter', 1000),  # default 100
         ('optim', 'sgd'),
         ('gvar_start', 100),  # 24100),  # 100),
-        ('g_bsnap_iter', 20000),
+        ('g_bsnap_iter', 10000),
     ]
     disj_args = [  # [],
                  # OrderedDict([('label_smoothing', 0.1)]),
@@ -322,7 +321,7 @@ def imagenet_gvar(args):
 
     args_sgd = [
         ('g_estim', ['sgd']),
-        ('g_batch_size', [128, 256]),
+        ('g_batch_size', [128, 256]),  # [64, 256]),  # [128, 256]),
     ]
     args += [tuple((OrderedDict(shared_args+args_sgd+gvar_args), disj_args))]
 
@@ -333,9 +332,10 @@ def imagenet_gvar(args):
 
     gluster_args = [
         ('g_estim', 'gluster'),
-        ('g_nclusters', 128),  # [8, 128]),
+        # ('g_batch_size', [64, 256]),  # [128, 256]),
+        ('g_nclusters', 128),  # 256),  # 128),  # [8, 128]),
         ('g_debug', ''),
-        ('gb_citers', 3),  # [2, 10, 20, 50]),
+        ('gb_citers', 5),  # [2, 10, 20, 50]),
         ('g_min_size', 1),
         # ('wnoise', ''),
         # ('wnoise_stddev', [1e-2, 1e-3, 1e-4]),
