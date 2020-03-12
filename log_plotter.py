@@ -75,7 +75,11 @@ def get_data_pth(logdir, run_names, tag_names, batch_size=None):
     data = []
     for run_name in run_names:
         d = {}
-        logdata = torch.load(run_name + '/log.pth.tar')
+        if not os.path.exists(run_name + '/log.pth.tar'):
+            logdata = {}
+            logdata['gb_td'] = [(0, 1000, np.nan)]
+        else:
+            logdata = torch.load(run_name + '/log.pth.tar')
         if 'classes' in logdata:
             d['classes'] = logdata['classes']
         for tag_name in tag_names:

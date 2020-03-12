@@ -176,8 +176,13 @@ class GradientClusterBatch(GradientCluster):
             # print([a.shape for a in A[-20:]])
             # import ipdb; ipdb.set_trace()
             ai, batch_dist, gg = self.assign()
-            assert batch_dist.max() < 1e10 and batch_dist.min() > -1e10,\
-                'Distortion out of bounds'
+            # out of bounds distortion doesn't matter, data will be assigned
+            # to some cluster and will be fine after
+            # assert batch_dist.max() < 1e10 and batch_dist.min() > -1e10,\
+            #     'Distortion out of bounds'
+            import warnings
+            if batch_dist.max() < 1e10 and batch_dist.min() > -1e10:
+                warnings.warn('Distortion out of bounds')
             assign_i[idx] = ai
             if do_log:
                 GG_i[idx] = gg.cpu().numpy()

@@ -87,3 +87,4 @@ g_mlr: 1
 g_whiten: False
 svrg_bsnap_num: -1
 niters: 0
+g_kahan: False

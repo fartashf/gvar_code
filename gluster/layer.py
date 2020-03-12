@@ -93,6 +93,7 @@ class GlusterModule(object):
             debug=True, add_GG=False, add_CZ=False,
             cluster_size=None, rank=1, stable=100,
             do_whiten=False, adam_betas=None, adam_eps=None,
+            do_kahan=False,
             *args, **kwargs):
         self.module = module
         self.nclusters = nclusters*rank
@@ -133,6 +134,7 @@ class GlusterModule(object):
         self.rank = rank
         self.stable = stable
         self.do_whiten = do_whiten
+        self.do_kahan = do_kahan
         if do_whiten:
             self.whitener = Whitener(adam_betas, adam_eps)
         self._register_hooks()
@@ -241,6 +243,9 @@ class GlusterModule(object):
                 self.Dw_acc.fill_(0)
             self.Zi_new.fill_(0)
             self.Zo_new.fill_(0)
+            if self.do_kahan:
+                self.Ci_new_c.fill_(0)
+                self.Co_new_c.fill_(0)
         if self.has_bias:
             self.Cb_new.fill_(0)
 
@@ -309,6 +314,8 @@ class GlusterModule(object):
         with torch.no_grad():
             if self.do_svd:
                 self.accum_new_full(assign_i)
+            elif self.do_kahan:
+                self.accum_new_rank1_kahan(assign_i)
             else:
                 self.accum_new_rank1(assign_i)
 
@@ -324,6 +331,34 @@ class GlusterModule(object):
                 self.Zo_new.add_(Gos.sum(0))
         if self.has_bias:
             self.Cb_new.scatter_add_(0, assign_i.expand_as(Gos), Gos)
+
+    def kahan_sum(self, Xs, assign_i, s, c):
+        """Prevent loss of precision for large datasets
+        https://en.wikipedia.org/wiki/Kahan_summation_algorithm
+        sum = 0
+        c = 0
+        for x in data:
+            y = x - c
+            t = sum + y
+            c = (t-sum) - y
+            sum = t
+        """
+        with torch.no_grad():
+            x = torch.zeros_like(s)
+            x.scatter_add_(0, assign_i.expand_as(Xs), Xs)
+            y = x - c
+            t = s + y
+            c.copy_(t-s).sub_(y)
+            s.copy_(t)
+
+    def accum_new_rank1_kahan(self, assign_i):
+        Ais = self.Ais
+        Gos = self.Gos
+        if self.has_weight:
+            self.kahan_sum(Ais, assign_i, self.Ci_new, self.Ci_new_c)
+            self.kahan_sum(Gos, assign_i, self.Co_new, self.Co_new_c)
+        if self.has_bias:
+            raise Exception('Not Implemented')
 
     def accum_new_full(self, assign_i):
         self.Dw_acc.scatter_add_(
@@ -434,6 +469,9 @@ class GlusterLinear(GlusterModule):
                 self.Co = torch.rand((C, dout)).cuda()/(din+dout)*self.eps
                 self.Ci_new = torch.zeros_like(self.Ci)
                 self.Co_new = torch.zeros_like(self.Co)
+                if self.do_kahan:
+                    self.Ci_new_c = torch.zeros_like(self.Ci)
+                    self.Co_new_c = torch.zeros_like(self.Co)
                 self.Zi = torch.rand((1, din)).cuda()/(din+dout)*self.eps
                 self.Zo = torch.rand((1, dout)).cuda()/(din+dout)*self.eps
                 self.Zi_new = torch.zeros_like(self.Zi)
@@ -596,6 +634,9 @@ class GlusterConv(GlusterModule):
                 self.Co = torch.rand((C, dout)).cuda()/(din+dout)*eps
                 self.Ci_new = torch.zeros_like(self.Ci)
                 self.Co_new = torch.zeros_like(self.Co)
+                if self.do_kahan:
+                    self.Ci_new_c = torch.zeros_like(self.Ci)
+                    self.Co_new_c = torch.zeros_like(self.Co)
                 self.Zi = torch.rand((1, din)).cuda()/(din+dout)*eps
                 self.Zo = torch.rand((1, dout)).cuda()/(din+dout)*eps
                 self.Zi_new = torch.zeros_like(self.Zi)

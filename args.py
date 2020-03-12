@@ -216,6 +216,8 @@ def add_args():
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--g_CZ',
                         default=argparse.SUPPRESS, action='store_true')
+    parser.add_argument('--g_kahan',
+                        default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--no_transform',
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--g_init_mul',
@@ -308,7 +310,8 @@ def opt_to_gluster_kwargs(opt):
             'reg_Nk': opt.g_reg_Nk, 'stable': opt.g_stable,
             'gnoise': opt.g_noise,
             'adam_betas': opt.adam_betas, 'adam_eps': opt.adam_eps,
-            'do_whiten': opt.g_whiten}
+            'do_whiten': opt.g_whiten,
+            'do_kahan': opt.g_kahan}
 
 
 def opt_to_ntk_kwargs(opt):

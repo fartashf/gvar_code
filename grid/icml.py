@@ -348,3 +348,75 @@ def imagenet_gvar(args):
         tuple((OrderedDict(shared_args+gluster_args+gvar_args), disj_args))]
 
     return args, log_dir, module_name, exclude
+
+
+def nclusters(args):
+    module_name = 'main.gvar'
+    log_dir = 'runs_nclusters'
+    exclude = ['lr', 'weight_decay', 'epochs', 'lr_decay_epoch',
+               'optim', 'g_optim', 'g_epoch', 'gvar_start', 'g_optim_start',
+               'g_bsnap_iter', 'dim', 'niters', 'gvar_log_iter',
+               'gvar_estim_iter']
+    gvar_args = [
+        ('gvar_estim_iter', 10),  # default 10
+        ('gvar_log_iter', 1000),  # default 100
+        ('optim', 'sgd'),
+        ('gvar_start', 1000),  # 24100),  # 100),
+        ('g_bsnap_iter', 10000),
+    ]
+    gluster_args = [
+        ('g_estim', 'gluster'),
+        # ('g_batch_size', [64, 256]),  # [128, 256]),
+        ('g_nclusters', [1, 2, 4, 8, 16, 32, 64, 128, 256]),
+        ('g_debug', ''),
+        ('gb_citers', 5),  # [2, 10, 20, 50]),
+        ('g_min_size', 1),
+        # ('wnoise', ''),
+        # ('wnoise_stddev', [1e-2, 1e-3, 1e-4]),
+        # ('g_avg', [50, 100]),  # [200, 500, 1000]),  # [10, 100]),
+        # ('g_msnap_iter', 1),  # [1, 10]),
+        # ('g_clip', 2),
+    ]
+
+    # shared_args = [('dataset', 'mnist'),
+    #                ('lr', .02),
+    #                ('arch', 'cnn'),  # ['mlp', 'cnn']),
+    #                # ('weight_decay', 0),
+    #                ('niters', 2000),
+    #                ('lr_decay_epoch', 50000),
+    #                # ('seed', [123, 456, 789]),
+    #                # ('nodropout', ''),
+    #                ('batch_size', 128),
+    #                ]
+    # args += [OrderedDict(shared_args+gluster_args+gvar_args)]
+
+    # shared_args = [('dataset', 'cifar10'),
+    #                ('lr', 0.1),  # .01),  # 0.1
+    #                ('arch', 'resnet32'),
+    #                # ('weight_decay', 0),
+    #                ('niters', 2000),
+    #                ('lr_decay_epoch', '40000,60000'),
+    #                ('batch_size', 128),
+    #                # ('seed', [123, 456, 789]),
+    #                # ('label_smoothing', [None, 0.1]),
+    #                # ('data_aug', [None, '']),
+    #                # ('corrupt_perc', [None, 20]),
+    #                ('duplicate', [None, '10,10000']),
+    #                ]
+    # args += [OrderedDict(shared_args+gluster_args+gvar_args)]
+
+    shared_args = [('dataset', 'imagenet'),
+                   ('lr', 0.1),  # .01),  # 0.1
+                   ('arch', 'resnet18'),
+                   ('weight_decay', 1e-4),
+                   ('niters', 2000),
+                   ('lr_decay_epoch', '40000,60000'),
+                   ('batch_size', 128),
+                   ('g_kahan', [None, '']),
+                   # ('seed', [123, 456, 789]),
+                   # ('label_smoothing', [None, 0.1]),
+                   # ('corrupt_perc', [None, 20]),
+                   ]
+    args += [OrderedDict(shared_args+gluster_args+gvar_args)]
+
+    return args, log_dir, module_name, exclude
