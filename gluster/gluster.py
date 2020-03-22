@@ -8,7 +8,7 @@ from log_utils import Profiler
 class GradientCluster(object):
     def __init__(self, model, nclusters=1, debug=True, mul_Nk=False,
                  add_GG=False, add_CZ=False, eps=1, rank=1, eps_td=1e-7,
-                 reg_Nk=0, gnoise=0, **kwargs):
+                 reg_Nk=0, gnoise=0, rand_input=False, **kwargs):
         # Q: duplicates
         # TODO: challenge: how many C? memory? time?
 
@@ -28,6 +28,7 @@ class GradientCluster(object):
         self.eps_td = eps_td
         self.reg_Nk = reg_Nk
         self.gnoise = gnoise
+        self.rand_input = rand_input
 
         self.G = GlusterContainer(
                 model, eps, nclusters, debug=debug,
@@ -151,7 +152,18 @@ class GradientClusterBatch(GradientCluster):
                     'Gluster batch> Save distortions'
                     ' and assign data to clusters.')
         batch_time = Profiler()
+        gmm_c = None
         for batch_idx, data in enumerate(data_loader):
+            if self.rand_input:
+                ftype = 0
+                if ftype == 0:
+                    data[0].uniform_(-1, 1)
+                else:
+                    if gmm_c is None:
+                        gmm_c = data[0].clone()
+                        gmm_c.uniform_(-1, 1)
+                    data[0].normal_(0, 0.1)
+                    data[0].add_(gmm_c[:data[0].shape[0]])
             idx = data[2]
             # data, target = data.to(device), target.to(device)
             # model.zero_grad()

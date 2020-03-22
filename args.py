@@ -289,6 +289,7 @@ def add_args():
                         default=argparse.SUPPRESS, type=int)
     parser.add_argument('--dim',
                         default=argparse.SUPPRESS, type=int)
+    parser.add_argument('--g_rand_input', action='store_true')
     args = parser.parse_args()
     return args
 
@@ -311,7 +312,8 @@ def opt_to_gluster_kwargs(opt):
             'gnoise': opt.g_noise,
             'adam_betas': opt.adam_betas, 'adam_eps': opt.adam_eps,
             'do_whiten': opt.g_whiten,
-            'do_kahan': opt.g_kahan}
+            'do_kahan': opt.g_kahan,
+            'rand_input': opt.g_rand_input}
 
 
 def opt_to_ntk_kwargs(opt):
