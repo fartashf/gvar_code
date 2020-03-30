@@ -847,18 +847,27 @@ def get_logreg_loaders(opt, **kwargs):
 
 class LinearRegressionDataset(data.Dataset):
 
-    def __init__(self, C, D, num, dim, num_class, train=True):
+    def __init__(self, C, D, num, dim, num_class, r2=0, snr=1, w0=None,
+                 train=True):
         X = np.zeros((dim, num))
         Y = np.zeros((num_class, num))
+        if w0 is None:
+            w0 = np.random.normal(0, 1, (dim, num_class))
+            w0 = w0/np.linalg.norm(w0)*r2
         for i in range(num_class):
             n = num // num_class
-            e = np.random.normal(0.0, 1.0, (dim, n))
+            s2 = 1
+            if r2 > 1e-5:
+                s2 = r2/snr
+            e = np.random.normal(0.0, s2, (dim, n))
             # X[:, i * n:(i + 1) * n] = np.dot(D[:, :, i], e) + C[:, i:i + 1]
-            X[:, i * n:(i + 1) * n] = D * e + C
+            Xcur = D * e + C
+            X[:, i * n:(i + 1) * n] = Xcur
             e = np.random.normal(0.0, .1, (num_class, n))
-            Y[:, i * n:(i + 1) * n] = i/num_class*0 + e  # i + e
+            Y[:, i * n:(i + 1) * n] = w0.T.dot(Xcur) + e  # i + e
         self.X = X
         self.Y = Y
+        self.w0 = w0
         self.classes = range(num_class)
 
     def __getitem__(self, index):
@@ -881,10 +890,14 @@ def get_linreg_loaders(opt, **kwargs):
     C = opt.c_const
     D = opt.d_const
     train_dataset = LinearRegressionDataset(
-        C, D, opt.num_train_data, opt.dim, opt.num_class, train=True)
+        C, D, opt.num_train_data, opt.dim, opt.num_class, r2=opt.r2,
+        snr=opt.snr,
+        train=True)
     # print("Create test")
     test_dataset = LinearRegressionDataset(
-        C, D, opt.num_test_data, opt.dim, opt.num_class, train=False)
+        C, D, opt.num_test_data, opt.dim, opt.num_class, r2=opt.r2,
+        snr=opt.snr, w0=train_dataset.w0,
+        train=False)
     torch.save((train_dataset.X, train_dataset.Y,
                 test_dataset.X, test_dataset.Y,
                 C), opt.logger_name + '/data.pth.tar')
@@ -905,8 +918,10 @@ def get_rcv1_loaders(opt, **kwargs):
         num_class=opt.num_class)
     xmean, xstd = train_dataset.xmean, train_dataset.xstd
     test_dataset = LibSVMDataset(
-        # os.path.join(opt.data, 'rcv1_test.binary.bz2'), xmean=xmean, xstd=xstd)
-        os.path.join(opt.data, 'rcv1_train.binary.bz2'), xmean=xmean, xstd=xstd)
+        # os.path.join(opt.data, 'rcv1_test.binary.bz2'),
+        # xmean=xmean, xstd=xstd)
+        os.path.join(opt.data, 'rcv1_train.binary.bz2'),
+        xmean=xmean, xstd=xstd)
     return dataset_to_loaders(train_dataset, test_dataset, opt, **kwargs)
 
 

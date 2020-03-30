@@ -36,7 +36,7 @@ def logreg_2dvis(args):
 def linreg(args):
     dataset = 'linreg'
     module_name = 'main.gvar'
-    log_dir = 'runs_%s_dim1000_niters1e5_bs10_lr5e-5_dup' % dataset
+    log_dir = 'runs_%s_dim1000_niters1e5_bs10_lr5e-5_snr_10' % dataset
     exclude = ['dataset', 'lr', 'weight_decay', 'epochs', 'lr_decay_epoch',
                'optim', 'g_optim', 'g_epoch', 'gvar_start', 'g_optim_start',
                'g_bsnap_iter', 'dim', 'niters']
@@ -49,7 +49,10 @@ def linreg(args):
                    ('lr_decay_epoch', 100000),
                    ('dim', 1280),
                    # ('seed', [123, 456, 789]),
-                   ('duplicate', '10,10000'),
+                   ('r2', 1),
+                   ('snr', 10),
+                   # ('duplicate', '10,100'),
+                   # ('num_train_data', 640),
                    ]
     gvar_args = [
         # ('gvar_estim_iter', 10),  # default
@@ -289,7 +292,7 @@ def cifar100_gvar(args):
 def imagenet_gvar(args):
     dataset = 'imagenet'
     module_name = 'main.gvar'
-    log_dir = 'runs_%s_gvar_cbiters' % dataset
+    log_dir = 'runs_%s_gvar_kahan' % dataset
     exclude = ['dataset', 'lr', 'weight_decay', 'epochs', 'lr_decay_epoch',
                'optim', 'g_optim', 'g_epoch', 'gvar_start', 'g_optim_start',
                'g_bsnap_iter', 'dim', 'niters', 'gvar_log_iter',
@@ -336,8 +339,9 @@ def imagenet_gvar(args):
         # ('g_batch_size', [64, 256]),  # [128, 256]),
         ('g_nclusters', 128),  # 256),  # 128),  # [8, 128]),
         ('g_debug', ''),
-        ('gb_citers', 5),  # [2, 10, 20, 50]),
+        ('gb_citers', 3),  # [2, 10, 20, 50]),
         ('g_min_size', 1),
+        ('g_kahan', ''),
         # ('wnoise', ''),
         # ('wnoise_stddev', [1e-2, 1e-3, 1e-4]),
         # ('g_avg', [50, 100]),  # [200, 500, 1000]),  # [10, 100]),
