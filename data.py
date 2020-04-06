@@ -111,6 +111,24 @@ class IndexedDataset(data.Dataset):
         self.dup_num = 0
         self.dup_cnt = 0
         self.dup_ids = []
+        self.imb_ids = []
+
+        if opt.imbalance != '' and train:
+            y = []
+            for i in range(len(self.ds)):
+                y += [self.ds[i][1]]
+            y = np.array(y)
+            params = map(float, self.opt.imbalance.split(','))
+            self.imb_class, self.imb_ratio = params
+            II = list(np.where(y == int(self.imb_class))[0])
+            self.imb_ids = list(np.arange(len(self.ds)))
+            self.imb_ids = list(np.delete(self.imb_ids, II))
+            for i in range(int(self.imb_ratio)):
+                self.imb_ids += II
+            imb_left = (self.imb_ratio - int(self.imb_ratio))*len(II)
+            self.imb_ids += list(np.array(II)[
+                    np.random.permutation(len(II))[:int(imb_left)]])
+
         if opt.duplicate != '' and train:
             params = map(int, self.opt.duplicate.split(','))
             self.dup_num, self.dup_cnt = params
@@ -129,6 +147,9 @@ class IndexedDataset(data.Dataset):
             self.cr_ids = cr_ids[:cr_num]
 
     def __getitem__(self, index):
+        if len(self.imb_ids) > 0:
+            img, target = self.ds[self.imb_ids[index]]
+            return img, target, index
         subindex = index
         if self.opt.max_train_size > 0:
             subindex = subindex % self.opt.max_train_size
@@ -141,6 +162,8 @@ class IndexedDataset(data.Dataset):
         return img, target, index
 
     def __len__(self):
+        if len(self.imb_ids) > 0:
+            return len(self.imb_ids)
         return len(self.ds)+self.dup_num*self.dup_cnt
 
 
@@ -665,6 +688,14 @@ class GlusterSampler(Sampler):
         if self.assign_i is None:
             for i in torch.randperm(self.data_size):
                 yield i
+            return
+
+        incluster = self.opt.g_incluster
+        if incluster >= 0:
+            # only individual cluster variance
+            for i in range(len(self.iters[incluster])):
+                idx = next(self.iters[incluster])
+                yield idx
             return
 
         C = self.C

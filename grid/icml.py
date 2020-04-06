@@ -96,19 +96,22 @@ def linreg(args):
 def mnist_gvar(args):
     dataset = 'mnist'
     module_name = 'main.gvar'
-    log_dir = 'runs_%s_gvar' % dataset
+    # log_dir = 'runs_%s_gvar' % dataset
+    log_dir = 'runs_%s_gvar_imbalance' % dataset
     exclude = ['dataset', 'lr', 'weight_decay', 'epochs', 'lr_decay_epoch',
                'optim', 'g_optim', 'g_epoch', 'gvar_start', 'g_optim_start',
                'g_bsnap_iter', 'dim', 'niters']
     shared_args = [('dataset', dataset),
                    ('lr', .02),
-                   ('arch', ['mlp', 'cnn']),
+                   # ('arch', ['mlp', 'cnn']),
+                   ('arch', 'cnn'),
                    # ('weight_decay', 0),
                    ('niters', 50000),
                    ('lr_decay_epoch', 50000),
                    # ('seed', [123, 456, 789]),
                    ('nodropout', ''),
                    ('batch_size', 128),
+                   ('imbalance', [None, '0,0.01', '0,10', '1,0.01', '1,10']),
                    ]
     gvar_args = [
         ('gvar_estim_iter', 50),  # default 10
@@ -131,7 +134,7 @@ def mnist_gvar(args):
 
     gluster_args = [
         ('g_estim', 'gluster'),
-        ('g_nclusters', [8, 128]),
+        ('g_nclusters', 128),  # [8, 128]),
         ('g_debug', ''),
         ('gb_citers', 10),
         ('g_min_size', 1),
@@ -145,7 +148,8 @@ def mnist_gvar(args):
 def cifar10_gvar(args):
     dataset = 'cifar10'
     module_name = 'main.gvar'
-    log_dir = 'runs_%s_gvar_resnet32_data_prod' % dataset
+    # log_dir = 'runs_%s_gvar_resnet32_data_prod' % dataset
+    log_dir = 'runs_%s_gvar_resnet32_imbalance' % dataset
     exclude = ['dataset', 'lr', 'weight_decay', 'epochs', 'lr_decay_epoch',
                'optim', 'g_optim', 'g_epoch', 'gvar_start', 'g_optim_start',
                'g_bsnap_iter', 'dim', 'niters', 'gvar_log_iter',
@@ -166,9 +170,12 @@ def cifar10_gvar(args):
                    ('niters', 80000),
                    ('lr_decay_epoch', '40000,60000'),
                    # ('seed', [123, 456, 789]),
-                   ('label_smoothing', [None, 0.1]),
-                   ('data_aug', [None, '']),
-                   ('corrupt_perc', [None, 20]),
+                   # ## data_prod
+                   # ('label_smoothing', [None, 0.1]),
+                   # ('data_aug', [None, '']),
+                   # ('corrupt_perc', [None, 20]),
+                   # ## imbalance
+                   ('imbalance', [None, '0,0.01', '0,10', '1,0.01', '1,10']),
                    ]
     gvar_args = [
         ('gvar_estim_iter', 50),  # default 10
@@ -424,5 +431,79 @@ def nclusters(args):
     #                # ('corrupt_perc', [None, 20]),
     #                ]
     # args += [OrderedDict(shared_args+gluster_args+gvar_args)]
+
+    return args, log_dir, module_name, exclude
+
+
+def cifar10_gvar_incluster(args):
+    dataset = 'cifar10'
+    module_name = 'main.gvar'
+    log_dir = 'runs_%s_gvar_incluster' % dataset
+    exclude = ['dataset', 'lr', 'weight_decay', 'epochs', 'lr_decay_epoch',
+               'optim', 'g_optim', 'g_epoch', 'gvar_start', 'g_optim_start',
+               'g_bsnap_iter', 'dim', 'niters', 'gvar_log_iter',
+               'gvar_estim_iter']
+    shared_args = [('dataset', dataset),
+                   # ('lr', 0.1),  # .01),  # 0.1
+                   ('arch', [
+                       # ('cnn', OrderedDict([('nodropout', '')])),
+                       ('resnet8',
+                        OrderedDict([('nobatchnorm', ''),
+                                     ('lr', 0.01)])),
+                       # 'resnet32',
+                       # 'vgg11'
+                       # ('resnet32', OrderedDict([('ghostbn', '')])),
+                       # ('vgg11', OrderedDict([('ghostbn', '')])),
+                   ]),
+                   # ('weight_decay', 0),
+                   ('niters', 80000),
+                   ('lr_decay_epoch', '40000,60000'),
+                   # ('seed', [123, 456, 789]),
+                   # ('label_smoothing', [None, 0.1]),
+                   # ('data_aug', [None, '']),
+                   # ('corrupt_perc', [None, 20]),
+                   ]
+    gvar_args = [
+        ('gvar_estim_iter', 50),  # default 10
+        ('gvar_log_iter', 500),  # default 100
+        ('optim', 'sgd'),
+        ('gvar_start', 100),  # 24100),  # 100),
+        ('g_bsnap_iter', 20000),
+    ]
+    disj_args = [  # [],
+                 # OrderedDict([('label_smoothing', 0.1)]),
+                 # OrderedDict([('duplicate', '10,10000')]),
+                 # # OrderedDict([('data_aug', '')]),
+                 # # OrderedDict([('max_train_size', 100)]),
+                 # OrderedDict([('corrupt_perc', 20)])
+                 ]
+
+    args_sgd = [
+        ('g_estim', ['sgd']),
+        ('g_batch_size', [128, 256]),
+    ]
+    args += [tuple((OrderedDict(shared_args+args_sgd+gvar_args), disj_args))]
+
+    # args_svrg = [
+    #     ('g_estim', ['svrg']),
+    # ]
+    # args += [OrderedDict(shared_args+args_svrg+gvar_args)]
+
+    gluster_args = [
+        ('g_estim', 'gluster'),
+        ('g_nclusters', 128),  # [8, 128]),
+        ('g_debug', ''),
+        ('gb_citers', 3),  # [2, 10, 20, 50]),
+        ('g_min_size', 1),
+        ('g_incluster', [None, 0, 1, 10, 50, 100, 126, 127]),
+        # ('wnoise', ''),
+        # ('wnoise_stddev', [1e-2, 1e-3, 1e-4]),
+        # ('g_avg', [50, 100]),  # [200, 500, 1000]),  # [10, 100]),
+        # ('g_msnap_iter', 1),  # [1, 10]),
+        # ('g_clip', 2),
+    ]
+
+    args += [
+        tuple((OrderedDict(shared_args+gluster_args+gvar_args), disj_args))]
 
     return args, log_dir, module_name, exclude

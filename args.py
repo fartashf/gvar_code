@@ -170,6 +170,8 @@ def add_args():
                         default=argparse.SUPPRESS, type=float)
     parser.add_argument('--duplicate',
                         default=argparse.SUPPRESS, type=str)
+    parser.add_argument('--imbalance',
+                        default=argparse.SUPPRESS, type=str)
     parser.add_argument('--alpha_diff',
                         default=argparse.SUPPRESS, action='store_true')
     parser.add_argument('--gluster',
@@ -292,6 +294,7 @@ def add_args():
     parser.add_argument('--r2', default=0, type=float)
     parser.add_argument('--snr', default=1, type=float)
     parser.add_argument('--g_rand_input', action='store_true')
+    parser.add_argument('--g_incluster', default=-1, type=int)
     args = parser.parse_args()
     return args
 
