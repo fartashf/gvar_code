@@ -160,7 +160,7 @@ def get_legend(lg_tags, run_name, lg_replace=[]):
 
 
 def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
-             ncolor=None, lg_replace=[], no_title=False):
+             ncolor=None, lg_replace=[], no_title=False, no_legend=False):
     xlabel = {'visits_h': '# Visits',
               'count_h': '# Wait Iterations',
               'Tloss_h': 'Loss',
@@ -303,7 +303,9 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
         data = [data]
         run_names = [run_names]
 
-    color = ['blue', 'orangered', 'limegreen', 'darkkhaki', 'cyan', 'grey']
+    # color = ['blue', 'orangered', 'limegreen', 'darkkhaki', 'cyan', 'grey']
+    import seaborn as sns
+    color = sns.color_palette('bright', 6)
     color = color[:ncolor]
     style = ['-', '--', ':', '-.']
     # plt.rcParams.update({'font.size': 12})
@@ -349,7 +351,8 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
     if ylim is not None:
         plt.ylim(ylim)
     # plt.xlim([0, 25000])
-    plt.legend(legends)
+    if not no_legend:
+        plt.legend(legends)
     plt.xlabel(xlabel[tag_name])
     plt.ylabel(ylabel[tag_name])
 
@@ -361,7 +364,7 @@ def ticks(y, pos):
 def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
                        fig_name, lg_tags, ylim, batch_size=None, sep_h=True,
                        ncolor=None, save_single=False, lg_replace=[],
-                       no_title=False):
+                       no_title=False, no_legend=False):
     run_names = get_run_names(logdir, patterns)
     data = get_data_f(logdir, run_names, tag_names, batch_size)
     if len(data) == 0:
@@ -404,7 +407,8 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
                     plt.subplot(height, width, fi)
                 plot_tag(data[j], plot_f, run_names[j],
                          tag_names[i], lg_tags, yl, color0=j, ncolor=ncolor,
-                         lg_replace=lg_replace, no_title=no_title)
+                         lg_replace=lg_replace, no_title=no_title,
+                         no_legend=no_legend)
                 if save_single:
                     plt.savefig('%s/%s.pdf' % (fig_dir, tag_names[i]),
                                 dpi=100, bbox_inches='tight')
@@ -416,7 +420,8 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
             if not save_single:
                 plt.subplot(height, width, fi)
             plot_tag(data, plot_f, run_names, tag_names[i], lg_tags, yl,
-                     ncolor=ncolor, lg_replace=lg_replace, no_title=no_title)
+                     ncolor=ncolor, lg_replace=lg_replace, no_title=no_title,
+                     no_legend=no_legend)
             if save_single:
                 plt.savefig('%s/%s.pdf' % (fig_dir, tag_names[i]),
                             dpi=100, bbox_inches='tight')
