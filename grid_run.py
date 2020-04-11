@@ -7,18 +7,24 @@ import grid.cluster
 # from itertools import product
 import grid.ntk
 import grid.icml
+import grid.underparam
 
 
 class RunSingle(object):
-    def __init__(self, log_dir, module_name, exclude, parallel=False):
+    def __init__(self, log_dir, module_name, exclude, parallel=False,
+                 ndigits=2):
         self.log_dir = log_dir
         self.num = 0
         self.module_name = module_name
         self.exclude = exclude
         self.parallel = parallel
+        self.ndigits = ndigits
 
     def __call__(self, args):
-        logger_name = 'runs/%s/%02d_' % (self.log_dir, self.num)
+        # logger_name = 'runs/%s/%02d_' % (self.log_dir, self.num)
+        logger_name = ('runs/%s/%'
+                       + ('%09d' % self.ndigits)
+                       + 'd_') % (self.log_dir, self.num)
         cmd = ['python -m {}'.format(self.module_name)]
         self.num += 1
         for k, v in args:
@@ -92,6 +98,7 @@ if __name__ == '__main__':
                         help='default=0 is inifinite')
     parser.add_argument('--partition', default='gpu,wsgpu', type=str)
     parser.add_argument('--run0_id', default=0, type=int)
+    parser.add_argument('--ndigits', default=2, type=int)
     args = parser.parse_args()
     run0_id = args.run0_id
     val = grid.__dict__[args.grid].__dict__[args.run_name]([])
@@ -99,7 +106,8 @@ if __name__ == '__main__':
     jobs, parallel = grid.cluster.__dict__[args.cluster](
         args, count_runs(jargs))
 
-    run_single = RunSingle(log_dir, module_name, exclude, parallel)
+    run_single = RunSingle(log_dir, module_name, exclude, parallel,
+                           args.ndigits)
     run_single.num = run0_id
 
     cmds = run_multi(run_single, jargs)

@@ -25,9 +25,9 @@
 
 // THCState *state;
 
-cublasHandle_t getCurrentCUDABlasHandle() {
-    return THCState_getCurrentBlasHandle(at::globalContext().getTHCState());
-}
+// cublasHandle_t getCurrentCUDABlasHandle() {
+//     return THCState_getCurrentBlasHandle(at::globalContext().getTHCState());
+// }
 
 
 namespace cusvd
@@ -38,7 +38,7 @@ std::unique_ptr<T, Status(*)(T*)> unique_allocate(Status(allocator)(T**),  Statu
 {
     T* ptr;
     auto stat = allocator(&ptr);
-    AT_CHECK(stat == success);
+    TORCH_CHECK(stat == success);
     return {ptr, deleter};
 }
 
@@ -46,7 +46,7 @@ template <class T>
 std::unique_ptr<T, decltype(&cudaFree)> unique_cuda_ptr(size_t len) {
     T* ptr;
     auto stat = cudaMalloc(&ptr, sizeof(T) * len);
-    AT_CHECK(stat == cudaSuccess);
+    TORCH_CHECK(stat == cudaSuccess);
     return {ptr, cudaFree};
 }
 
@@ -55,8 +55,8 @@ std::unique_ptr<T, decltype(&cudaFree)> unique_cuda_ptr(size_t len) {
 std::tuple<at::Tensor, at::Tensor, at::Tensor>
 svdj_forward(at::Tensor a, bool is_sort, double tol=1e-7, int max_sweeps=100)
 {
-    AT_CHECK(a.is_cuda(), "only cuda tensor is supported");
-    AT_CHECK(a.dtype() == at::kFloat, "only float is supported");
+    TORCH_CHECK(a.is_cuda(), "only cuda tensor is supported");
+    TORCH_CHECK(a.dtype() == at::kFloat, "only float is supported");
 
     auto handle_ptr = unique_allocate(cusolverDnCreate, cusolverDnDestroy);
     const auto A = a.contiguous().clone().transpose(0, 1).contiguous().transpose(0, 1);
@@ -64,28 +64,28 @@ svdj_forward(at::Tensor a, bool is_sort, double tol=1e-7, int max_sweeps=100)
     // const auto A = a;
     // const auto batch_size = A.size(0);
     const auto m = A.size(0);
-    // AT_CHECK(m <= 32, "matrix row should be <= 32");
+    // TORCH_CHECK(m <= 32, "matrix row should be <= 32");
     const auto n = A.size(1);
-    // AT_CHECK(n <= 32, "matrix col should be <= 32");
+    // TORCH_CHECK(n <= 32, "matrix col should be <= 32");
     const auto lda = m;
-    const auto d_A = A.data<float>();
+    const auto d_A = A.data_ptr<float>();
     const auto minmn = std::min(m, n);
     auto s = at::empty({minmn}, a.type());
-    auto d_s = s.data<float>();
+    auto d_s = s.data_ptr<float>();
     auto U = at::empty({m, m}, a.type());
-    const auto d_U = U.data<float>();
+    const auto d_U = U.data_ptr<float>();
     const auto ldu = m;
     auto V = at::empty({n, n}, a.type());
-    const auto d_V = V.data<float>();
+    const auto d_V = V.data_ptr<float>();
     const auto ldv = n;
 
     auto params = unique_allocate(cusolverDnCreateGesvdjInfo, cusolverDnDestroyGesvdjInfo);
     auto status = cusolverDnXgesvdjSetTolerance(params.get(), tol);
-    AT_CHECK(CUSOLVER_STATUS_SUCCESS == status);
+    TORCH_CHECK(CUSOLVER_STATUS_SUCCESS == status);
     status = cusolverDnXgesvdjSetMaxSweeps(params.get(), max_sweeps);
-    AT_CHECK(CUSOLVER_STATUS_SUCCESS == status);
+    TORCH_CHECK(CUSOLVER_STATUS_SUCCESS == status);
     status = cusolverDnXgesvdjSetSortEig(params.get(), is_sort);
-    AT_CHECK(CUSOLVER_STATUS_SUCCESS == status);
+    TORCH_CHECK(CUSOLVER_STATUS_SUCCESS == status);
 
     auto jobz = CUSOLVER_EIG_MODE_VECTOR; // compute eigenvalues and eigenvectors
     int lwork;
@@ -104,7 +104,7 @@ svdj_forward(at::Tensor a, bool is_sort, double tol=1e-7, int max_sweeps=100)
         ldv,
         &lwork,
         params.get());
-    AT_CHECK(CUSOLVER_STATUS_SUCCESS == status_buffer);
+    TORCH_CHECK(CUSOLVER_STATUS_SUCCESS == status_buffer);
     auto work_ptr = unique_cuda_ptr<float>(lwork);
     auto info_ptr = unique_cuda_ptr<int>(1);
     status = cusolverDnSgesvdj(
@@ -124,11 +124,11 @@ svdj_forward(at::Tensor a, bool is_sort, double tol=1e-7, int max_sweeps=100)
         lwork,
         info_ptr.get(),
         params.get());
-    AT_CHECK(CUSOLVER_STATUS_SUCCESS == status);
+    TORCH_CHECK(CUSOLVER_STATUS_SUCCESS == status);
 
     std::vector<int> hinfo(1);
     auto status_memcpy = cudaMemcpy(hinfo.data(), info_ptr.get(), sizeof(int), cudaMemcpyDeviceToHost);
-    AT_CHECK(cudaSuccess == status_memcpy);
+    TORCH_CHECK(cudaSuccess == status_memcpy);
 
     for(int i = 0 ; i < 1; ++i)
     {
@@ -139,7 +139,7 @@ svdj_forward(at::Tensor a, bool is_sort, double tol=1e-7, int max_sweeps=100)
         else if ( 0 > hinfo[i] )
         {
             printf("Error: %d-th parameter is wrong \n", -hinfo[i]);
-            AT_CHECK(false);
+            TORCH_CHECK(false);
         }
         else
         {

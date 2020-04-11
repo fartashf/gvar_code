@@ -9,6 +9,7 @@ import models.cifar10_wresnet
 import models.cifar10_wresnet2
 import models.loss
 import models.cifar10_vgg
+import models.rf
 
 
 def init_model(opt):
@@ -73,6 +74,9 @@ def init_model(opt):
         model = models.linreg.Linear(opt.dim, opt.num_class)
     elif opt.dataset == 'rcv1' or opt.dataset == 'covtype':
         model = models.logreg.Linear(opt.dim, opt.num_class)
+    elif opt.dataset == 'rf':
+        model = models.rf.RandomFeaturesModel(
+            opt.dim, opt.student_hidden, opt.num_class)
 
     if opt.dataset == 'linreg':
         model.criterion = models.loss.MSELoss()

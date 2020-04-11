@@ -108,7 +108,8 @@ class GlusterModule(object):
         # TODO: unnamed children
         self.active_modules = [(n, m) for n, m in module.named_children()]
         self.children = OrderedDict()
-        self.has_weight = hasattr(module, 'weight')
+        self.has_weight = (hasattr(module, 'weight')
+                           and module.weight.requires_grad)
         self.has_bias = False  # TODO: hasattr(module, 'bias') # SVD
         self.has_param = (self.has_weight or self.has_bias)
         self.has_param = (

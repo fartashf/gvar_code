@@ -1,4 +1,3 @@
-from scipy.interpolate import spline
 import numpy as np
 import os
 import re
@@ -10,6 +9,8 @@ from data import get_loaders
 import torchvision.utils as vutils
 from torchvision import transforms
 import utils
+from collections import OrderedDict
+import copy
 
 
 class TBMultiplexer:
@@ -133,16 +134,40 @@ def get_data_pth(logdir, run_names, tag_names, batch_size=None):
     return data
 
 
-def plot_smooth(x, y, npts=100, order=3, *args, **kwargs):
+def plot_smooth(x, y, npts=300, order=3, s=0, *args, **kwargs):
     x_smooth = np.linspace(x.min(), x.max(), npts)
-    y_smooth = spline(x, y, x_smooth, order=order)
+
+    ftype = 4
+    if ftype == 1:
+        from scipy.interpolate import spline
+        y_smooth = spline(x, y, x_smooth, order=order)
+    elif ftype == 2:
+        pass
+        # from scipy.interpolate import make_interp_spline, BSpline
+        # spl = make_interp_spline(x, y, k=order)
+    elif ftype == 3:
+        from scipy.interpolate import interp1d
+        f = interp1d(x, y, kind='cubic')
+        y_smooth = f(x_smooth)
+    elif ftype == 4:
+        from scipy.interpolate import UnivariateSpline
+        f = UnivariateSpline(x, y, s=s, k=order)
+        y_smooth = f(x_smooth)
     # x_smooth = x
     # y_smooth = y
     plt.plot(x_smooth, y_smooth, *args, **kwargs)
 
 
 def plot_smooth_o1(x, y, *args, **kwargs):
-    plot_smooth(x, y, 100, 1, *args, **kwargs)
+    plot_smooth(x, y, 100, 1, 0.1, *args, **kwargs)
+
+
+def plot_smooth_o2(x, y, *args, **kwargs):
+    plot_smooth(x, y, 100, 2, 0.001, *args, **kwargs)
+
+
+def plot_smooth_o5(x, y, *args, **kwargs):
+    plot_smooth(x, y, 100, 5, 0.001, *args, **kwargs)
 
 
 def get_legend(lg_tags, run_name, lg_replace=[]):
@@ -593,3 +618,188 @@ def plot_clusters_online(
     plt.imshow(xi2)
     plt.axis('off')
     plt.savefig(fig_name, dpi=20, bbox_inches='tight')
+
+
+def aggregate_data(data, run_names, plot_tg, x_tg, y_tg, lg_tags):
+    agg_run_names = OrderedDict()
+    agg_data = OrderedDict()
+    x_tags = x_tg.split('/')
+    # aggregate data along any tag not in x_tg or lg_tags
+    keep_tags = x_tags + lg_tags
+    for i in range(len(data)):
+        if plot_tg not in data[i]:
+            continue
+        run_name = run_names[i]
+        agr = get_legend(keep_tags, run_name)
+        if agr not in agg_run_names:
+            agg_run_names[agr] = []
+            agg_data[agr] = []
+        agg_run_names[agr] += [run_name]
+        agg_data[agr] += [data[i][plot_tg][-1]]
+
+    # Make a curve out of aggregated points
+    agg_data_curve = OrderedDict()
+    for key, val in agg_data.items():
+        def get_xtag_val(x_tg_i, key):
+            x_tag_keyval = key[key.find(x_tg_i):]
+            if x_tag_keyval.find(',') > -1:
+                x_tag_keyval = x_tag_keyval[:x_tag_keyval.find(',')]
+            x_tag_key = x_tag_keyval[:x_tag_keyval.rfind('_')]
+            x_tag_val = x_tag_keyval[x_tag_keyval.rfind('_')+1:]
+            mg = re.search(x_tag_keyval, key)
+            key = key.replace(mg.group(0), x_tag_key)
+            return x_tag_val, key
+        if len(x_tags) == 1:
+            x_tag_val, key2 = get_xtag_val(x_tg, key)
+        else:
+            x_tag_val1, key2 = get_xtag_val(x_tags[0], key)
+            x_tag_val2, key2 = get_xtag_val(x_tags[1], key2)
+            x_tag_val = float(x_tag_val1)/float(x_tag_val2)
+        if key2 not in agg_data_curve:
+            agg_data_curve[key2] = []
+        agg_data_curve[key2] += [(float(x_tag_val), np.mean(val), np.std(val))]
+
+    for key, val in agg_data_curve.items():
+        val.sort()
+    agg_run_names_curve = list(agg_data_curve.keys())
+    return agg_data_curve, agg_run_names_curve
+
+
+def plot_tag_multi(data, plot_f, run_names,
+                   plot_tg, x_tg, y_tg, lg_tags, ylim=None,
+                   ncolor=None, lg_replace=[], no_title=False, color0=0,
+                   agg_type='mean'):
+    xlabel = {'zeta': '$\\zeta=d/n$',
+              'psi': '$\\psi=p/n$',
+              'psi1': '$\\psi_1=h/d$',
+              'psi2': '$\\psi_2=n/d$',
+              'student_hidden': '$h_s$',
+              'teacher_hidden': '$h_t$',
+              'num_train_data': 'N'}
+    ylabel = {'est_var': 'Variance', 'est_nvar': 'Normalized Variance'}
+    titles = {'risk_logistic': 'Logistic Risk',
+              'risk_zero_one': '0/1 Risk',
+              'risk_l2': '$L_2$ Risk',
+              'est_var': 'Optimization Step Variance (w/o learning rate)',
+              'est_nvar': 'Optimization Step Normalized Variance (w/o lr)'}
+    yscale_log = ['est_var']  # 'est_nvar']
+    plot_fs = {}
+    if plot_tg not in plot_fs:
+        plot_fs[plot_tg] = plot_f
+
+    if not isinstance(data, list):
+        data = [data]
+        run_names = [run_names]
+    for d in data:
+        for tag_name in d.keys():
+            if agg_type == 'min':
+                min_idx = np.argmin(d[tag_name][1])
+                d[tag_name] = d[tag_name][:, min_idx]
+            elif agg_type == 'max':
+                max_idx = np.argmax(d[tag_name][1])
+                d[tag_name] = d[tag_name][:, max_idx]
+            elif agg_type == 'end':
+                d[tag_name] = d[tag_name][:, -1]
+            elif agg_type == 'mean':
+                d[tag_name] = d[tag_name].mean(1)
+            elif 'max_' in agg_type:
+                import math
+                start = int(math.ceil(d[tag_name].shape[1]
+                                      * (1 - float(agg_type[4:])/100)))
+                max_idx = np.argmax(d[tag_name][1][start:])+start
+                d[tag_name] = d[tag_name][:, max_idx]
+            elif 'mean_' in agg_type:
+                import math
+                start = int(math.ceil(d[tag_name].shape[1]
+                                      * (1 - float(agg_type[5:])/100)))
+                d[tag_name] = d[tag_name][:, start:].mean(1)
+    agg_data, agg_run_names = aggregate_data(
+        data, run_names, plot_tg, x_tg, y_tg, lg_tags)
+
+    # color = ['blue', 'orangered', 'limegreen', 'darkkhaki', 'cyan', 'grey']
+    import seaborn as sns
+    color = sns.color_palette("bright", 6)
+    color = color[:ncolor]
+    style = ['-', '--', ':', '-.']
+    plt.grid(linewidth=1)
+    legends = []
+    for i, (key, val) in enumerate(agg_data.items()):
+        legends += [get_legend(lg_tags, agg_run_names[i], lg_replace)]
+        val = np.array(val)
+        plot_fs[plot_tg](
+            val[:, 0], val[:, 1],
+            linestyle=style[(color0 + i) // len(color)],
+            color=color[(color0 + i) % len(color)], linewidth=2)
+        plt.errorbar(val[:, 0], val[:, 1], yerr=val[:, 2],
+                     marker='o', linestyle='', capsize=5,
+                     color=color[(color0 + i) % len(color)])
+    if not no_title:
+        agg0 = agg_type.replace('_', ' ')
+        agg0 = agg0[0].upper() + agg0[1:]
+        plt.title('%s (%s%%)' % (titles[plot_tg], agg0))
+    if plot_tg in yscale_log:
+        ax = plt.gca()
+        ax.set_yscale('log')
+    else:
+        ax = plt.gca()
+        ax.ticklabel_format(axis='y', style='sci', scilimits=(-3, 3))
+    ax = plt.gca()
+    ax.ticklabel_format(axis='x', style='sci', scilimits=(-3, 3))
+    if ylim is not None:
+        plt.ylim(ylim)
+    plt.legend(legends)
+    xlabelstr = ''
+    for x_tg_i in x_tg.split('/'):
+        if len(xlabelstr) > 0:
+            xlabelstr += '/'
+        xlabelstr += xlabel[x_tg_i]
+    plt.xlabel(xlabelstr)
+    agg0 = agg_type.split('_')[0]
+    agg0 = agg0[0].upper() + agg0[1:]
+    plt.ylabel(agg0 + ' ' + ylabel[y_tg])
+
+
+def plot_runs_and_tags_multi(plot_f, logdir, patterns,
+                             plot_tags, x_tags, y_tags, lg_tags,
+                             fig_name, ylim,
+                             ncolor=None, lg_replace=[], save_single=False,
+                             no_title=False, agg_types=[]):
+    y_tags = plot_tags
+    run_names = get_run_names(logdir, patterns)
+    data = get_data_pth(logdir, run_names, plot_tags)
+    if len(data) == 0:
+        return data, run_names
+    num = len(plot_tags)
+    height = (num + 1) // 2
+    width = 2 if num > 1 else 1
+    if not save_single:
+        fig = plt.figure(figsize=(7 * width, 4 * height))
+        fig.subplots(height, width)
+    else:
+        plt.figure(figsize=(7, 4))
+    plt.tight_layout(pad=1., w_pad=3., h_pad=3.0)
+    fi = 1
+    if save_single:
+        fig_dir = fig_name[:fig_name.rfind('.')]
+        try:
+            os.makedirs(fig_dir)
+        except os.error:
+            pass
+    for i in range(len(plot_tags)):
+        yl = ylim[i]
+        if not isinstance(yl, list) and yl is not None:
+            yl = ylim
+        if not save_single:
+            plt.subplot(height, width, fi)
+        plot_tag_multi(copy.deepcopy(data), plot_f, run_names,
+                       plot_tags[i], x_tags[i], y_tags[i], lg_tags[i], yl,
+                       ncolor=ncolor, lg_replace=lg_replace, no_title=no_title,
+                       agg_type=agg_types[i])
+        if save_single:
+            # plt.savefig('%s/%s.png' % (fig_dir, tag_names[i]),
+            plt.savefig('%s/%s.pdf' % (fig_dir, plot_tags[i]),
+                        dpi=100, bbox_inches='tight')
+            plt.figure(figsize=(7, 4))
+        fi += 1
+    plt.savefig(fig_name, dpi=100, bbox_inches='tight')
+    return data, run_names

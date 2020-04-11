@@ -295,6 +295,8 @@ def add_args():
     parser.add_argument('--snr', default=1, type=float)
     parser.add_argument('--g_rand_input', action='store_true')
     parser.add_argument('--g_incluster', default=-1, type=int)
+    parser.add_argument('--teacher_hidden', default=1, type=int)
+    parser.add_argument('--student_hidden', default=1, type=int)
     args = parser.parse_args()
     return args
 

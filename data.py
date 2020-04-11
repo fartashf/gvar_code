@@ -30,6 +30,8 @@ def get_loaders(opt):
         return get_covtype_loaders(opt)
     elif opt.dataset == 'protein':
         return get_protein_loaders(opt)
+    elif opt.dataset == 'rf':
+        return get_rf_loaders(opt)
 
 
 def dataset_to_loaders(train_dataset, test_dataset, opt):
@@ -980,3 +982,31 @@ def get_protein_loaders(opt, **kwargs):
         os.path.join(opt.data, 'bio_train.dat'),
         num_class=opt.num_class, perm=perm, xmean=xmean, xstd=xstd)
     return dataset_to_loaders(train_dataset, test_dataset, opt, **kwargs)
+
+
+class RandomFeaturesDataset(data.Dataset):
+    def __init__(self, num_train, dim, teacher_hidden, teacher=None):
+        from models.rf import RandomFeaturesModel
+        if teacher is None:
+            teacher = RandomFeaturesModel(dim, teacher_hidden, 2).cuda()
+        self.teacher = teacher
+        self.X = torch.randn((num_train, dim)).cuda()
+        self.Y = teacher(self.X)[:, 0] > 0  # Only class 0 matters
+        self.X, self.Y = self.X.cpu(), self.Y.cpu()
+
+    def __getitem__(self, index):
+        return self.X[index, :].float(), self.Y[index].long()
+
+    def __len__(self):
+        return self.X.shape[0]
+
+
+def get_rf_loaders(opt, **kwargs):
+    # np.random.seed(2222)
+    train_dataset = RandomFeaturesDataset(
+        opt.num_train_data, opt.dim, opt.teacher_hidden)
+    test_dataset = RandomFeaturesDataset(
+        opt.num_train_data, opt.dim, opt.teacher_hidden,
+        teacher=train_dataset.teacher)
+
+    return dataset_to_loaders(train_dataset, test_dataset, opt)
