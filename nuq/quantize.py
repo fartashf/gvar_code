@@ -2,6 +2,7 @@ import numpy as np
 import torch
 from MakePytorchBackend import QDQ
 import math
+from args import opt_to_nuq_kwargs
 
 
 def get_uniform_levels(bits):
@@ -33,6 +34,10 @@ def get_exp_levels(bits, multiplier):
     return levels
 
 
+def get_ternary_levels():
+    return np.array([-1, 0, 1])
+
+
 def qdqL2(x, levels, bucket_size=1024):
     """
     Quantize and dequantize with L2 norm.
@@ -54,7 +59,7 @@ def qdqL2(x, levels, bucket_size=1024):
 
         x_bucket = x[(bucket_i - 1) * bucket_size:bucket_i * bucket_size]
 
-        norm = np.sqrt(x_bucket@x_bucket.T)
+        norm = np.sqrt(x_bucket @ x_bucket.T)
         uni_rand = np.random.rand(len(x_bucket))
         for i in range(len(x_bucket)):
             j = 0
@@ -162,34 +167,55 @@ class QuantizeSingleBucket(object):
         return q
 
 
-class QuantizeMultiBucket(object):
-    def __init__(self, method, bits, bucket_size, multiplier, **kwargs):
-        """
-        QSGD: qdqL2 + levels_uni
-        NUQSGD: qdqL2 + levels_exp
-        QSGD-inf: qdqLinf + levels_uni
-        """
-        self.method = method
-        if method == 'q':
-            self.levels = get_uniform_levels(bits)
-            self.norm_type = 'fro'
-        elif method == 'nuq':
-            self.levels = get_exp_levels(bits, multiplier)
-            self.norm_type = 'fro'
-        elif method == 'qinf':
-            self.levels = get_uniform_levels(bits)
-            self.norm_type = float('inf')
-        elif method == 'none':
-            return
+def get_quantizer(opt):
+    nuq_kwargs = opt_to_nuq_kwargs(opt)
+    method = nuq_kwargs['method']
+    if method == 'none':
+        return NoQuantizer()
+    elif method == 'q':
+        # QSGD: qdqL2 + levels_uni
+        levels = get_uniform_levels(nuq_kwargs['bits'])
+        norm_type = 'fro'
+        qdq = QuantizeMultiBucket(levels, norm_type, **nuq_kwargs)
+    elif method == 'nuq':
+        # NUQSGD: qdqL2 + levels_exp
+        levels = get_exp_levels(nuq_kwargs['bits'], nuq_kwargs['multiplier'])
+        norm_type = 'fro'
+        qdq = QuantizeMultiBucket(levels, norm_type, **nuq_kwargs)
+    elif method == 'qinf':
+        # QSGD-inf: qdqLinf + levels_uni
+        levels = get_uniform_levels(nuq_kwargs['bits'])
+        norm_type = float('inf')
+        qdq = QuantizeMultiBucket(levels, norm_type, **nuq_kwargs)
+    elif method == 'signsgd':
+        # https://arxiv.org/pdf/1802.04434.pdf
+        qdq = QuantizeSignSGD()
+    elif method == 'terngrad':
+        # https://arxiv.org/pdf/1705.07878.pdf
+        # because in sync training there is no shared parameter server
+        # we ignore the part about sharing the norm across workers
+        levels = get_ternary_levels()
+        norm_type = float('inf')
+        qdq = QuantizeMultiBucket(levels, norm_type, **nuq_kwargs)
+    return qdq
 
+
+class NoQuantizer(object):
+    def quantize(self, x):
+        return x
+
+
+class QuantizeMultiBucket(object):
+    def __init__(self, levels, norm_type, method, bits, bucket_size,
+                 multiplier, **kwargs):
+        self.levels = torch.as_tensor(levels, dtype=torch.float32).cuda()
+        self.norm_type = norm_type
+        self.method = method
         self.bucket_size = bucket_size
         self.bits = bits
-        self.levels = torch.as_tensor(self.levels, dtype=torch.float32).cuda()
         self.qdq = QDQ(bucket_size, self.levels)
 
     def quantize(self, x):
-        if self.method == 'none':
-            return x
         assert isinstance(x, torch.cuda.FloatTensor)
         bucket_size = self.bucket_size
 
@@ -204,4 +230,14 @@ class QuantizeMultiBucket(object):
 
         self.qdq.qdqGPU(x, norm, q, r)
 
+        return q
+
+
+class QuantizeSignSGD(object):
+    """
+    https://arxiv.org/pdf/1802.04434.pdf
+    """
+    def quantize(self, x):
+        q = (x > 0).float()
+        q = 2*q - 1
         return q

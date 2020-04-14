@@ -6,14 +6,14 @@ import logging
 
 from args import opt_to_nuq_kwargs
 from .gestim import GradientEstimator
-from nuq.quantize import QuantizeMultiBucket
+from nuq.quantize import get_quantizer
 
 
 class NUQEstimator(GradientEstimator):
     def __init__(self, *args, **kwargs):
         super(NUQEstimator, self).__init__(*args, **kwargs)
         self.init_data_iter()
-        self.qdq = QuantizeMultiBucket(**opt_to_nuq_kwargs(self.opt))
+        self.qdq = get_quantizer(self.opt)
         self.ngpu = self.opt.nuq_ngpu
         self.acc_grad = None
 
@@ -60,11 +60,10 @@ class NUQEstimatorSingleGPUParallel(GradientEstimator):
     def __init__(self, *args, **kwargs):
         super(NUQEstimatorSingleGPUParallel, self).__init__(*args, **kwargs)
         self.init_data_iter()
-        nuq_kwargs = opt_to_nuq_kwargs(self.opt)
         self.ngpu = self.opt.nuq_ngpu
         self.acc_grad = None
         self.models = None
-        self.qdq = QuantizeMultiBucket(**nuq_kwargs)
+        self.qdq = get_quantizer(self.opt)
 
     def grad(self, model_new, in_place=False):
         if self.models is None:
@@ -128,7 +127,7 @@ class NUQEstimatorMultiGPUParallel(GradientEstimator):
             self.devices = [x % self.ncuda for x in self.devices]
         for i in range(self.ngpu):
             with torch.cuda.device(self.devices[i]):
-                self.qdq += [QuantizeMultiBucket(**nuq_kwargs)]
+                self.qdq += [get_quantizer(self.opt)]
 
     def grad(self, model_new, in_place=False):
         if self.models is None:

@@ -40,7 +40,8 @@ def init_model(opt):
         else:
             model = models.cifar10.__dict__[opt.arch](
                 num_class=opt.num_class)
-        model = torch.nn.DataParallel(model)
+        if opt.nuq_parallel == 'no':
+            model = torch.nn.DataParallel(model)
     elif opt.dataset == 'imagenet':
         model = models.imagenet.Model(opt.arch, opt.pretrained,
                                       half_trained=opt.half_trained,

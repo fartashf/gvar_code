@@ -50,7 +50,7 @@ class SaveCheckpoint(object):
 def base_lr(optimizer, opt):
     lr = opt.lr
     if opt.g_mlr != 1 and optimizer.gest_used:
-        lr *= opt.g_mlr
+        lr = np.round(lr*opt.g_mlr, 10)
     return lr
 
 
