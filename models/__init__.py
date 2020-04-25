@@ -75,8 +75,13 @@ def init_model(opt):
     elif opt.dataset == 'rcv1' or opt.dataset == 'covtype':
         model = models.logreg.Linear(opt.dim, opt.num_class)
     elif opt.dataset == 'rf':
-        model = models.rf.RandomFeaturesModel(
-            opt.dim, opt.student_hidden, opt.num_class)
+        if opt.arch == 'rf':
+            model = models.rf.RandomFeaturesModel(
+                opt.dim, opt.student_hidden, opt.num_class)
+        elif opt.arch == 'resnet32':
+            model = models.cifar10.resnet32(
+                num_class=opt.num_class, nobatchnorm=opt.nobatchnorm)
+            model = torch.nn.DataParallel(model)
 
     if opt.dataset == 'linreg':
         model.criterion = models.loss.MSELoss()

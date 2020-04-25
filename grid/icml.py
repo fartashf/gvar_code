@@ -149,7 +149,10 @@ def cifar10_gvar(args):
     dataset = 'cifar10'
     module_name = 'main.gvar'
     # log_dir = 'runs_%s_gvar_resnet32_data_prod' % dataset
-    log_dir = 'runs_%s_gvar_resnet32_imbalance' % dataset
+    # log_dir = 'runs_%s_gvar_resnet32_imbalance' % dataset
+    # log_dir = 'runs_%s_gvar_resnet110' % dataset
+    # log_dir = 'runs_%s_gvar_resnet32_sampling' % dataset
+    log_dir = 'runs_%s_gvar_resnet32_robust' % dataset
     exclude = ['dataset', 'lr', 'weight_decay', 'epochs', 'lr_decay_epoch',
                'optim', 'g_optim', 'g_epoch', 'gvar_start', 'g_optim_start',
                'g_bsnap_iter', 'dim', 'niters', 'gvar_log_iter',
@@ -165,6 +168,7 @@ def cifar10_gvar(args):
                        # 'vgg11'
                        # ('resnet32', OrderedDict([('ghostbn', '')])),
                        # ('vgg11', OrderedDict([('ghostbn', '')])),
+                       # 'resnet110',
                    ]),
                    # ('weight_decay', 0),
                    ('niters', 80000),
@@ -175,7 +179,7 @@ def cifar10_gvar(args):
                    # ('data_aug', [None, '']),
                    # ('corrupt_perc', [None, 20]),
                    # ## imbalance
-                   ('imbalance', [None, '0,0.01', '0,10', '1,0.01', '1,10']),
+                   # ('imbalance', [None, '0,0.01', '0,10', '1,0.01', '1,10']),
                    ]
     gvar_args = [
         ('gvar_estim_iter', 50),  # default 10
@@ -192,11 +196,11 @@ def cifar10_gvar(args):
                  # OrderedDict([('corrupt_perc', 20)])
                  ]
 
-    args_sgd = [
-        ('g_estim', ['sgd']),
-        ('g_batch_size', [128, 256]),
-    ]
-    args += [tuple((OrderedDict(shared_args+args_sgd+gvar_args), disj_args))]
+    # args_sgd = [
+    #     ('g_estim', ['sgd']),
+    #     ('g_batch_size', [128, 256]),
+    # ]
+    # args += [tuple((OrderedDict(shared_args+args_sgd+gvar_args), disj_args))]
 
     # args_svrg = [
     #     ('g_estim', ['svrg']),
@@ -207,13 +211,19 @@ def cifar10_gvar(args):
         ('g_estim', 'gluster'),
         ('g_nclusters', 128),  # [8, 128]),
         ('g_debug', ''),
-        ('gb_citers', 10),  # [2, 10, 20, 50]),
+        ('gb_citers', 3),  # 10),  # [2, 10, 20, 50]),
         ('g_min_size', 1),
         # ('wnoise', ''),
         # ('wnoise_stddev', [1e-2, 1e-3, 1e-4]),
         # ('g_avg', [50, 100]),  # [200, 500, 1000]),  # [10, 100]),
         # ('g_msnap_iter', 1),  # [1, 10]),
         # ('g_clip', 2),
+        # ## sampling
+        # ('g_imbalance', [None, '']),
+        # ## robust
+        ('g_robust', ''),
+        ('g_robust_high', [0.05, 0.01]),  # [.9, .5, .1]),
+        ('g_robust_low', 1),  # [1, 1.1, 2]),
     ]
 
     args += [

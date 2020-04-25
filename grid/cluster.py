@@ -28,7 +28,7 @@ def bolt(sargs, num_runs):
     # njobs = [3] * 4 + [2] * 4  # validate start.sh
 
     # Number of parallel jobs on each machine
-    njobs = [10]*3 + [10]*3 + [0, 5] + [5]*2
+    njobs = [2]*3 + [2]*3 + [0, 1] + [1]*2
     # njobs = [2, 2, 2] + [2, 2, 2, 2] + [1, 1, 0, 0]
     # njobs = [2, 2, 1, 1]
     jobs = []

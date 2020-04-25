@@ -3,6 +3,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+def weight_reset(m):
+    if isinstance(m, nn.Linear):
+        nn.init.normal_(m.weight)
+        m.weight.div_(m.weight.norm(dim=1, keepdim=True))
+    if isinstance(m, nn.Conv2d):
+        nn.init.normal_(m.weight)
+        norm = m.weight.view(m.weight.shape[0], -1).norm(dim=1, keepdim=True)
+        m.weight.div_(norm.reshape(-1, 1, 1, 1))
+
+
 class RandomFeaturesModel(nn.Module):
     """
     Random features model in Montanari et al. 2020, Sec. 2.3.1:
@@ -17,12 +27,8 @@ class RandomFeaturesModel(nn.Module):
 
     def reset_parameters(self):
         with torch.no_grad():
-            nn.init.normal_(self.linear1.weight)
-            self.linear1.weight.div_(
-                self.linear1.weight.norm(dim=1, keepdim=True))
-            nn.init.normal_(self.linear2.weight)
-            self.linear2.weight.div_(
-                self.linear2.weight.norm(dim=1, keepdim=True))
+            weight_reset(self.linear1.weight)
+            weight_reset(self.linear2.weight)
 
     def forward(self, x):
         x = F.relu(self.linear1(x))

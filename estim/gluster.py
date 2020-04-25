@@ -51,6 +51,21 @@ class GlusterEstimator(SGDEstimator):
         # Nk = Nk[:C]
         # data[0], data[1], data[2] = data[0][:C], data[1][:C], data[2][:C]
 
+        if self.opt.g_robust:
+            # Nk/N=0 -> xL
+            # Nk/N=Nk0/N -> x1
+            # Nk/N=1 -> /U
+            #
+            # Nk0=N/M
+            high_range = (N - N/M)
+            high_value = (Nk - N/M).clamp(0)
+            high_ratio = high_value/high_range
+            robust_high = 1*(1-high_ratio) + self.opt.g_robust_high*high_ratio
+            low_range = (N/M - 0)
+            low_value = (N/M - Nk).clamp(0)
+            low_ratio = low_value/low_range
+            robust_low = 1*(1-low_ratio) + self.opt.g_robust_low*low_ratio
+            Nk = Nk * robust_high * robust_low
         # multiply by the size of the cluster
         if self.opt.g_imbalance:
             w = 1.*M/N

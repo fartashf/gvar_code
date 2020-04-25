@@ -985,13 +985,22 @@ def get_protein_loaders(opt, **kwargs):
 
 
 class RandomFeaturesDataset(data.Dataset):
-    def __init__(self, num_train, dim, teacher_hidden, teacher=None):
-        from models.rf import RandomFeaturesModel
-        if teacher is None:
-            teacher = RandomFeaturesModel(dim, teacher_hidden, 2).cuda()
+    def __init__(self, num_train, dim, teacher, batch_size=256, ymean=None):
+        import logging
         self.teacher = teacher
-        self.X = torch.randn((num_train, dim)).cuda()
-        self.Y = teacher(self.X)[:, 0] > 0  # Only class 0 matters
+        self.ymean = ymean
+        self.dim = list(dim)
+        with torch.no_grad():
+            self.X = torch.randn([num_train] + list(dim))
+            self.Y = torch.zeros([num_train])
+            # self.Y = teacher(self.X)[:, 0] > 0  # Only class 0 matters
+            for i in range(0, num_train, batch_size):
+                e = min(num_train, i+batch_size)
+                self.Y[i:e] = teacher(self.X[i:e])[:, 0]
+                logging.info('RF data: %d/%d' % (i, num_train))
+            if ymean is None:
+                self.ymean = self.Y.mean()
+            self.Y = (self.Y-self.ymean) > 0
         self.X, self.Y = self.X.cpu(), self.Y.cpu()
 
     def __getitem__(self, index):
@@ -1003,10 +1012,20 @@ class RandomFeaturesDataset(data.Dataset):
 
 def get_rf_loaders(opt, **kwargs):
     # np.random.seed(2222)
-    train_dataset = RandomFeaturesDataset(
-        opt.num_train_data, opt.dim, opt.teacher_hidden)
-    test_dataset = RandomFeaturesDataset(
-        opt.num_train_data, opt.dim, opt.teacher_hidden,
-        teacher=train_dataset.teacher)
+    from models.rf import weight_reset
+    if opt.teacher_arch == 'rf':
+        from models.rf import RandomFeaturesModel
+        teacher = RandomFeaturesModel(opt.dim, opt.teacher_hidden, 2).cuda()
+        dim = (opt.dim,)
+    elif opt.teacher_arch == 'resnet32':
+        from models.cifar10 import resnet32
+        teacher = resnet32(num_class=opt.num_class, nobatchnorm=False).cuda()
+        with torch.no_grad():
+            teacher.apply(weight_reset)
+        teacher = torch.nn.DataParallel(teacher)
+        dim = (3, 28, 28)
+    train_dataset = RandomFeaturesDataset(opt.num_train_data, dim, teacher)
+    test_dataset = RandomFeaturesDataset(opt.num_test_data, dim, teacher,
+                                         ymean=train_dataset.ymean)
 
     return dataset_to_loaders(train_dataset, test_dataset, opt)
