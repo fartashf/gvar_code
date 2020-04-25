@@ -96,8 +96,8 @@ def linreg(args):
 def mnist_gvar(args):
     dataset = 'mnist'
     module_name = 'main.gvar'
-    # log_dir = 'runs_%s_gvar' % dataset
-    log_dir = 'runs_%s_gvar_imbalance' % dataset
+    log_dir = 'runs_%s_gvar' % dataset
+    # log_dir = 'runs_%s_gvar_imbalance' % dataset
     exclude = ['dataset', 'lr', 'weight_decay', 'epochs', 'lr_decay_epoch',
                'optim', 'g_optim', 'g_epoch', 'gvar_start', 'g_optim_start',
                'g_bsnap_iter', 'dim', 'niters']
@@ -111,7 +111,8 @@ def mnist_gvar(args):
                    # ('seed', [123, 456, 789]),
                    ('nodropout', ''),
                    ('batch_size', 128),
-                   ('imbalance', [None, '0,0.01', '0,10', '1,0.01', '1,10']),
+                   # ## imbalance
+                   # ('imbalance', [None, '0,0.01', '0,10', '1,0.01', '1,10']),
                    ]
     gvar_args = [
         ('gvar_estim_iter', 50),  # default 10
@@ -148,11 +149,12 @@ def mnist_gvar(args):
 def cifar10_gvar(args):
     dataset = 'cifar10'
     module_name = 'main.gvar'
+    log_dir = 'runs_%s_gvar_resnet32' % dataset
     # log_dir = 'runs_%s_gvar_resnet32_data_prod' % dataset
     # log_dir = 'runs_%s_gvar_resnet32_imbalance' % dataset
     # log_dir = 'runs_%s_gvar_resnet110' % dataset
     # log_dir = 'runs_%s_gvar_resnet32_sampling' % dataset
-    log_dir = 'runs_%s_gvar_resnet32_robust' % dataset
+    # log_dir = 'runs_%s_gvar_resnet32_robust' % dataset
     exclude = ['dataset', 'lr', 'weight_decay', 'epochs', 'lr_decay_epoch',
                'optim', 'g_optim', 'g_epoch', 'gvar_start', 'g_optim_start',
                'g_bsnap_iter', 'dim', 'niters', 'gvar_log_iter',
@@ -221,9 +223,9 @@ def cifar10_gvar(args):
         # ## sampling
         # ('g_imbalance', [None, '']),
         # ## robust
-        ('g_robust', ''),
-        ('g_robust_high', [0.05, 0.01]),  # [.9, .5, .1]),
-        ('g_robust_low', 1),  # [1, 1.1, 2]),
+        # ('g_robust', ''),
+        # ('g_robust_high', [0.05, 0.01]),  # [.9, .5, .1]),
+        # ('g_robust_low', 1),  # [1, 1.1, 2]),
     ]
 
     args += [

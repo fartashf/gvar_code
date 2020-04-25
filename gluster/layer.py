@@ -835,6 +835,9 @@ class GlusterConv(GlusterModule):
             Go = self.whitener.whiten('Go', Go, not self.is_eval)
         # mean/sum? sqrt(mean)
         # TODO: overflow, try /T only for Ais
+        # based on comparison to kfac and my write-up no mean, and div T
+        # This was a long overdue todo that I never addressed for 19 months
+        # since commit 9bb08b4448a6adc63bedd46f07de283350404600
         T = Go.shape[-1]
         Ais = (Ai/T/self.stable).sum(-1)  # np.sqrt(T)
         Gos = (Go*self.stable).sum(-1)
