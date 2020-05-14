@@ -134,10 +134,10 @@ def get_data_pth(logdir, run_names, tag_names, batch_size=None):
     return data
 
 
-def plot_smooth(x, y, npts=300, order=3, s=0, *args, **kwargs):
+def smooth_data(x, y, npts=300, order=3, s=0):
     x_smooth = np.linspace(x.min(), x.max(), npts)
 
-    ftype = 4
+    ftype = 5
     if ftype == 1:
         from scipy.interpolate import spline
         y_smooth = spline(x, y, x_smooth, order=order)
@@ -153,13 +153,63 @@ def plot_smooth(x, y, npts=300, order=3, s=0, *args, **kwargs):
         from scipy.interpolate import UnivariateSpline
         f = UnivariateSpline(x, y, s=s, k=order)
         y_smooth = f(x_smooth)
+    elif ftype == 5:
+        if s == 1:
+            return x, y
+        from scipy.interpolate import LSQUnivariateSpline
+        # t = np.linspace(-3, 3, nknots+2)[1:-1]
+        spl = LSQUnivariateSpline(x, y, x_smooth[1:-1])
+        y_smooth = spl(x_smooth)
+    return x_smooth, y_smooth
+
+
+def plot_smooth(x, y, npts=300, order=3, s=0, *args, **kwargs):
+    x_smooth, y_smooth = smooth_data(x, y, npts, order, s)
     # x_smooth = x
     # y_smooth = y
     plt.plot(x_smooth, y_smooth, *args, **kwargs)
+    return x_smooth, y_smooth
+
+
+def rolling_window(a, window):
+    # https://stackoverflow.com/a/59322185
+    # pad = np.ones(len(a.shape), dtype=np.int32)
+    # pad[-1] = window-1
+    # pad = list(zip(pad, np.zeros(len(a.shape), dtype=np.int32)))
+    if window % 2 == 0:
+        window += 1
+    pad = int(window/2)
+    a_pad = np.pad(a, (pad, pad), mode='reflect')
+    # shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
+    # strides = a.strides + (a.strides[-1],)
+    shape = (a.shape[0], window)
+    strides = a_pad.strides + (a_pad.strides[-1],)
+    return np.lib.stride_tricks.as_strided(a_pad, shape=shape, strides=strides)
+
+
+def plot_smooth_shade(x, y, *args, s=None, log_scale=False, **kwargs):
+    if s is None:
+        s = 10
+    npts = int(len(x)//s)
+    order = 1
+    # s = 0.1   # s=None smoothest, s=0 through all points
+    x_smooth, y_smooth = plot_smooth(x, y, npts, order, s, *args, **kwargs)
+    ystd = np.std(rolling_window(y, window=int(s*2)), axis=-1)
+    # ystd = [ystd[int(x)] for x in np.linspace(0, len(x)-1, npts)]
+    _, ystd = smooth_data(x, ystd, npts, order, s)
+    # ystd = np.std(y)
+    if not log_scale:
+        plt.fill_between(x_smooth, y_smooth-ystd, y_smooth+ystd, alpha=0.2,
+                         *args, **kwargs)
+    else:
+        yerr = np.exp(np.log(y_smooth)
+                      - (np.log(y_smooth+ystd)-np.log(y_smooth)))
+        plt.fill_between(x_smooth, yerr, y_smooth+ystd, alpha=0.1,
+                         *args, **kwargs)
 
 
 def plot_smooth_o1(x, y, *args, **kwargs):
-    plot_smooth(x, y, 100, 1, 0.1, *args, **kwargs)
+    plot_smooth(x, y, 100, 1, 0, *args, **kwargs)
 
 
 def plot_smooth_o2(x, y, *args, **kwargs):
@@ -185,7 +235,7 @@ def get_legend(lg_tags, run_name, lg_replace=[]):
 
 
 def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
-             ncolor=None, lg_replace=[], no_title=False):
+             ncolor=None, lg_replace=[], no_title=False, smooth_div_n=None):
     xlabel = {'visits_h': '# Visits',
               'count_h': '# Wait Iterations',
               'Tloss_h': 'Loss',
@@ -283,6 +333,10 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
     if 'nolog' in tag_name:
         idx = tag_name.find('_nolog')
         tag_name = tag_name[:idx]+tag_name[idx+6:]
+    for name in ['loss', 'acc']:
+        if name in tag_name:
+            ylabel[tag_name] = ylabel['%s%s' % (tag_name[0], name)]
+            titles[tag_name] = titles['%s%s' % (tag_name[0], name)]
     for i in range(10):
         for prefix in ['T', 'V']:
             xlabel['%slossC%d_h' % (prefix, i)] = xlabel['%sloss_h' % prefix]
@@ -345,10 +399,18 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
                     ec="k", align="edge", color=color[color0 + i],
                     alpha=(0.5 if len(data) > 1 else 1))
         else:
-            plot_fs[tag_name](
-                data[i][tag_name][0], data[i][tag_name][1],
-                linestyle=style[(color0 + i) // len(color)],
-                color=color[(color0 + i) % len(color)], linewidth=2)
+            if plot_fs[tag_name].__name__ != plt.plot.__name__:
+                plot_fs[tag_name](
+                    data[i][tag_name][0], data[i][tag_name][1],
+                    linestyle=style[(color0 + i) // len(color)],
+                    color=color[(color0 + i) % len(color)], linewidth=2,
+                    log_scale=(tag_name in yscale_log),
+                    s=smooth_div_n)
+            else:
+                plot_fs[tag_name](
+                    data[i][tag_name][0], data[i][tag_name][1],
+                    linestyle=style[(color0 + i) // len(color)],
+                    color=color[(color0 + i) % len(color)], linewidth=2)
     if not no_title:
         plt.title(titles[tag_name])
     if tag_name in yscale_log:
@@ -377,7 +439,9 @@ def ticks(y, pos):
 def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
                        fig_name, lg_tags, ylim, batch_size=None, sep_h=True,
                        ncolor=None, save_single=False, lg_replace=[],
-                       no_title=False):
+                       no_title=False, smooth_div_ns=None):
+    if smooth_div_ns is None:
+        smooth_div_ns = [None]*len(tag_names)
     run_names = get_run_names(logdir, patterns)
     data = get_data_f(logdir, run_names, tag_names, batch_size)
     if len(data) == 0:
@@ -397,6 +461,10 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
             num += 1
     height = (num + 1) // 2
     width = 2 if num > 1 else 1
+    if save_single:
+        plt.rcParams.update({'font.size': 16})
+    else:
+        plt.rcParams.update({'font.size': 12})
     if not save_single:
         fig = plt.figure(figsize=(7 * width, 4 * height))
         fig.subplots(height, width)
@@ -420,10 +488,15 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
                     plt.subplot(height, width, fi)
                 plot_tag(data[j], plot_f, run_names[j],
                          tag_names[i], lg_tags, yl, color0=j, ncolor=ncolor,
-                         lg_replace=lg_replace, no_title=no_title)
+                         lg_replace=lg_replace, no_title=no_title,
+                         smooth_div_n=smooth_div_ns[i])
                 if save_single:
                     # plt.savefig('%s/%s.png' % (fig_dir, tag_names[i]),
                     plt.savefig('%s/%s.pdf' % (fig_dir, tag_names[i]),
+                                dpi=100, bbox_inches='tight')
+                    ax = plt.gca()
+                    ax.get_legend().remove()
+                    plt.savefig('%s/%s_nolegend.pdf' % (fig_dir, tag_names[i]),
                                 dpi=100, bbox_inches='tight')
                     plt.figure(figsize=(7, 4))
                 fi += 1
@@ -433,10 +506,15 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
             if not save_single:
                 plt.subplot(height, width, fi)
             plot_tag(data, plot_f, run_names, tag_names[i], lg_tags, yl,
-                     ncolor=ncolor, lg_replace=lg_replace, no_title=no_title)
+                     ncolor=ncolor, lg_replace=lg_replace, no_title=no_title,
+                     smooth_div_n=smooth_div_ns[i])
             if save_single:
                 # plt.savefig('%s/%s.png' % (fig_dir, tag_names[i]),
                 plt.savefig('%s/%s.pdf' % (fig_dir, tag_names[i]),
+                            dpi=100, bbox_inches='tight')
+                ax = plt.gca()
+                ax.get_legend().remove()
+                plt.savefig('%s/%s_nolegend.pdf' % (fig_dir, tag_names[i]),
                             dpi=100, bbox_inches='tight')
                 plt.figure(figsize=(7, 4))
             fi += 1
@@ -797,9 +875,15 @@ def plot_runs_and_tags_multi(plot_f, logdir, patterns,
                        agg_type=agg_types[i])
         if save_single:
             # plt.savefig('%s/%s.png' % (fig_dir, tag_names[i]),
-            plt.savefig('%s/%s.pdf' % (fig_dir, plot_tags[i]),
+            plt.savefig('%s/%s_%s.pdf' % (fig_dir, plot_tags[i], agg_types[i]),
+                        dpi=100, bbox_inches='tight')
+            ax = plt.gca()
+            ax.get_legend().remove()
+            plt.savefig('%s/%s_%s_nolegend.pdf' % (fig_dir, plot_tags[i],
+                                                   agg_types[i]),
                         dpi=100, bbox_inches='tight')
             plt.figure(figsize=(7, 4))
         fi += 1
-    plt.savefig(fig_name, dpi=100, bbox_inches='tight')
+    if not save_single:
+        plt.savefig(fig_name, dpi=100, bbox_inches='tight')
     return data, run_names
