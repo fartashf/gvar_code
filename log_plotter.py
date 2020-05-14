@@ -351,8 +351,9 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
     if ylim is not None:
         plt.ylim(ylim)
     # plt.xlim([0, 25000])
-    if not no_legend:
-        plt.legend(legends)
+    # if not no_legend:
+    #     plt.legend(legends)
+    plt.legend(legends)
     plt.xlabel(xlabel[tag_name])
     plt.ylabel(ylabel[tag_name])
 
@@ -412,6 +413,11 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
                 if save_single:
                     plt.savefig('%s/%s.pdf' % (fig_dir, tag_names[i]),
                                 dpi=100, bbox_inches='tight')
+                    ax = plt.gca()
+                    ax.get_legend().remove()
+                    plt.savefig('%s/%s_nolegend.pdf' %
+                                (fig_dir, tag_names[i]),
+                                dpi=100, bbox_inches='tight')
                     plt.figure(figsize=(7, 4))
                 fi += 1
         else:
@@ -424,6 +430,11 @@ def plot_runs_and_tags(get_data_f, plot_f, logdir, patterns, tag_names,
                      no_legend=no_legend)
             if save_single:
                 plt.savefig('%s/%s.pdf' % (fig_dir, tag_names[i]),
+                            dpi=100, bbox_inches='tight')
+                ax = plt.gca()
+                ax.get_legend().remove()
+                plt.savefig('%s/%s_nolegend.pdf' %
+                            (fig_dir, tag_names[i]),
                             dpi=100, bbox_inches='tight')
                 plt.figure(figsize=(7, 4))
             fi += 1

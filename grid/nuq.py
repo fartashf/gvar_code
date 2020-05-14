@@ -273,35 +273,48 @@ def cifar10_full(args):
                  ('g_optim_start', 0),
                  # ('g_epoch', ''),
                  ]
-    # args_sgd = [('g_estim', ['sgd'])]
-    # args += [OrderedDict(shared_args+gvar_args+args_sgd)]
-
-    # args_nuq = [
-    #     ('g_estim', ['nuq']),
-    #     ('nuq_bits', 4),
-    #     ('nuq_bucket_size', 8192),
-    #     ('nuq_ngpu', [4, 8]),  # 2
-    #     ('nuq_method', ['q', 'qinf',
-    #                     ('nuq', OrderedDict([('nuq_mul', 0.5)]))
-    #                     ])
-    # ]
-    # args += [OrderedDict(shared_args+gvar_args+args_nuq)]
-
-    # args_nuq = [
-    #     ('g_estim', ['nuq']),
-    #     ('nuq_ngpu', 8),  # [4, 8]),  # 2
-    #     ('nuq_method', 'none')
-    # ]
-    # args += [OrderedDict(shared_args+gvar_args+args_nuq)]
+    args_sgd = [('g_estim', ['sgd'])]
+    args += [OrderedDict(shared_args+gvar_args+args_sgd)]
 
     args_nuq = [
         ('g_estim', ['nuq']),
-        ('nuq_ngpu', 8),
-        ('nuq_method', [('signsgd', OrderedDict([('g_mlr', [0.2, 0.1])])),
-                        ('terngrad', OrderedDict([('nuq_bucket_size', 8192)])),
+        ('nuq_bits', 4),
+        ('nuq_bucket_size', 8192),
+        ('nuq_ngpu', [4, 8]),  # 2
+        ('nuq_method', ['q', 'qinf',
+                        ('nuq', OrderedDict([('nuq_mul', 0.5)]))
                         ])
     ]
     args += [OrderedDict(shared_args+gvar_args+args_nuq)]
+
+    # SuperSGD
+    args_nuq = [
+        ('g_estim', ['nuq']),
+        ('nuq_ngpu', 8),  # [4, 8]),  # 2
+        ('nuq_method', 'none')
+    ]
+    args += [OrderedDict(shared_args+gvar_args+args_nuq)]
+
+    # args_nuq = [
+    #     ('g_estim', ['nuq']),
+    #     ('nuq_ngpu', 8),
+    #     ('nuq_method', [
+    #         ('signsgd', OrderedDict([('g_mlr', [0.2, 0.1])])),
+    #         ('terngrad', OrderedDict([('nuq_bucket_size', 8192)])),
+    #     ])
+    # ]
+    # args += [OrderedDict(shared_args+gvar_args+args_nuq)]
+
+    # args_nuq = [
+    #     ('g_estim', ['nuq']),
+    #     ('nuq_ngpu', 8),
+    #     ('nuq_method', [
+    #         ('nuq_bin', OrderedDict([('nuq_bucket_size', 10000000),
+    #                                  ('g_mlr', 0.1)])),
+    #         ('nuq_tern', OrderedDict([('nuq_bucket_size', 8192)])),
+    #     ])
+    # ]
+    # args += [OrderedDict(shared_args+gvar_args+args_nuq)]
 
     return args, log_dir, module_name, exclude
 

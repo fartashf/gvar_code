@@ -38,6 +38,10 @@ def get_ternary_levels():
     return np.array([-1, 0, 1])
 
 
+def get_binary_levels():
+    return np.array([-1, 1])
+
+
 def qdqL2(x, levels, bucket_size=1024):
     """
     Quantize and dequantize with L2 norm.
@@ -196,6 +200,16 @@ def get_quantizer(opt):
         # we ignore the part about sharing the norm across workers
         levels = get_ternary_levels()
         norm_type = float('inf')
+        qdq = QuantizeMultiBucket(levels, norm_type, **nuq_kwargs)
+    elif method == 'nuq_tern':
+        # NUQSGD: qdqL2 + levels_exp
+        levels = get_ternary_levels()
+        norm_type = 'fro'
+        qdq = QuantizeMultiBucket(levels, norm_type, **nuq_kwargs)
+    elif method == 'nuq_bin':
+        # NUQSGD: qdqL2 + levels_exp
+        levels = get_binary_levels()
+        norm_type = 'fro'
         qdq = QuantizeMultiBucket(levels, norm_type, **nuq_kwargs)
     return qdq
 
