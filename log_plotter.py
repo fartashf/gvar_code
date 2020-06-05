@@ -273,11 +273,11 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'activeC_h': '# of Actives', 'snoozeC_h': '# of Snoozed',
               'Tloss_f': '# Examples', 'Vloss_f': '# Examples',
               'Tnormg_f': '# Examples', 'Vnormg_f': '# Examples',
-              'grad_bias': 'Gradient Diff norm', 'est_var': 'Mean variance',
-              'est_snr': 'Mean SNR', 'gb_td': 'Total distortion',
+              'grad_bias': 'Gradient Diff norm', 'est_var': 'Avg. Variance',
+              'est_snr': 'Avg. SNR', 'gb_td': 'Total distortion',
               'gb_cs': 'Cluster size',
               'gb_reinits': '# of Reinits',
-              'est_nvar': 'Mean Normalized Variance'}
+              'est_nvar': 'Avg. Normalized Variance'}
     titles = {'Tacc': 'Training Accuracy', 'Terror': 'Training Error',
               'train/accuracy': 'Training Accuracy',
               'Vacc': 'Test Accuracy', 'Verror': 'Test Error',
@@ -296,7 +296,7 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'sloss_h': 'Hostagram of last loss',
               'alpha_normed_h': 'Histogram of normalized alpha',
               'alpha_normed_biased_h': 'Histogram of normalized biased alpha',
-              'tauloss_mu': 'Mean of Loss',
+              'tauloss_mu': 'Average of Loss',
               'tauloss_std': 'Loss standard deviation',
               'alpha_h': 'Histogram of alpha',
               'grad_var': 'Gradient Variance $|\\bar{g}-g|^2/D(g)$',
@@ -315,10 +315,10 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'Vloss_f': 'Histogram of loss (val set, postcomp)',
               'Tnormg_f': 'Histogram of $\\|g\\|$ (train set, postcomp)',
               'Vnormg_f': 'Histogram of $\\|g\\|$ (val set, postcomp)',
-              'grad_bias': 'Optimization Step Bias',
-              'est_var': 'Optimization Step Variance (w/o learning rate)',
-              'est_snr': 'Optimization Step SNR',
-              'est_nvar': 'Optimization Step Normalized Variance (w/o lr)',
+              'grad_bias': 'Gradient Bias',
+              'est_var': 'Gradient Avg. Variance (w/o lr)',
+              'est_snr': 'Gradient SNR',
+              'est_nvar': 'Gradient Avg. Normalized Variance (w/o lr)',
               'gb_td': 'Total distortion of the Gluster objective.',
               'gb_cs': 'Size of Cluster #0',
               'gb_reinits': 'Total number of reinitializations.'}
@@ -381,14 +381,22 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
     # color = ['blue', 'orangered', 'limegreen', 'darkkhaki', 'cyan', 'grey']
     import seaborn as sns
     color = sns.color_palette("bright", 6)
+    if isinstance(ncolor, list):
+        color = [color[c] for c in ncolor]
+        ncolor = len(ncolor)
     color = color[:ncolor]
     style = ['-', '--', ':', '-.']
+    marker = ['s', 'o', 'X', 'p', '*', 'D', '1']
     # plt.rcParams.update({'font.size': 12})
     plt.grid(linewidth=1)
     legends = []
     for i in range(len(data)):
         if tag_name not in data[i]:
             continue
+        marker_kwargs = {'marker': marker[i],
+                         'markevery': int(len(data[i][tag_name][0])/5),
+                         'markersize': 15}
+        marker_kwargs = {}
         legends += [get_legend(lg_tags, run_names[i], lg_replace)]
         if isinstance(data[i][tag_name], tuple):
             # plt.hist(data[i][tag_name][0], data[i][tag_name][1],
@@ -405,12 +413,13 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
                     linestyle=style[(color0 + i) // len(color)],
                     color=color[(color0 + i) % len(color)], linewidth=2,
                     log_scale=(tag_name in yscale_log),
-                    s=smooth_div_n)
+                    s=smooth_div_n, **marker_kwargs)
             else:
                 plot_fs[tag_name](
                     data[i][tag_name][0], data[i][tag_name][1],
                     linestyle=style[(color0 + i) // len(color)],
-                    color=color[(color0 + i) % len(color)], linewidth=2)
+                    color=color[(color0 + i) % len(color)], linewidth=2,
+                    **marker_kwargs)
     if not no_title:
         plt.title(titles[tag_name])
     if tag_name in yscale_log:
@@ -754,12 +763,13 @@ def plot_tag_multi(data, plot_f, run_names,
               'student_hidden': '$h_s$',
               'teacher_hidden': '$h_t$',
               'num_train_data': 'N'}
-    ylabel = {'est_var': 'Variance', 'est_nvar': 'Normalized Variance'}
+    ylabel = {'est_var': 'Avg. Variance',
+              'est_nvar': 'Avg. Normalized Variance'}
     titles = {'risk_logistic': 'Logistic Risk',
               'risk_zero_one': '0/1 Risk',
               'risk_l2': '$L_2$ Risk',
-              'est_var': 'Optimization Step Variance (w/o learning rate)',
-              'est_nvar': 'Optimization Step Normalized Variance (w/o lr)'}
+              'est_var': 'Gradient Avg. Variance (w/o lr)',
+              'est_nvar': 'Gradient Avg. Normalized Variance (w/o lr)'}
     yscale_log = ['est_var']  # 'est_nvar']
     plot_fs = {}
     if plot_tg not in plot_fs:
@@ -850,6 +860,10 @@ def plot_runs_and_tags_multi(plot_f, logdir, patterns,
     num = len(plot_tags)
     height = (num + 1) // 2
     width = 2 if num > 1 else 1
+    if save_single:
+        plt.rcParams.update({'font.size': 16})
+    else:
+        plt.rcParams.update({'font.size': 12})
     if not save_single:
         fig = plt.figure(figsize=(7 * width, 4 * height))
         fig.subplots(height, width)

@@ -135,6 +135,8 @@ class IndexedDataset(data.Dataset):
             params = map(int, self.opt.duplicate.split(','))
             self.dup_num, self.dup_cnt = params
             self.dup_ids = np.random.permutation(len(dataset))[:self.dup_num]
+            if isinstance(self.ds, LinearRegressionDataset):
+                self.ds.dup_ids = self.dup_ids
 
         # corrupt labels
         if cr_labels is not None:
@@ -881,35 +883,60 @@ def get_logreg_loaders(opt, **kwargs):
 class LinearRegressionDataset(data.Dataset):
 
     def __init__(self, C, D, num, dim, num_class, r2=0, snr=1, w0=None,
-                 train=True):
+                 train=True, online=False):
+        (self.C, self.D, self.r2, self.snr, self.dim, self.num_class) = (
+            C, D, r2, snr, dim, num_class)
         X = np.zeros((dim, num))
         Y = np.zeros((num_class, num))
         if w0 is None:
             w0 = np.random.normal(0, 1, (dim, num_class))
             w0 = w0/np.linalg.norm(w0)*r2
+        self.w0 = w0
         for i in range(num_class):
             n = num // num_class
-            s2 = 1
-            if r2 > 1e-5:
-                s2 = r2/snr
-            e = np.random.normal(0.0, s2, (dim, n))
+            Xcur, Ycur = self._gen_data(n)
             # X[:, i * n:(i + 1) * n] = np.dot(D[:, :, i], e) + C[:, i:i + 1]
-            Xcur = D * e + C
             X[:, i * n:(i + 1) * n] = Xcur
-            e = np.random.normal(0.0, .1, (num_class, n))
-            Y[:, i * n:(i + 1) * n] = w0.T.dot(Xcur) + e  # i + e
+            Y[:, i * n:(i + 1) * n] = Ycur
         self.X = X
         self.Y = Y
-        self.w0 = w0
         self.classes = range(num_class)
+        self.num_train = num
+        self.dup_ids = None
+        self.online = online
+
+    def _gen_data(self, n):
+        (C, D, r2, snr, dim, num_class) = (
+            self.C, self.D, self.r2, self.snr, self.dim, self.num_class)
+        w0 = self.w0
+        s2 = 1
+        if r2 > 1e-5:
+            s2 = r2/snr
+        ftype = 2
+        if ftype == 1:
+            e = np.random.normal(0.0, s2, (dim, n))
+            X = D * e + C
+            e = np.random.normal(0.0, .1, (num_class, n))
+            Y = w0.T.dot(X) + e  # i + e
+        else:
+            X = np.random.normal(0.0, 1, (dim, n))
+            e = np.random.normal(0.0, s2, (num_class, n))
+            Y = w0.T.dot(X) + e
+        return X, Y
 
     def __getitem__(self, index):
-        X = torch.Tensor(self.X[:, index]).float()
-        Y = torch.Tensor(self.Y[:, index]).float()
+        if not self.online or (self.dup_ids is not None
+                               and index in self.dup_ids):
+            X, Y = self.X[:, index], self.Y[:, index]
+        else:
+            X, Y = self._gen_data(1)
+            X, Y = X[:, 0], Y[:, 0]
+        X = torch.Tensor(X).float()
+        Y = torch.Tensor(Y).float()
         return X, Y
 
     def __len__(self):
-        return self.X.shape[1]
+        return self.num_train
 
 
 def get_linreg_loaders(opt, **kwargs):
@@ -925,7 +952,7 @@ def get_linreg_loaders(opt, **kwargs):
     train_dataset = LinearRegressionDataset(
         C, D, opt.num_train_data, opt.dim, opt.num_class, r2=opt.r2,
         snr=opt.snr,
-        train=True)
+        train=True, online=opt.linreg_online)
     # print("Create test")
     test_dataset = LinearRegressionDataset(
         C, D, opt.num_test_data, opt.dim, opt.num_class, r2=opt.r2,
@@ -985,14 +1012,15 @@ def get_protein_loaders(opt, **kwargs):
 
 
 class RandomFeaturesDataset(data.Dataset):
-    def __init__(self, num_train, dim, teacher, batch_size=256, ymean=None):
+    def __init__(self, num_train, dim, teacher, batch_size=256, ymean=None,
+                 duplicate=''):
         import logging
         self.teacher = teacher
         self.ymean = ymean
         self.dim = list(dim)
         with torch.no_grad():
-            self.X = torch.randn([num_train] + list(dim))
-            self.Y = torch.zeros([num_train])
+            self.X = torch.randn([num_train] + list(dim)).cuda()
+            self.Y = torch.zeros([num_train]).cuda()
             # self.Y = teacher(self.X)[:, 0] > 0  # Only class 0 matters
             for i in range(0, num_train, batch_size):
                 e = min(num_train, i+batch_size)
@@ -1001,6 +1029,19 @@ class RandomFeaturesDataset(data.Dataset):
             if ymean is None:
                 self.ymean = self.Y.mean()
             self.Y = (self.Y-self.ymean) > 0
+            if duplicate != '':
+                dup_num, dup_ratio = map(float, duplicate.split(','))
+                dup_total = int(num_train * dup_ratio)
+                if dup_total > 0:
+                    dup_ids = torch.LongTensor(
+                        [x % dup_num for x in range(dup_total)]).cuda()
+                    Xdup = torch.gather(
+                        self.X, 0, dup_ids.view(-1, 1).expand(
+                            (-1, self.X.shape[1])))
+                    Ydup = torch.gather(self.Y, 0, dup_ids)
+                    self.X = torch.cat((self.X[:-dup_total], Xdup), 0)
+                    self.Y = torch.cat((self.Y[:-dup_total], Ydup), 0)
+
         self.X, self.Y = self.X.cpu(), self.Y.cpu()
 
     def __getitem__(self, index):
@@ -1024,8 +1065,10 @@ def get_rf_loaders(opt, **kwargs):
             teacher.apply(weight_reset)
         teacher = torch.nn.DataParallel(teacher)
         dim = (3, 28, 28)
-    train_dataset = RandomFeaturesDataset(opt.num_train_data, dim, teacher)
+    train_dataset = RandomFeaturesDataset(opt.num_train_data, dim, teacher,
+                                          duplicate=opt.duplicate)
     test_dataset = RandomFeaturesDataset(opt.num_test_data, dim, teacher,
                                          ymean=train_dataset.ymean)
 
+    opt.duplicate = ''
     return dataset_to_loaders(train_dataset, test_dataset, opt)

@@ -293,6 +293,7 @@ def add_args():
                         default=argparse.SUPPRESS, type=int)
     parser.add_argument('--r2', default=0, type=float)
     parser.add_argument('--snr', default=1, type=float)
+    parser.add_argument('--linreg_online', action='store_true')
     parser.add_argument('--g_rand_input', action='store_true')
     parser.add_argument('--g_incluster', default=-1, type=int)
     parser.add_argument('--teacher_hidden', default=1, type=int)

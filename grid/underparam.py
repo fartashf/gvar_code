@@ -5,7 +5,10 @@ import numpy as np
 def rf(args):
     dataset = 'rf'
     module_name = 'main.gvar'
-    log_dir = 'runs_%s_gvar_hs1000_hsN' % dataset
+    # log_dir = 'runs_%s_gvar_hs1000_hsN' % dataset
+    # log_dir = 'runs_%s_gvar_hs1000_hsN_dup5,0.1' % dataset
+    # log_dir = 'runs_rf/runs_%s_gvar_hs1000_hsN_dup5,0.5' % dataset
+    log_dir = 'runs_rf/runs_%s_gvar_hs1000_hsN_dup5,0.9' % dataset
     exclude = ['dataset', 'epochs', 'lr_decay_epoch',
                'g_optim', 'g_epoch', 'gvar_start', 'g_optim_start',
                'g_bsnap_iter', 'niters', 'momentum']
@@ -13,7 +16,8 @@ def rf(args):
                           (np.arange(0, 3, 0.5)+0.5),
                           np.array([5, 10])))
     shared_args = [('dataset', dataset),
-                   ('lr', [1e-1, 1e-2, 1e-3]),
+                   # ('lr', [1e-1, 1e-2, 1e-3]),
+                   ('lr', [1e-2]),
                    ('momentum', 0),
                    ('weight_decay', 1e-4),
                    # ('epochs', 50),
@@ -30,6 +34,9 @@ def rf(args):
                    ('num_train_data', [int(1000/t) for t in tau]),
                    ('teacher_hidden', [100, 10000]),
                    # ('teacher_hidden', [int(1000/t) for t in tau]),
+                   # ('duplicate', ['5,0.1'])
+                   # ('duplicate', ['5,0.5'])
+                   ('duplicate', ['5,0.9'])
                    ]
     # print(len(tau))
     # print(shared_args)
