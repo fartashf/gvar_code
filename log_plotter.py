@@ -277,7 +277,8 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'est_snr': 'Avg. SNR', 'gb_td': 'Total distortion',
               'gb_cs': 'Cluster size',
               'gb_reinits': '# of Reinits',
-              'est_nvar': 'Avg. Normalized Variance'}
+              'est_nvar': 'Avg. Normalized Variance',
+              'est_gnorm': 'Avg. Gradient Norm'}
     titles = {'Tacc': 'Training Accuracy', 'Terror': 'Training Error',
               'train/accuracy': 'Training Accuracy',
               'Vacc': 'Test Accuracy', 'Verror': 'Test Error',
@@ -319,6 +320,7 @@ def plot_tag(data, plot_f, run_names, tag_name, lg_tags, ylim=None, color0=0,
               'est_var': 'Gradient Avg. Variance (w/o lr)',
               'est_snr': 'Gradient SNR',
               'est_nvar': 'Gradient Avg. Normalized Variance (w/o lr)',
+              'est_gnorm': 'Gradient Avg. Norm',
               'gb_td': 'Total distortion of the Gluster objective.',
               'gb_cs': 'Size of Cluster #0',
               'gb_reinits': 'Total number of reinitializations.'}

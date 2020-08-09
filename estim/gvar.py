@@ -74,8 +74,8 @@ class MinVarianceGradient(object):
         if not self.init_snapshot:
             return ''
         gviter = self.opt.gvar_estim_iter
-        Ege, var_e, snr_e, nv_e = self.gest.get_Ege_var(model, gviter)
-        Esgd, var_s, snr_s, nv_s = self.sgd.get_Ege_var(model, gviter)
+        Ege, var_e, snr_e, nv_e, gnorm_e = self.gest.get_Ege_var(model, gviter)
+        Esgd, var_s, snr_s, nv_s, gnorm_s = self.sgd.get_Ege_var(model, gviter)
         bias = torch.mean(torch.cat(
             [(ee-gg).abs().flatten() for ee, gg in zip(Ege, Esgd)]))
         # print(np.sum([ee.pow(2).sum().item() for ee in Esgd]))
@@ -87,6 +87,8 @@ class MinVarianceGradient(object):
         tb_logger.log_value('sgd_snr', float(snr_s), step=niters)
         tb_logger.log_value('est_nvar', float(nv_e), step=niters)
         tb_logger.log_value('sgd_nvar', float(nv_s), step=niters)
+        tb_logger.log_value('est_gnorm', float(gnorm_e), step=niters)
+        tb_logger.log_value('sgd_gnorm', float(gnorm_s), step=niters)
         sgd_x, est_x = ('', '[X]') if self.gest_used else ('[X]', '')
         # neo = torch.sqrt(torch.sum(torch.cat([(ee*ee).flatten() for ee in
         #                  self.Esgd])))
@@ -104,7 +106,8 @@ class MinVarianceGradient(object):
         return ('G Bias: %.8f\t'
                 '%sSGD Var: %.8f\t %sEst Var: %.8f\t'
                 'SGD N-Var: %.8f\t Est N-Var: %.8f\t'
-                % (bias, sgd_x, var_s, est_x, var_e, nv_s, nv_e))
+                'SGD G-Norm: %.8f\t'
+                % (bias, sgd_x, var_s, est_x, var_e, nv_s, nv_e, gnorm_s))
 
     def grad(self, niters):
         model = self.model

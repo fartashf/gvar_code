@@ -8,6 +8,7 @@ import grid.cluster
 import grid.ntk
 import grid.icml
 import grid.underparam
+import grid.gnorm
 
 
 class RunSingle(object):
