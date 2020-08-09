@@ -1,6 +1,7 @@
 # A Study of Gradient Variance in Deep Learning (original raw repository)
 (Here is a lazy way of open-sourcing all the code for a multi-year long 
 project.)
+
 Code in this repository contains the implementation of a collection of ideas on 
 improving and analysis of optimization methods. That includes the experiments 
 for the following paper:
