@@ -20,6 +20,21 @@ class IGTEstimator(GradientEstimator):
         self.v = []
         self.model_clone = None
 
+    def grad_at_new_params(self, model, params):
+        data = next(self.data_iter)
+
+        # Clone a model to compute gradient at a transported theta
+        if self.model_clone is None:
+            self.model_clone = models.init_model(self.opt)
+            self.model_clone.load_state_dict(model.state_dict())
+
+        for v, w in zip(self.model_clone, params):
+            v.copy_(w)
+        loss = self.model_clone.criterion(self.model_clone, data)
+        g = torch.autograd.grad(loss, self.model_clone.parameters())
+
+        return g
+
     def snap_online(self, theta_t, niters):
         # use g_osnap_iter=1, update vt
         gamma = self.gamma = niters/(niters+1)

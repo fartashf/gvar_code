@@ -303,6 +303,8 @@ def add_args():
     parser.add_argument('--g_robust', action='store_true')
     parser.add_argument('--g_robust_low', default=1.1, type=float)
     parser.add_argument('--g_robust_high', default=0.9, type=float)
+    # heavy ball
+    parser.add_argument('--g_hb_gamma', default=0.9, type=float)
     args = parser.parse_args()
     return args
 
@@ -340,6 +342,10 @@ def opt_to_ntk_kwargs(opt):
             'max_sweeps': opt.ntk_sweeps,
             'divn': opt.ntk_divn,
             }
+
+
+def opt_to_heavyball_kwargs(opt):
+    return {'gamma': opt.g_hb_gamma}
 
 
 def yaml_opt(yaml_path):
