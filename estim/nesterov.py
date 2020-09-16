@@ -7,10 +7,10 @@ import models
 
 
 class NesterovEstimator(GradientEstimator):
-    def __init__(self, gamma=0.9, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super(NesterovEstimator, self).__init__(*args, **kwargs)
         self.init_data_iter()
-        self.gamma = gamma
+        self.gamma = self.opt.g_nest_gamma
         self.v = None
         self.model_clone = None
 
@@ -22,8 +22,9 @@ class NesterovEstimator(GradientEstimator):
             self.model_clone = models.init_model(self.opt)
             self.model_clone.load_state_dict(model.state_dict())
 
-        for v, w in zip(self.model_clone, params):
-            v.copy_(w)
+        with torch.no_grad():
+            for v, w in zip(self.model_clone.parameters(), params):
+                v.copy_(w)
         loss = self.model_clone.criterion(self.model_clone, data)
         g = torch.autograd.grad(loss, self.model_clone.parameters())
 
@@ -31,12 +32,12 @@ class NesterovEstimator(GradientEstimator):
 
     def get_new_v(self, model):
         gamma = self.gamma
+        if self.v is None:
+            self.v = [torch.zeros_like(g) for g in model.parameters()]
         params_new = [pp + gamma * vv for pp, vv in
                       zip(model.parameters(), self.v)]
         g = self.grad_at_new_params(model, params_new)
 
-        if self.v is None:
-            self.v = [torch.zeros_like(g) for g in model.parameters()]
         v = [gamma * vv + (1-gamma) * gg for vv, gg in zip(self.v, g)]
 
         return v

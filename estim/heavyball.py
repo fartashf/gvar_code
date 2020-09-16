@@ -9,10 +9,10 @@ class HeavyBallEstimator(GradientEstimator):
     """
     Heavy-ball momentum
     """
-    def __init__(self, gamma=0.9, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super(HeavyBallEstimator, self).__init__(*args, **kwargs)
         self.init_data_iter()
-        self.gamma = gamma
+        self.gamma = self.opt.g_hb_gamma
         self.v = None
 
     def get_new_v(self, model):

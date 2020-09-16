@@ -8,8 +8,8 @@ from estim.gluster import GlusterOnlineEstimator, GlusterBatchEstimator
 from estim.svrg import SVRGEstimator
 from estim.svrgc import SVRGClipEstimator
 from estim.ntk import NTKEstimator
-from estim.hb import HeavyBallEstimator
-from estim.netserov import NesterovEstimator
+from estim.heavyball import HeavyBallEstimator
+from estim.nesterov import NesterovEstimator
 from estim.adam import AdamEstimator
 from estim.igt import IGTEstimator
 
@@ -35,7 +35,7 @@ class MinVarianceGradient(object):
             gest = SGDEstimator(minvar_loader, opt, tb_logger)
         elif opt.g_estim == 'ntk':
             gest = NTKEstimator(minvar_loader, opt, tb_logger)
-        elif opt.g_estim == 'hb':
+        elif opt.g_estim == 'heavyball':
             gest = HeavyBallEstimator(minvar_loader, opt, tb_logger)
         elif opt.g_estim == 'nesterov':
             gest = NesterovEstimator(minvar_loader, opt, tb_logger)
