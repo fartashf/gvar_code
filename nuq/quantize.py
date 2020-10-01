@@ -214,6 +214,13 @@ def get_quantizer(opt):
     return qdq
 
 
+def trn_gradient_clipping(x, c=2.5):
+    sigma = torch.std(x)
+    mask = torch.abs(x) > (c * sigma)
+    x_clipped = torch.sign(x) * c * sigma * mask + x * (~mask)
+    return x_clipped
+
+
 class NoQuantizer(object):
     def quantize(self, x):
         return x
@@ -221,17 +228,21 @@ class NoQuantizer(object):
 
 class QuantizeMultiBucket(object):
     def __init__(self, levels, norm_type, method, bits, bucket_size,
-                 multiplier, **kwargs):
+                 multiplier, clipping, **kwargs):
         self.levels = torch.as_tensor(levels, dtype=torch.float32).cuda()
         self.norm_type = norm_type
         self.method = method
         self.bucket_size = bucket_size
         self.bits = bits
+        self.clipping = clipping
         self.qdq = QDQ(bucket_size, self.levels)
 
     def quantize(self, x):
         assert isinstance(x, torch.cuda.FloatTensor)
         bucket_size = self.bucket_size
+
+        if self.clipping:
+            x = trn_gradient_clipping(x)
 
         num_tail = math.ceil(x.numel()/bucket_size)*bucket_size-x.numel()
         xv = torch.cat((x.view(-1),

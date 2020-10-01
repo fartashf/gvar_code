@@ -17,8 +17,8 @@ def bolt(sargs):
         # 'bolt3_gpu2',
         # 'bolt3_gpu0,1,2',
         # 'bolt2_gpu1,2,3',
-        # 'bolt3_gpu0,1',
-        'bolt2_gpu0,1,2,3',
+        'bolt3_gpu0,1',
+        # 'bolt2_gpu0,1,2,3',
         # 'bolt1_gpu0,1,2,3'
         # 'bolt2_gpu0,3', 'bolt2_gpu1,2',
         # 'bolt1_gpu0,1', 'bolt1_gpu2,3',

@@ -278,6 +278,7 @@ def add_args():
     parser.add_argument('--untrain_std', default=0.001, type=float)
     parser.add_argument('--nuq_parallel', default='no', help='no|gpu1|ngpu')
     parser.add_argument('--nuq_ncuda', default=0, type=int)
+    parser.add_argument('--nuq_clipping', action='store_true')
     args = parser.parse_args()
     return args
 
@@ -319,7 +320,7 @@ def opt_to_nuq_kwargs(opt):
     return {'ngpu': opt.nuq_ngpu, 'bits': opt.nuq_bits,
             'bucket_size': opt.nuq_bucket_size, 'method': opt.nuq_method,
             'multiplier': opt.nuq_mul, 'parallel': opt.nuq_parallel,
-            'ncuda': opt.nuq_ncuda}
+            'ncuda': opt.nuq_ncuda, 'clipping': opt.nuq_clipping}
 
 
 def yaml_opt(yaml_path):

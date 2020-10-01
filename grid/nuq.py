@@ -295,15 +295,16 @@ def cifar10_full(args):
     ]
     args += [OrderedDict(shared_args+gvar_args+args_nuq)]
 
-    # args_nuq = [
-    #     ('g_estim', ['nuq']),
-    #     ('nuq_ngpu', 8),
-    #     ('nuq_method', [
-    #         ('signsgd', OrderedDict([('g_mlr', [0.2, 0.1])])),
-    #         ('terngrad', OrderedDict([('nuq_bucket_size', 8192)])),
-    #     ])
-    # ]
-    # args += [OrderedDict(shared_args+gvar_args+args_nuq)]
+    args_nuq = [
+        ('g_estim', ['nuq']),
+        ('nuq_ngpu', 8),
+        ('nuq_method', [
+            # ('signsgd', OrderedDict([('g_mlr', [0.2, 0.1])])),
+            ('terngrad', OrderedDict([('nuq_bucket_size', 8192),
+                                      ('nuq_clipping', '')])),
+        ])
+    ]
+    args += [OrderedDict(shared_args+gvar_args+args_nuq)]
 
     # args_nuq = [
     #     ('g_estim', ['nuq']),
